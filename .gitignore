@@ -1,0 +1,27 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# local coordination and machine state
+.unlazy/
+.unlazy-hook-state.json
+.claude/settings.local.json
+.claude/worktrees/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# node
+node_modules/
+dist/
+.vite/
+
+# os
+.DS_Store
+Thumbs.db

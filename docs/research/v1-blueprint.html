@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>V1 Build Blueprint</title>
+<meta name="description" content="Stage A (1:1 Outpero parity) V1 prototype in Telugu, English and Hindi: architecture, call flow, phases, accounts and risks.">
+<style>
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --surface2:#f0eee8; --ink:#1b1b1a; --ink2:#55534d; --muted:#8a877f;
+  --line:#e2dfd6; --accent:#2f5bd3; --accent-soft:#e6ecfb;
+  --ok:#1f7a4d; --ok-soft:#e3f2ea; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b3261e; --bad-soft:#fbe5e3;
+  --sourced:#1f7a4d; --inference:#2f5bd3; --untested:#b3261e;
+  --node:#ffffff; --node-line:#cfcbc0; --hl:#ffd75e;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141413; --surface:#1d1d1b; --surface2:#252522; --ink:#eeece6; --ink2:#b9b6ad; --muted:#8b887f;
+    --line:#34332f; --accent:#7d9cff; --accent-soft:#222b44;
+    --ok:#5fc48e; --ok-soft:#1b2e24; --warn:#e6a54a; --warn-soft:#33281a; --bad:#f08079; --bad-soft:#3a1f1d;
+    --sourced:#5fc48e; --inference:#7d9cff; --untested:#f08079;
+    --node:#22221f; --node-line:#45443f; --hl:#8a6d12;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141413; --surface:#1d1d1b; --surface2:#252522; --ink:#eeece6; --ink2:#b9b6ad; --muted:#8b887f;
+  --line:#34332f; --accent:#7d9cff; --accent-soft:#222b44;
+  --ok:#5fc48e; --ok-soft:#1b2e24; --warn:#e6a54a; --warn-soft:#33281a; --bad:#f08079; --bad-soft:#3a1f1d;
+  --sourced:#5fc48e; --inference:#7d9cff; --untested:#f08079;
+  --node:#22221f; --node-line:#45443f; --hl:#8a6d12;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 80px}
+header.top{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;gap:12px;padding:10px 16px;flex-wrap:wrap}
+header.top nav{display:flex;gap:4px;flex-wrap:wrap;flex:1}
+header.top nav a{color:var(--ink2);text-decoration:none;font-size:13px;padding:4px 8px;border-radius:6px}
+header.top nav a:hover{background:var(--surface2);color:var(--ink)}
+.btn{font:inherit;font-size:13px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+.btn:hover{border-color:var(--ink2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+h1{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:40px 0 8px;letter-spacing:-.02em}
+h2{font-size:24px;margin:56px 0 8px;letter-spacing:-.01em;scroll-margin-top:70px}
+h3{font-size:17px;margin:24px 0 6px}
+p{margin:8px 0}
+.lede{font-size:18px;color:var(--ink2);max-width:760px}
+.meta{font-size:13px;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.p-ok{background:var(--ok-soft);color:var(--ok)}
+.p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)}
+.p-acc{background:var(--accent-soft);color:var(--accent)}
+.p-mute{background:var(--surface2);color:var(--ink2)}
+figure{margin:16px 0}
+figcaption{font-size:13px;color:var(--muted);margin-top:8px}
+.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
+code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface2);padding:1px 5px;border-radius:4px}
+.scope{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px}
+.scope .card h3{margin-top:0}
+.parked{opacity:.55;border-style:dashed}
+/* diagram */
+svg text{font-family:inherit}
+.node rect{fill:var(--node);stroke:var(--node-line);stroke-width:1.2;transition:fill .25s,stroke .25s}
+.node .t{fill:var(--ink);font-size:13px;font-weight:600}
+.node .s{fill:var(--ink2);font-size:11px}
+.node.on rect{fill:var(--hl);stroke:var(--ink)}
+.edge{fill:none;stroke-width:1.8}
+.edge.sourced{stroke:var(--sourced)}
+.edge.inference{stroke:var(--inference);stroke-dasharray:6 4}
+.edge.untested{stroke:var(--untested);stroke-dasharray:2 4;stroke-width:2.4}
+.edge.on{stroke-width:3.4}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--ink2);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:28px;height:0;border-top:2px solid}
+.stepper{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.stepbox{margin-top:10px;min-height:92px}
+.stepbox .n{font-size:12px;color:var(--muted);font-weight:600}
+/* phases */
+.phase{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:10px 0}
+.phase summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
+.phase summary::-webkit-details-marker{display:none}
+.phase .num{flex:0 0 36px;height:36px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700}
+.phase .hd{flex:1;min-width:0}
+.phase .hd b{display:block}
+.phase .hd span{font-size:14px;color:var(--ink2)}
+.phase .body{padding:0 16px 16px 64px;font-size:15px}
+.phase ul{margin:6px 0;padding-left:18px}
+.phase .done{margin-top:8px;padding:8px 10px;border-left:3px solid var(--ok);background:var(--ok-soft);border-radius:4px;font-size:14px}
+.phase[open] summary .chev{transform:rotate(90deg)}
+.chev{color:var(--muted);transition:transform .2s;margin-top:8px}
+.track{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0}
+.track a{text-decoration:none;font-size:12px;font-weight:600;padding:5px 9px;border-radius:7px;background:var(--surface);border:1px solid var(--line);color:var(--ink)}
+.track .arr{color:var(--muted);font-size:12px}
+/* checklist */
+.chk td:first-child{width:28px}
+.chk input{width:18px;height:18px;accent-color:var(--accent)}
+.chk tr.done td{color:var(--muted)}
+.chk tr.done td b{text-decoration:line-through}
+.progress{height:8px;border-radius:999px;background:var(--surface2);overflow:hidden;margin:8px 0 4px}
+.progress > div{height:100%;background:var(--accent);width:0;transition:width .3s}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.filters .btn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+/* formula */
+.formula{font:18px/1.6 "Cambria Math","STIX Two Math",Georgia,serif;background:var(--surface2);border-radius:10px;padding:14px 16px;overflow-x:auto}
+.note{font-size:14px;padding:10px 12px;border-radius:8px;background:var(--warn-soft);color:var(--ink);border-left:3px solid var(--warn)}
+.risk{border-left:3px solid var(--bad)}
+.refs li{margin:6px 0;font-size:14px}
+a{color:var(--accent)}
+@media (max-width:640px){
+  .phase .body{padding:0 14px 14px 14px}
+  h2{margin-top:44px}
+  header.top nav{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <strong style="font-size:14px">V1 Blueprint</strong>
+    <nav>
+      <a href="#scope">Scope</a><a href="#arch">Architecture</a><a href="#flow">Call flow</a><a href="#phases">Phases</a>
+      <a href="#accounts">Accounts</a><a href="#latency">Latency</a><a href="#findings">Findings</a><a href="#risks">Risks</a><a href="#refs">Sources</a>
+    </nav>
+    <button class="btn" id="themeBtn" type="button" aria-label="Toggle theme">Theme</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>V1 prototype: Stage A, 1:1 Outpero parity</h1>
+  <p class="meta">Research run 2026-10-24 · Languages for V1: Telugu, English, Hindi · Design and brand: not chosen yet</p>
+  <p class="lede">We are rebuilding Outpero's "AI employee": a phone agent that calls new leads within seconds, works through call lists, and answers a business's phone line, billed per minute from prepaid credits. V1 matches every Outpero feature, works in Telugu, English and Hindi, and uses our own UI and brand. This page shows what we are building, how the parts connect, the build order, and every account and resource the prototype needs.</p>
+
+  <section id="scope">
+    <h2>Scope</h2>
+    <p>The full plan has three stages. V1 is Stage A only. Stages B and C are parked until Stage A works end to end.</p>
+    <div class="scope">
+      <div class="card"><span class="pill p-acc">Now</span><h3>Stage A · 1:1 parity</h3><p>Phases 0–14: every Outpero feature, our UI and brand. Languages: <b>Telugu, English, Hindi</b>.</p></div>
+      <div class="card parked"><span class="pill p-mute">Parked</span><h3>Stage B · Beat the market</h3><p>Warm transfer, live monitoring, simulation tests, A/B tests, AI call QA, WhatsApp agent, CRM sync, white-label and more.</p></div>
+      <div class="card parked"><span class="pill p-mute">Parked</span><h3>Stage C · More languages</h3><p>Tamil, Malayalam, Odia first, then Kannada, Marathi, Bengali, Gujarati and Punjabi.</p></div>
+    </div>
+    <h3>V1 language check</h3>
+    <div class="scroll-x card" style="padding:0">
+      <table>
+        <thead><tr><th>Language</th><th>Speech-to-text</th><th>Value voice</th><th>Standard voice</th><th>Premium voice</th></tr></thead>
+        <tbody>
+          <tr><td><b>Telugu</b> <code>te-IN</code></td><td>Sarvam Saaras</td><td>Sarvam Bulbul</td><td>Smallest Lightning</td><td>Cartesia Sonic</td></tr>
+          <tr><td><b>English</b> <code>en-IN</code></td><td>Sarvam Saaras</td><td>Sarvam Bulbul</td><td>Smallest Lightning</td><td>Cartesia Sonic</td></tr>
+          <tr><td><b>Hindi</b> <code>hi-IN</code></td><td>Sarvam Saaras</td><td>Sarvam Bulbul</td><td>Smallest Lightning</td><td>Cartesia Sonic</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="meta">All supported according to the providers' docs [S7, S8, S9]. Quality on real phone audio (8 kHz) is <span class="pill p-bad">untested</span> and gets checked by native speakers in Phase 1 and Phase 14.</p>
+  </section>
+
+  <section id="arch">
+    <h2>Architecture</h2>
+    <p>Each box is one part of the system. Line style shows how sure we are that two parts join the way drawn.</p>
+    <figure class="card">
+      <div class="scroll-x">
+      <svg id="diagram" viewBox="0 0 960 470" width="100%" style="min-width:720px" role="img" aria-label="System architecture diagram">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink2)"/></marker>
+        </defs>
+        <!-- edges -->
+        <path id="e-lead-api" class="edge inference" d="M190,60 C220,60 220,105 250,105" marker-end="url(#ah)"/>
+        <path id="e-dash-api" class="edge inference" d="M190,160 C220,160 220,125 250,125" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <path id="e-api-redis" class="edge inference" d="M440,100 C475,100 475,60 510,60" marker-end="url(#ah)"/>
+        <path id="e-api-db" class="edge inference" d="M440,125 C475,125 475,160 510,160" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <path id="e-redis-ext" class="edge inference" d="M680,60 L750,60" marker-end="url(#ah)"/>
+        <path id="e-api-vobiz" class="edge sourced" d="M345,150 L345,330" marker-end="url(#ah)"/>
+        <path id="e-phone-vobiz" class="edge sourced" d="M190,360 L250,360" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <path id="e-vobiz-engine" class="edge untested" d="M440,360 L510,360" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <path id="e-engine-stt" class="edge sourced" d="M710,330 C740,330 740,302 770,302" marker-end="url(#ah)"/>
+        <path id="e-engine-llm" class="edge sourced" d="M710,360 L770,360" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <path id="e-engine-tts" class="edge sourced" d="M710,390 C740,390 740,418 770,418" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <path id="e-engine-db" class="edge inference" d="M600,300 L600,190" marker-end="url(#ah)"/>
+        <path id="e-engine-int" class="edge inference" d="M680,300 C720,250 800,230 840,190" marker-end="url(#ah)"/>
+        <!-- nodes -->
+        <g class="node" id="n-lead"><rect x="20" y="30" width="170" height="60" rx="10"/><text class="t" x="34" y="56">Lead sources</text><text class="s" x="34" y="74">Forms · Meta ads · Sheets</text></g>
+        <g class="node" id="n-dash"><rect x="20" y="130" width="170" height="60" rx="10"/><text class="t" x="34" y="156">Dashboard</text><text class="s" x="34" y="174">React + Vite</text></g>
+        <g class="node" id="n-api"><rect x="250" y="80" width="190" height="70" rx="10"/><text class="t" x="264" y="106">API + dialer</text><text class="s" x="264" y="124">FastAPI · rules · billing</text><text class="s" x="264" y="140">hours · DNC · retries</text></g>
+        <g class="node" id="n-redis"><rect x="510" y="30" width="170" height="60" rx="10"/><text class="t" x="524" y="56">Queue + workers</text><text class="s" x="524" y="74">Redis · post-call jobs</text></g>
+        <g class="node" id="n-db"><rect x="510" y="130" width="170" height="60" rx="10"/><text class="t" x="524" y="156">Database</text><text class="s" x="524" y="174">Postgres · Supabase auth</text></g>
+        <g class="node" id="n-ext"><rect x="750" y="30" width="190" height="60" rx="10"/><text class="t" x="764" y="56">Storage + payments</text><text class="s" x="764" y="74">Cloudflare R2 · Razorpay</text></g>
+        <g class="node" id="n-int"><rect x="750" y="130" width="190" height="60" rx="10"/><text class="t" x="764" y="156">Integrations</text><text class="s" x="764" y="174">Calendar · Sheets · WhatsApp</text></g>
+        <g class="node" id="n-phone"><rect x="20" y="330" width="170" height="60" rx="10"/><text class="t" x="34" y="356">Caller's phone</text><text class="s" x="34" y="374">regular phone network</text></g>
+        <g class="node" id="n-vobiz"><rect x="250" y="330" width="190" height="60" rx="10"/><text class="t" x="264" y="356">Vobiz</text><text class="s" x="264" y="374">numbers · SIP · audio stream</text></g>
+        <g class="node" id="n-engine"><rect x="510" y="300" width="200" height="120" rx="10"/><text class="t" x="524" y="326">Voice engine</text><text class="s" x="524" y="346">Pipecat pipeline</text><text class="s" x="524" y="364">VAD + Smart Turn</text><text class="s" x="524" y="382">barge-in · ambience</text><text class="s" x="524" y="400">cost meter · failover</text></g>
+        <g class="node" id="n-stt"><rect x="770" y="280" width="170" height="44" rx="10"/><text class="t" x="784" y="300">Speech-to-text</text><text class="s" x="784" y="315">Sarvam Saaras</text></g>
+        <g class="node" id="n-llm"><rect x="770" y="338" width="170" height="44" rx="10"/><text class="t" x="784" y="358">LLM (the brain)</text><text class="s" x="784" y="373">Gemini 2.5 Flash</text></g>
+        <g class="node" id="n-tts"><rect x="770" y="396" width="170" height="44" rx="10"/><text class="t" x="784" y="416">Text-to-speech</text><text class="s" x="784" y="431">Sarvam · Smallest · Cartesia</text></g>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><i style="border-color:var(--sourced)"></i>sourced: docs say these connect</span>
+        <span><i style="border-color:var(--inference);border-top-style:dashed"></i>inference: our design</span>
+        <span><i style="border-color:var(--untested);border-top-style:dotted;border-top-width:3px"></i>untested: we must prove it</span>
+      </div>
+      <figcaption>Figure 1. V1 architecture. Vobiz↔engine is untested because Vobiz has no ready-made Pipecat connector; we write one based on Pipecat's Plivo connector. Sources: S1, S3, S5, S6, S7.</figcaption>
+    </figure>
+  </section>
+
+  <section id="flow">
+    <h2>Follow one call</h2>
+    <p>Step through an Instant lead call. The parts in use light up in Figure 1 above.</p>
+    <div class="card">
+      <div class="stepper">
+        <button class="btn" id="prevStep" type="button">← Back</button>
+        <button class="btn primary" id="nextStep" type="button">Next step →</button>
+        <button class="btn" id="playStep" type="button">Play all</button>
+        <span class="meta" id="stepCount"></span>
+      </div>
+      <div class="stepbox"><div class="n" id="stepTag"></div><div id="stepText"></div></div>
+    </div>
+    <p class="meta">Figure 2. Call sequence. Steps 3–7 follow Sarvam's Vobiz guide [S3] and Pipecat docs [S5, S6]. Steps 1, 2 and 8 copy Outpero's documented behaviour [S2]; how they work inside is our design.</p>
+  </section>
+
+  <section id="phases">
+    <h2>Stage A phases</h2>
+    <p>Build order. Each phase ends with a check that proves it works. No timeframes, by your request.</p>
+    <div class="track" id="track"></div>
+    <div id="phaseList"></div>
+  </section>
+
+  <section id="accounts">
+    <h2>Accounts and resources for V1</h2>
+    <p><b>You</b> = needs your identity, company or payment method. <b>Me</b> = I set it up once you give me access or keys. Tick items as you finish; ticks are saved in this browser only.</p>
+    <div class="progress"><div id="progBar"></div></div>
+    <p class="meta" id="progText"></p>
+    <div class="filters" id="filters">
+      <button class="btn" type="button" data-f="all" aria-pressed="true">All</button>
+      <button class="btn" type="button" data-f="first" aria-pressed="false">Needed for Phase 1</button>
+      <button class="btn" type="button" data-f="you" aria-pressed="false">You set up</button>
+      <button class="btn" type="button" data-f="me" aria-pressed="false">I set up</button>
+    </div>
+    <div class="card scroll-x" style="padding:0">
+      <table class="chk">
+        <thead><tr><th></th><th>Account / resource</th><th>What it's for</th><th>Who</th><th>Needed by</th></tr></thead>
+        <tbody id="accRows"></tbody>
+      </table>
+    </div>
+    <p class="meta">Rates known so far: Sarvam speech-to-text ₹30 per hour; Sarvam voice ₹30 per 10,000 characters, labelled beta [S16]. Vobiz per-minute and number rates: <b>not found</b>, so ask Vobiz. For comparison, Outpero charges customers ₹649 a month per number [S2].</p>
+  </section>
+
+  <section id="latency">
+    <h2>Response-time budget</h2>
+    <p>Phase 1 passes only if the agent answers fast enough to feel human. To measure it, we split the delay between "caller stops talking" and "caller hears the first word" into parts.</p>
+    <div class="formula">T<sub>reply</sub> ≈ t<sub>turn</sub> + t<sub>stt</sub> + t<sub>llm</sub> + t<sub>tts</sub> + t<sub>net</sub> &nbsp;&lt;&nbsp; 1000 ms</div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card">
+        <h3 style="margin-top:0">Each part, in plain words (milliseconds)</h3>
+        <ul style="padding-left:18px;margin:0;font-size:15px">
+          <li><b>t<sub>turn</sub></b>: time to decide the caller has finished (VAD + Smart Turn)</li>
+          <li><b>t<sub>stt</sub></b>: time to get the final transcript after they stop</li>
+          <li><b>t<sub>llm</sub></b>: time until the LLM finishes its first sentence</li>
+          <li><b>t<sub>tts</sub></b>: time until the voice service returns the first audio chunk</li>
+          <li><b>t<sub>net</sub></b>: network and phone-line overhead in both directions</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Illustrative budget (targets, not measurements)</h3>
+        <table>
+          <tr><td>t<sub>turn</sub></td><td>250</td></tr><tr><td>t<sub>stt</sub></td><td>150</td></tr>
+          <tr><td>t<sub>llm</sub></td><td>350</td></tr><tr><td>t<sub>tts</sub></td><td>150</td></tr>
+          <tr><td>t<sub>net</sub></td><td>100</td></tr><tr><td><b>Total</b></td><td><b>1000</b></td></tr>
+        </table>
+      </div>
+    </div>
+    <p class="note" style="margin-top:12px"><b>Derived here, not from a source.</b> It assumes the parts run one after another; streaming overlaps some of them, so the real number can be lower. Sanity checks: every term is in milliseconds, so the total is too. If any one part is zero, the total is just the sum of the others. The budget numbers above are targets I picked to split one second, not measured values. Phase 1 replaces them with real measurements for each language.</p>
+  </section>
+
+  <section id="findings">
+    <h2>Key findings</h2>
+    <div class="grid g2" id="findingsGrid"></div>
+  </section>
+
+  <section id="risks">
+    <h2>Risks and open questions</h2>
+    <div class="grid g2">
+      <div class="card risk"><span class="pill p-bad">High</span><h3>Which phone numbers are legal for lead calls</h3><p>TRAI (Feb 2025) says promotional calls must come from 140-series numbers, not ordinary 10-digit ones. Outpero uses 10-digit numbers. Whether calling a lead who just enquired counts as "promotional" needs a lawyer's view before launch [S10, S11].</p></div>
+      <div class="card risk"><span class="pill p-warn">Medium</span><h3>Vobiz connector and docs</h3><p>No official Vobiz API reference was found; we rely on Sarvam's guide and community docs. Rates and the KYC sub-account API are also not found. Ask Vobiz directly [S3, S4].</p></div>
+      <div class="card risk"><span class="pill p-warn">Medium</span><h3>Call quality on phone lines</h3><p>Telugu and Hindi transcription and voice quality on 8 kHz phone audio is untested for every provider.</p></div>
+      <div class="card risk"><span class="pill p-warn">Medium</span><h3>Data protection (DPDP)</h3><p>Core duties start 13 May 2027: clear consent notices, security, breach reporting, user rights. We build consent records and data deletion in from the start [S12].</p></div>
+      <div class="card risk"><span class="pill p-mute">Open</span><h3>Cost per minute</h3><p>LLM and phone costs are not measured yet, so the margin on each tier is unknown.</p></div>
+      <div class="card risk"><span class="pill p-mute">Rule</span><h3>Copy features, not material</h3><p>Match what Outpero does. Don't copy its code, prompts, help-centre text or brand.</p></div>
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>Sources</h2>
+    <p class="meta">T1 = official docs or primary source · T2 = reputable press or law firm · T3 = community or vendor marketing.</p>
+    <ol class="refs" id="refList"></ol>
+  </section>
+</main>
+
+<script>
+(function(){
+  // theme
+  var root=document.documentElement, KEY='v1bp-theme';
+  try{var t=localStorage.getItem(KEY); if(t) root.setAttribute('data-theme',t);}catch(e){}
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme');
+    var dark = cur ? cur==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    var next = dark?'light':'dark'; root.setAttribute('data-theme',next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+
+  // call flow
+  var steps=[
+    {t:'Lead arrives',d:'A form or Meta ad sends the lead to the employee\'s private intake URL. The API checks the secret, removes duplicates and saves the lead with its fields (name, budget…).',n:['n-lead','n-api','n-db'],e:['e-lead-api','e-api-db']},
+    {t:'Dialer checks the rules',d:'The calling window (6 AM–10 PM for Instant), the do-not-call list and the credit balance are checked. If all pass, a dial job goes on the queue.',n:['n-api','n-redis','n-db'],e:['e-api-redis','e-api-db']},
+    {t:'Phone rings',d:'The API asks Vobiz to place the call from the employee\'s number. When the lead picks up, Vobiz fetches our answer URL, and our XML reply opens a live two-way audio stream to the voice engine.',n:['n-api','n-vobiz','n-phone','n-engine'],e:['e-api-vobiz','e-phone-vobiz','e-vobiz-engine']},
+    {t:'Caller speaks',d:'The caller\'s voice arrives as small audio packets (mu-law, 8 kHz) over the WebSocket. Billing starts now, at pickup.',n:['n-phone','n-vobiz','n-engine'],e:['e-phone-vobiz','e-vobiz-engine']},
+    {t:'Turn detection',d:'VAD hears speech start and stop. Smart Turn v3 checks the audio to decide whether the caller has actually finished, so a pause mid-sentence doesn\'t trigger a reply.',n:['n-engine'],e:[]},
+    {t:'Understand and reply',d:'Sarvam transcribes the speech, including Telugu or Hindi mixed with English. Gemini reads the transcript plus the employee\'s script, rules and knowledge, and streams back a reply. It can also call tools such as booking a calendar slot.',n:['n-engine','n-stt','n-llm','n-int'],e:['e-engine-stt','e-engine-llm','e-engine-int']},
+    {t:'Speak',d:'Each finished sentence (including the Indic full stops । and ॥) goes to the voice service and plays back as raw audio. If the caller interrupts, the engine sends clearAudio to stop the playback.',n:['n-engine','n-tts','n-vobiz','n-phone'],e:['e-engine-tts','e-vobiz-engine','e-phone-vobiz']},
+    {t:'After the call',d:'On hangup, a job creates the summary, sentiment, outcome and captured fields. It saves the recording to R2, deducts credits and fires webhooks. The lead appears on the dashboard.',n:['n-engine','n-redis','n-db','n-ext','n-dash'],e:['e-engine-db','e-redis-ext','e-dash-api']}
+  ];
+  var i=0, timer=null;
+  function render(){
+    document.querySelectorAll('.node.on,.edge.on').forEach(function(el){el.classList.remove('on')});
+    var s=steps[i];
+    s.n.forEach(function(id){var el=document.getElementById(id); if(el) el.classList.add('on')});
+    s.e.forEach(function(id){var el=document.getElementById(id); if(el) el.classList.add('on')});
+    document.getElementById('stepTag').textContent='Step '+(i+1)+' · '+s.t;
+    document.getElementById('stepText').textContent=s.d;
+    document.getElementById('stepCount').textContent=(i+1)+' / '+steps.length;
+  }
+  function stop(){if(timer){clearInterval(timer);timer=null;document.getElementById('playStep').textContent='Play all';}}
+  document.getElementById('nextStep').onclick=function(){stop();i=(i+1)%steps.length;render();};
+  document.getElementById('prevStep').onclick=function(){stop();i=(i-1+steps.length)%steps.length;render();};
+  document.getElementById('playStep').onclick=function(){
+    if(timer){stop();return;}
+    this.textContent='Pause';
+    timer=setInterval(function(){i=(i+1)%steps.length;render();},2600);
+  };
+  render();
+
+  // phases
+  var phases=[
+    {n:0,t:'Accounts and prerequisites',s:'Company, provider accounts, legal opinion',b:['You open the accounts in the next section that need your identity, company or payment.','Get a legal view on 140-series vs 10-digit numbers (TRAI) and DPDP.','I store every key in a secrets manager, never in code.'],d:'Every key needed for Phase 1 works in a test script.'},
+    {n:1,t:'Voice core',s:'The make-or-break phase',b:['Vobiz answer URL, our own Pipecat connector for Vobiz, outbound call API.','Pipecat pipeline: Silero VAD + Smart Turn v3 → Sarvam STT → Gemini → Sarvam TTS.','Barge-in (clearAudio), Indic sentence splitter, call-length cap, silence handling, recording.','A test harness that measures response time per language (see the budget below).'],d:'A real phone call in Telugu, Hindi and English, with interruptions, feels natural, and the response-time numbers are logged.'},
+    {n:2,t:'Platform backbone',s:'Repo, database, auth, dashboard shell',b:['Monorepo, CI, staging and production environments.','Postgres schema and migrations; Supabase auth (email + Google).','FastAPI skeleton, account settings, audit log.','Dashboard shell in the design system you choose.'],d:'You can sign up, log in, and see an empty dashboard on staging.'},
+    {n:3,t:'AI employee builder',s:'Describe the job, get a working agent',b:['Hire flow: pick channel and language; type or speak the brief; AI asks follow-up questions; AI drafts the agent.','Script editor: sections, end-of-call rules, permanent FAQ section, strictness 1–5, pre-call and captured variables.','Prompt compiler: script = content, rules = conduct, voice = delivery.','Voice picker by tier, speed, background ambience, auto avatar.','Test call to your own phone, browser call, chat sandbox.','Lifecycle: draft → training → live → paused; publish, last 3 versions, restore, switch channel, start over.'],d:'A brief spoken in Telugu becomes an agent that holds a good test call.'},
+    {n:4,t:'Instant channel',s:'Call new leads within seconds',b:['Private intake URL + secret (rotate, reveal), intake log, test lead.','Dial delay, calling window, rule for leads that arrive outside it, retry ladder up to 10 attempts.','Queue console, redial, one-off call panel.','Lead sources: website, Meta Lead Ads, Google Sheets, Zapier, Pabbly, n8n.'],d:'A Meta test lead triggers a real call within seconds, and retries follow the ladder.'},
+    {n:5,t:'Post-call and data views',s:'Know what happened on every call',b:['Post-call job: summary, sentiment, outcome, captured fields; nothing invented when a field is missing.','Conversations log, call detail (recording, transcript, timeline), leads table/card/kanban, CSV exports.','Caller memory, callback scheduling, dashboard and performance analytics, notifications.'],d:'Every test call appears with accurate summary, fields and recording.'},
+    {n:6,t:'Billing and numbers',s:'Credits, payments, phone numbers',b:['Credit ledger (1 credit = ₹1), Razorpay top-ups by card and UPI, 50 free credits.','Per-second metering from pickup, tier rates, spend caps, low-balance alerts, statements and invoices with GST.','Number store via Vobiz: inventory, quote, purchase, PAN + Aadhaar (DigiLocker) KYC, ₹649/month auto-renew with grace period, extra channels.','140-series support if the legal opinion requires it.'],d:'A test top-up, a number purchase with KYC, and per-call charges all reconcile in the ledger.'},
+    {n:7,t:'Bulk campaigns',s:'Call through an uploaded list',b:['CSV, paste or manual contacts, column-to-variable mapping, saved lists.','Calling window, days, holidays, 1–20 calls at once, skip do-not-call, retries 1–9, schedule and repeat.','Skip people called recently by other campaigns, per-campaign exclusion list, consent confirmation.','Live panel: pause, resume, retry those who ran out of attempts, cancel, export; campaigns queue on a shared number.'],d:'A 100-contact test campaign runs within its rules and reports correctly.'},
+    {n:8,t:'Inbound',s:'An AI receptionist on the business number',b:['Answer 24/7 or within opening hours; greetings for new callers and returning leads.','Messages and callback tasks, missed callers with reasons, auto call-back, daily email summary.','Transfer to a human (number + condition).'],d:'Calling the number gets answered, messages land in the inbox, and transfer works.'},
+    {n:9,t:'In-call actions',s:'Do things during the call',b:['Google Calendar booking, Google Sheets read and write, custom HTTP API tool, WhatsApp messages via a WhatsApp provider. All off by default, switched on per agent.'],d:'A test call books a slot and sends a WhatsApp confirmation.'},
+    {n:10,t:'Training and knowledge',s:'Teach the agent your business',b:['Teach by typing, speaking or photo; each item becomes a fact or a rule, and you review it before saving.','Document upload, pulled in only when relevant (search with pgvector embeddings).','Struggle detector on real calls turns problems into one-tap teaching suggestions.'],d:'A photographed price list changes the agent\'s answers correctly.'},
+    {n:11,t:'Developer platform',s:'API keys and webhooks',b:['API keys, public REST API, OpenAPI spec, Postman collection, request log.','Signed webhooks for 6 call, lead and campaign events, delivery log, resend, rotate secret.','Per-employee result webhooks with a trigger: all connected calls, skip voicemail, or voicemail only.'],d:'An n8n flow receives signed events and can start calls through the API.'},
+    {n:12,t:'Reliability and admin',s:'Keep calls up, run the business',b:['Backup provider for each of STT, LLM and TTS, switched during a call if one fails; Premium falls back to Value at the Value price.','Spoken apology and clean hangup on fatal errors.','Tracking provider balances and costs, carrier capacity, concurrent calls.','Admin console: accounts, logged staff impersonation, credit adjustments, voices, health, revenue.'],d:'Killing one provider mid-call keeps the call alive.'},
+    {n:13,t:'Marketing site and help centre',s:'Public site and docs',b:['Landing page, channels, pricing, comparison pages, glossary, blog, legal pages.','In-app help centre covering every feature, in our own words.'],d:'The site is live on the domain, and every feature has a help article.'},
+    {n:14,t:'Parity check and launch hardening',s:'Prove V1 matches Outpero',b:['Check every feature in the Outpero map, one by one.','Load test concurrent calls, security review, backups.','Native-speaker testing for Telugu, English and Hindi; beta with real businesses.'],d:'Parity checklist 100%, beta businesses running real calls.'}
+  ];
+  var track=document.getElementById('track'), list=document.getElementById('phaseList');
+  phases.forEach(function(p,idx){
+    var a=document.createElement('a'); a.href='#ph'+p.n; a.textContent='P'+p.n; a.title=p.t; track.appendChild(a);
+    if(idx<phases.length-1){var s=document.createElement('span');s.className='arr';s.textContent='→';track.appendChild(s);}
+    var det=document.createElement('details'); det.className='phase'; det.id='ph'+p.n; if(p.n<=1) det.open=true;
+    var lis=p.b.map(function(x){return '<li>'+x+'</li>'}).join('');
+    det.innerHTML='<summary><div class="num">'+p.n+'</div><div class="hd"><b>'+p.t+'</b><span>'+p.s+'</span></div><span class="chev">›</span></summary><div class="body"><ul>'+lis+'</ul><div class="done"><b>Done when:</b> '+p.d+'</div></div>';
+    list.appendChild(det);
+  });
+  track.addEventListener('click',function(e){var a=e.target.closest('a'); if(!a) return; var d=document.querySelector(a.getAttribute('href')); if(d) d.open=true;});
+
+  // accounts
+  var acc=[
+    ['co','Registered company + GST','Required for Razorpay, Vobiz number KYC, telemarketing registration (DLT), invoices','You','P0',1],
+    ['legal','Lawyer: TRAI / DLT and DPDP opinion','Which numbers to use for lead calls; privacy policy and terms','You','P0',0],
+    ['domain','Domain name','Public URLs for the Vobiz answer URL, API, dashboard and site','You','P1',1],
+    ['cf','Cloudflare (DNS, R2, Turnstile)','DNS and TLS, recording storage, bot protection on signup','You → Me','P1',1],
+    ['vobiz','Vobiz','Phone numbers, outbound and inbound calls, live audio stream, number KYC sub-accounts','You','P1',1],
+    ['sarvam','Sarvam AI','Speech-to-text (Saaras) and Value voices (Bulbul) for Telugu, English, Hindi','You → Me','P1',1],
+    ['gemini','Google AI (Gemini API)','The LLM brain: Gemini 2.5 Flash','You → Me','P1',1],
+    ['cloud','Cloud host in an India region (e.g. AWS Mumbai)','Runs the voice engine, API and workers close to Vobiz and Sarvam','You → Me','P1',1],
+    ['phones','Test phones + native Telugu and Hindi speakers','Real calls to judge quality and response time','You','P1',1],
+    ['gh','GitHub repo','Code, CI, deploys','You → Me','P2',0],
+    ['supa','Supabase','Login (email + Google) and managed Postgres','Me','P2',0],
+    ['redis','Managed Redis','Dial queue, retries, campaign scheduling','Me','P2',0],
+    ['sentry','Error monitoring (e.g. Sentry)','Alerts on crashes in the API and engine','Me','P2',0],
+    ['smallest','Smallest AI','Standard-tier voices; backup speech-to-text','You → Me','P3',0],
+    ['cartesia','Cartesia','Premium-tier voices','You → Me','P3',0],
+    ['posthog','PostHog (EU)','Shows where users get stuck in onboarding only','Me','P3',0],
+    ['meta','Meta developer app','Lead Ads webhook for Instant leads','You → Me','P4',0],
+    ['email','Transactional email provider','Low-balance emails, daily inbound summary, alerts','Me','P5',0],
+    ['rzp','Razorpay business account','Credit top-ups by card and UPI','You','P6',0],
+    ['dlt','DLT / 140-series registration (if the lawyer says so)','Legal promotional calling','You','P6',0],
+    ['gcp','Google Cloud OAuth app (verified)','Calendar booking and Sheets in calls; sensitive scopes need Google\'s app verification','You → Me','P9',0],
+    ['wa','WhatsApp provider (Interakt or AiSensy) + templates','WhatsApp messages during and after calls','You','P9',0],
+    ['soniox','Soniox (optional)','Second backup speech-to-text','Me','P12',0]
+  ];
+  var KEYC='v1bp-checks', checks={};
+  try{checks=JSON.parse(localStorage.getItem(KEYC)||'{}')||{};}catch(e){checks={};}
+  var tbody=document.getElementById('accRows');
+  acc.forEach(function(r){
+    var tr=document.createElement('tr'); tr.dataset.who=r[3]; tr.dataset.first=r[5];
+    var whoPill = r[3]==='You'?'p-warn':(r[3]==='Me'?'p-ok':'p-acc');
+    tr.innerHTML='<td><input type="checkbox" aria-label="Done: '+r[1]+'" data-k="'+r[0]+'"></td><td><b>'+r[1]+'</b></td><td>'+r[2]+'</td><td><span class="pill '+whoPill+'">'+r[3]+'</span></td><td><span class="pill p-mute">'+r[4]+'</span></td>';
+    var cb=tr.querySelector('input'); cb.checked=!!checks[r[0]]; if(cb.checked) tr.classList.add('done');
+    cb.addEventListener('change',function(){checks[r[0]]=cb.checked; tr.classList.toggle('done',cb.checked); try{localStorage.setItem(KEYC,JSON.stringify(checks));}catch(e){} prog();});
+    tbody.appendChild(tr);
+  });
+  function prog(){
+    var done=acc.filter(function(r){return checks[r[0]]}).length;
+    document.getElementById('progBar').style.width=(done/acc.length*100)+'%';
+    var p1=acc.filter(function(r){return r[5]}), p1d=p1.filter(function(r){return checks[r[0]]}).length;
+    document.getElementById('progText').textContent=done+' of '+acc.length+' done · Phase 1 blockers: '+p1d+' of '+p1.length+' done';
+  }
+  prog();
+  document.getElementById('filters').addEventListener('click',function(e){
+    var b=e.target.closest('button'); if(!b) return;
+    this.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});
+    var f=b.dataset.f;
+    tbody.querySelectorAll('tr').forEach(function(tr){
+      var show = f==='all' || (f==='first'&&tr.dataset.first==='1') || (f==='you'&&tr.dataset.who.indexOf('You')===0) || (f==='me'&&tr.dataset.who.indexOf('Me')>=0);
+      tr.style.display=show?'':'none';
+    });
+  });
+
+  // findings (from findings.json claims)
+  var F=[
+    ['Outpero\'s public app code shows about 170 API endpoints (admin excluded), so the full feature set can be mapped.','single-source','S1'],
+    ['Features not on Outpero\'s marketing site: transfer to a human on inbound, hourly spend caps, per-voice language quality scores, leaderboard and best-hour analytics, a second phone-line provider.','single-source','S1'],
+    ['Vobiz streams call audio over a JSON WebSocket (start / media / playAudio / checkpoint / clearAudio). Audio we send back must be raw Linear16 with no WAV header.','verified','S3, S4'],
+    ['Pipecat has ready-made connectors for Twilio, Plivo, Exotel, Telnyx and Vonage, but not Vobiz.','single-source','S5'],
+    ['Smart Turn v3 is an open model (BSD-2, about 8M parameters) that runs on an ordinary CPU and is Pipecat\'s default turn detector.','single-source','S6'],
+    ['Sarvam\'s Bulbul voices cover 11 languages and its Saaras speech-to-text covers 22 Indian languages plus English, including Telugu and Hindi.','single-source','S7'],
+    ['TRAI\'s February 2025 change bars ordinary 10-digit numbers from telemarketing: 140-series for promotional calls, 1600-series for service and transactional calls.','verified','S10, S11'],
+    ['The DPDP Rules were notified in November 2025, and core duties apply from 13 May 2027.','verified','S12']
+  ];
+  var fg=document.getElementById('findingsGrid');
+  F.forEach(function(f){
+    var cls=f[1]==='verified'?'p-ok':(f[1]==='single-source'?'p-warn':'p-acc');
+    var d=document.createElement('div'); d.className='card';
+    d.innerHTML='<span class="pill '+cls+'">'+f[1]+'</span><p>'+f[0]+'</p><p class="meta">Source: '+f[2]+'</p>';
+    fg.appendChild(d);
+  });
+
+  // references
+  var R=[
+    ['S1','Outpero public app bundle','Outpero','2026-10-24','https://app.outpero.com/','T1'],
+    ['S2','Outpero help centre','Outpero','2026-10-24','https://docs.outpero.com','T1'],
+    ['S3','Build a Voice Agent using Vobiz','Sarvam AI','2026','https://docs.sarvam.ai/api/integration/build-voice-agent-with-vobiz','T1'],
+    ['S4','Vobiz telephony integration guide','Dograh','2026','https://docs.dograh.com/integrations/telephony/vobiz','T3'],
+    ['S5','Pipecat frame serializers','Pipecat','2026','https://docs.pipecat.ai/server/services/serializers/introduction','T1'],
+    ['S6','Smart Turn v3 model card','Pipecat / Daily','2026','https://huggingface.co/pipecat-ai/smart-turn-v3','T1'],
+    ['S7','Sarvam models (Saaras, Bulbul)','Sarvam AI','2026','https://docs.sarvam.ai/api-reference-docs/getting-started/models','T1'],
+    ['S8','Cartesia TTS models','Cartesia','2026','https://docs.cartesia.ai/build-with-cartesia/tts-models/latest','T1'],
+    ['S9','Smallest models (Lightning, Pulse)','Smallest AI','2026','https://docs.smallest.ai/waves/documentation/getting-started/models','T1'],
+    ['S10','TRAI press release No. 11 of 2025','TRAI','2025-02','https://cms.trai.gov.in/sites/default/files/2025-02/PR_No.11of2025.pdf','T1'],
+    ['S11','TRAI clarifies 1600 and 140 series','Telangana Today','2026','https://telanganatoday.com/trai-clarifies-rules-for-1600-and-140-number-series-to-prevent-misinformation','T2'],
+    ['S12','India\'s DPDP framework comes into effect','AZB & Partners','2025-11','https://www.azbpartners.com/bank/update-indias-digital-personal-data-protection-framework-comes-into-effect/','T2'],
+    ['S16','Sarvam API pricing','Sarvam AI','2026','https://docs.sarvam.ai/api-reference-docs/pricing','T1']
+  ];
+  var rl=document.getElementById('refList');
+  R.forEach(function(r){
+    var li=document.createElement('li');
+    li.innerHTML='<b>'+r[0]+'</b> · '+r[2]+', "'+r[1]+'", '+r[3]+' · <span class="pill p-mute">'+r[5]+'</span><br><a href="'+r[4]+'" target="_blank" rel="noopener">'+r[4]+'</a>';
+    rl.appendChild(li);
+  });
+})();
+</script>
+</body>
+</html>
