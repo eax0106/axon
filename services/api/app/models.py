@@ -62,9 +62,10 @@ def _account_fk() -> Mapped[uuid.UUID]:
 
 
 class Role(StrEnum):
+    """A user's role inside their own account. Platform staff is a separate flag on User."""
+
     OWNER = "owner"
     MEMBER = "member"
-    ADMIN = "admin"  # platform staff: admin console, provider health, impersonation
 
 
 class Channel(StrEnum):
@@ -187,6 +188,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320))
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(_enum(Role, "user_role"), default=Role.OWNER)
+    # ALTERX staff: admin console, provider health, impersonation. Never set through the API.
+    is_platform_admin: Mapped[bool] = mapped_column(server_default=text("false"))
     created_at: Mapped[datetime] = _created()
 
 
@@ -206,11 +209,20 @@ class Voice(Base):
 
 class PhoneNumber(Base):
     __tablename__ = "numbers"
-    __table_args__ = (CheckConstraint("channels >= 1", name="channels_positive"),)
+    __table_args__ = (
+        CheckConstraint("channels >= 1", name="channels_positive"),
+        # Released numbers keep their row (history) and the same number can be bought again.
+        Index(
+            "uq_numbers_e164_held",
+            "e164",
+            unique=True,
+            postgresql_where=text("status <> 'released'"),
+        ),
+    )
     id: Mapped[uuid.UUID] = _pk()
     account_id: Mapped[uuid.UUID] = _account_fk()
     provider: Mapped[str] = mapped_column(String(50))
-    e164: Mapped[str] = mapped_column(String(20), unique=True)
+    e164: Mapped[str] = mapped_column(String(20))
     number_type: Mapped[NumberType] = mapped_column(_enum(NumberType, "number_type"))
     channels: Mapped[int] = mapped_column(server_default="1")
     status: Mapped[NumberStatus] = mapped_column(_enum(NumberStatus, "number_status"))
@@ -271,6 +283,8 @@ class Campaign(Base):
     account_id: Mapped[uuid.UUID] = _account_fk()
     employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(200))
+    # Overrides the employee's purpose for this campaign when set (DECISIONS: purpose rule table).
+    purpose: Mapped[Purpose | None] = mapped_column(_enum(Purpose, "purpose"))
     status: Mapped[CampaignStatus] = mapped_column(
         _enum(CampaignStatus, "campaign_status"), default=CampaignStatus.DRAFT
     )

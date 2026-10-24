@@ -104,13 +104,27 @@ def test_token_for_a_deleted_user_is_rejected(db_client: TestClient, migrated_ur
     assert db_client.get("/accounts/me", headers=_auth(token)).status_code == 401
 
 
-@pytest.mark.parametrize(("role", "expected"), [("owner", 403), ("member", 403), ("admin", 200)])
-def test_admin_providers_needs_the_admin_role(
-    db_client: TestClient, migrated_url: str, role: str, expected: int
+@pytest.mark.parametrize(
+    ("role", "platform_admin", "expected"),
+    [("owner", False, 403), ("member", False, 403), ("member", True, 200)],
+)
+def test_admin_providers_needs_the_platform_admin_flag_not_an_account_role(
+    db_client: TestClient, migrated_url: str, role: str, platform_admin: bool, expected: int
 ) -> None:
     token = _signup(db_client)
-    sql(migrated_url, "UPDATE users SET role = :r", {"r": role})
+    sql(
+        migrated_url,
+        "UPDATE users SET role = :r, is_platform_admin = :p",
+        {"r": role, "p": platform_admin},
+    )
     assert db_client.get("/admin/providers", headers=_auth(token)).status_code == expected
+
+
+def test_account_roles_are_owner_and_member_only(db_client: TestClient, migrated_url: str) -> None:
+    _signup(db_client)
+    assert sql(migrated_url, "SELECT is_platform_admin FROM users") is False
+    with pytest.raises(Exception, match="ck_users_user_role"):
+        sql(migrated_url, "UPDATE users SET role = 'admin'")
 
 
 def test_admin_providers_needs_a_token(db_client: TestClient) -> None:

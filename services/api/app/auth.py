@@ -1,7 +1,6 @@
 """Own email/password auth: argon2 password hashes, HS256 JWT bearer tokens, account roles."""
 
 import uuid
-from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -76,16 +75,11 @@ async def current_user(
 CurrentUser = Annotated[User, Depends(current_user)]
 
 
-def require_role(*roles: Role) -> Callable[[User], Awaitable[User]]:
-    async def check(user: CurrentUser) -> User:
-        if user.role not in roles:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "not allowed for this role")
-        return user
-
-    return check
-
-
-require_admin = require_role(Role.ADMIN)
+async def require_admin(user: CurrentUser) -> User:
+    """Platform staff only; account roles never grant this."""
+    if not user.is_platform_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "platform admins only")
+    return user
 
 
 class Credentials(BaseModel):

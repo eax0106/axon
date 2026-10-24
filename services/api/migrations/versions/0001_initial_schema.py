@@ -221,9 +221,15 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_numbers")),
-        sa.UniqueConstraint("e164", name=op.f("uq_numbers_e164")),
     )
     op.create_index(op.f("ix_numbers_account_id"), "numbers", ["account_id"], unique=False)
+    op.create_index(
+        "uq_numbers_e164_held",
+        "numbers",
+        ["e164"],
+        unique=True,
+        postgresql_where=sa.text("status <> 'released'"),
+    )
     op.create_table(
         "payments",
         sa.Column("id", sa.Uuid(), server_default=sa.text("gen_random_uuid()"), nullable=False),
@@ -272,13 +278,15 @@ def upgrade() -> None:
             sa.Enum(
                 "owner",
                 "member",
-                "admin",
                 name="user_role",
                 native_enum=False,
                 create_constraint=True,
                 length=32,
             ),
             nullable=False,
+        ),
+        sa.Column(
+            "is_platform_admin", sa.Boolean(), server_default=sa.text("false"), nullable=False
         ),
         sa.Column(
             "created_at",
@@ -586,6 +594,19 @@ def upgrade() -> None:
         sa.Column("employee_id", sa.Uuid(), nullable=False),
         sa.Column("name", sa.String(length=200), nullable=False),
         sa.Column(
+            "purpose",
+            sa.Enum(
+                "promotional",
+                "service",
+                "transactional",
+                name="purpose",
+                native_enum=False,
+                create_constraint=True,
+                length=32,
+            ),
+            nullable=True,
+        ),
+        sa.Column(
             "status",
             sa.Enum(
                 "draft",
@@ -854,6 +875,11 @@ def downgrade() -> None:
     op.drop_table("users")
     op.drop_index(op.f("ix_payments_account_id"), table_name="payments")
     op.drop_table("payments")
+    op.drop_index(
+        "uq_numbers_e164_held",
+        table_name="numbers",
+        postgresql_where=sa.text("status <> 'released'"),
+    )
     op.drop_index(op.f("ix_numbers_account_id"), table_name="numbers")
     op.drop_table("numbers")
     op.drop_index(op.f("ix_notifications_account_id"), table_name="notifications")

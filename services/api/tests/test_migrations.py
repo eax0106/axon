@@ -44,6 +44,11 @@ def test_schema_constraints_hold_in_postgres(migrated_url: str) -> None:
     assert sql(migrated_url, number, {**params, "e164": "+911400000001", "t": "140"})
     with pytest.raises(Exception, match="ck_numbers_number_type"):
         sql(migrated_url, number, {**params, "e164": "+911400000002", "t": "160"})
+    # A released number keeps its row and can be bought again; a held one cannot be duplicated.
+    sql(migrated_url, "UPDATE numbers SET status = 'released' WHERE e164 = '+911400000001'")
+    assert sql(migrated_url, number, {**params, "e164": "+911400000001", "t": "140"})
+    with pytest.raises(Exception, match="uq_numbers_e164_held"):
+        sql(migrated_url, number, {**params, "e164": "+911400000001", "t": "140"})
     lead = "INSERT INTO leads (account_id, phone) VALUES (:a, '+919000000001')"
     sql(migrated_url, lead, params)
     with pytest.raises(Exception, match="uq_leads_account_id_phone"):
