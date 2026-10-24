@@ -1,0 +1,13 @@
+[project]
+name = "axon-worker"
+version = "0.0.0"
+requires-python = "==3.12.*"
+dependencies = ["arq"]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "worker"
+module-root = ""

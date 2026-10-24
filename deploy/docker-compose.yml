@@ -1,0 +1,63 @@
+name: axon
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+asyncpg://axon:axon@postgres:5432/axon
+  REDIS_URL: redis://redis:6379/0
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: axon
+      POSTGRES_PASSWORD: axon
+      POSTGRES_DB: axon
+    ports: ["${AXON_PG_PORT:-5432}:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axon -d axon"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["${AXON_REDIS_PORT:-6379}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    image: axon-api:dev
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { SERVICE: api } }
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: [{ path: ../.env, required: false }]
+    environment: *app-env
+    ports: ["${AXON_API_PORT:-8000}:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/readyz', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    image: axon-worker:dev
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { SERVICE: worker } }
+    command: ["arq", "worker.main.WorkerSettings"]
+    env_file: [{ path: ../.env, required: false }]
+    environment: *app-env
+    depends_on:
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "arq", "--check", "worker.main.WorkerSettings"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  pgdata:
