@@ -9,8 +9,8 @@ Legend: `todo` · `building` · `in review` · `changes` · `merged` · `blocked
 | Phase | Title | Builder | Status | PR | Notes |
 |---|---|---|---|---|---|
 | B0 | Foundation (monorepo, Docker Compose, CI on 3 OSes, settings, provider registry) | Opus | merged | [#1](https://github.com/eax0106/axon/pull/1) f1a5f18 | 2 review rounds; L1 admin-gate carried to B1 |
-| B1 | Data model + auth | Opus | building | | |
-| B2 | Voice engine (Pipecat, Vobiz serializer) | Opus | todo | | |
+| B1 | Data model + auth | Opus | merged | [#2](https://github.com/eax0106/axon/pull/2) 0da5c82 | 2 review rounds; carry-overs B7 ledger idempotency, B13 token revocation, B14 rate limit |
+| B2 | Voice engine (Pipecat, Vobiz serializer) | Opus | building | | |
 | B3 | Speech + LLM provider adapters | Sonnet | todo | | |
 | B4 | AI employee builder | Sonnet | todo | | |
 | B5 | Instant channel | Sonnet | todo | | |
