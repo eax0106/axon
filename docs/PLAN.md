@@ -8,8 +8,8 @@ Legend: `todo` · `building` · `in review` · `changes` · `merged` · `blocked
 
 | Phase | Title | Builder | Status | PR | Notes |
 |---|---|---|---|---|---|
-| B0 | Foundation (monorepo, Docker Compose, CI on 3 OSes, settings, provider registry) | Opus | todo | | |
-| B1 | Data model + auth | Opus | todo | | |
+| B0 | Foundation (monorepo, Docker Compose, CI on 3 OSes, settings, provider registry) | Opus | merged | [#1](https://github.com/eax0106/axon/pull/1) f1a5f18 | 2 review rounds; L1 admin-gate carried to B1 |
+| B1 | Data model + auth | Opus | building | | |
 | B2 | Voice engine (Pipecat, Vobiz serializer) | Opus | todo | | |
 | B3 | Speech + LLM provider adapters | Sonnet | todo | | |
 | B4 | AI employee builder | Sonnet | todo | | |
@@ -35,7 +35,7 @@ See `docs/WIRING_CHECKLIST.md`.
 
 ## Prerequisites before B0
 
-- [ ] Owner grants Write access on `eax0106/axon` to GitHub account `havishaivardhan-svg` (currently read-only)
-- [ ] Owner decides public or private repo (private recommended)
+- [x] Write access on `eax0106/axon` (account havishvardhan04-creator)
+- [x] Repo stays public (owner, 2026-10-24)
 - [x] Project folder created: `~/Desktop/Projects/axon-voice-engine`
 - [x] Docs, rules and hooks in place
