@@ -13,6 +13,7 @@ from functools import cache
 class Settings:
     database_url: str
     redis_url: str
+    jwt_secret: str  # empty = auth not configured; auth routes answer 503
 
 
 @cache
@@ -22,4 +23,5 @@ def get_settings() -> Settings:
             "DATABASE_URL", "postgresql+asyncpg://axon:axon@localhost:5432/axon"
         ),
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+        jwt_secret=os.environ.get("AXON_JWT_SECRET", ""),
     )

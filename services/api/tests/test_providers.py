@@ -2,11 +2,13 @@ from collections.abc import Iterator
 from typing import Annotated
 
 import pytest
-from app.main import provider_not_configured
-from app.providers import registry
-from app.providers.base import Provider, ProviderKind
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+
+from app.auth import require_admin
+from app.main import app, provider_not_configured
+from app.providers import registry
+from app.providers.base import Provider, ProviderKind
 
 
 class _BrokenVendor(Provider):
@@ -27,6 +29,16 @@ class _HealthyVendor(Provider):
 
     async def health(self) -> None:
         return None
+
+
+@pytest.fixture(autouse=True)
+def as_admin() -> Iterator[None]:
+    """Provider tests run as an admin; the role check itself is covered in test_auth.py."""
+    app.dependency_overrides[require_admin] = lambda: None
+    registry._health_cache.clear()
+    yield
+    app.dependency_overrides.clear()
+    registry._health_cache.clear()
 
 
 @pytest.fixture
@@ -149,3 +161,23 @@ def test_vendor_with_keys_and_adapter_is_returned(
 ) -> None:
     monkeypatch.setenv("SARVAM_API_KEY", "set-in-test")
     assert needs_stt.get("/needs-stt").json() == "sarvam"
+
+
+def test_health_checks_are_cached_within_the_ttl(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, healthy_cartesia_adapter: None
+) -> None:
+    calls: list[str] = []
+
+    async def counted(self: Provider) -> None:
+        calls.append(self.name)
+
+    monkeypatch.setattr(_HealthyVendor, "health", counted)
+    monkeypatch.setenv("CARTESIA_API_KEY", "set-in-test")
+    for _ in range(3):
+        assert _row(client, "tts", "cartesia")["status"] == "configured"
+    assert calls == ["cartesia"]
+    monkeypatch.setattr(registry, "HEALTH_TTL_S", 0.0)
+    registry._health_cache.clear()
+    _row(client, "tts", "cartesia")
+    _row(client, "tts", "cartesia")
+    assert calls == ["cartesia"] * 3  # with no TTL every request checks again

@@ -1,4 +1,4 @@
-"""Start the Docker Compose stack and prove it works. Prints COMPOSE HEALTHY on success.
+"""Start the Docker Compose stack, migrated, and prove it works. Prints COMPOSE HEALTHY on success.
 
 Usage: uv run python scripts/compose_smoke.py [--down]
 """
@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -27,12 +28,32 @@ def main() -> None:
             [*COMPOSE, "up", "-d", "--build", "--wait", "--wait-timeout", "240"], check=True
         )
         assert get_json("/readyz") == {"status": "ready"}
-        providers = get_json("/admin/providers")["providers"]
-        assert providers and {p["status"] for p in providers} <= {
-            "configured",
-            "missing_key",
-            "unhealthy",
-        }
+        revision = subprocess.run(
+            [
+                *COMPOSE,
+                "exec",
+                "-T",
+                "postgres",
+                "psql",
+                "-U",
+                "axon",
+                "-d",
+                "axon",
+                "-Atc",
+                "SELECT version_num FROM alembic_version",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert revision, "migrations did not run"
+        print(f"migrated to {revision}")
+        # /admin/providers needs an admin token since B1; 401 proves it is mounted and guarded.
+        try:
+            get_json("/admin/providers")
+            raise AssertionError("/admin/providers answered without a token")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 401, exc.code
         for image in ("axon-api:dev", "axon-worker:dev"):
             size = subprocess.run(
                 ["docker", "image", "inspect", "--format", "{{.Size}}", image],

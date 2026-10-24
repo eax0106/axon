@@ -8,6 +8,7 @@ only when keys are set and the adapter's health check passes.
 
 import asyncio
 import os
+import time
 from dataclasses import dataclass
 from typing import Literal
 
@@ -46,6 +47,10 @@ ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {}
 
 Status = Literal["configured", "missing_key", "unhealthy"]
 HEALTH_TIMEOUT_S = 5.0
+HEALTH_TTL_S = 30.0
+# (kind, vendor) -> (monotonic expiry, error or None). Keeps /admin/providers from calling every
+# vendor on every request. ponytail: per-process; concurrent misses may both call the vendor.
+_health_cache: dict[tuple[ProviderKind, str], tuple[float, str | None]] = {}
 
 
 class ProviderNotConfiguredError(Exception):
@@ -110,11 +115,22 @@ async def _report(kind: ProviderKind, name: str, selected: str | None) -> Provid
         if exc.missing_keys:
             return row("missing_key", exc.missing_keys)
         return row("unhealthy", [], exc.detail)
+    error = await _health_error(provider)
+    return row("unhealthy", [], error) if error else row("configured", [])
+
+
+async def _health_error(provider: Provider) -> str | None:
+    key, now = (provider.kind, provider.name), time.monotonic()
+    cached = _health_cache.get(key)
+    if cached and cached[0] > now:
+        return cached[1]
+    error = None
     try:
         await asyncio.wait_for(provider.health(), HEALTH_TIMEOUT_S)
     except Exception as exc:
-        return row("unhealthy", [], f"{type(exc).__name__}: {exc}"[:200])
-    return row("configured", [])
+        error = f"{type(exc).__name__}: {exc}"[:200]
+    _health_cache[key] = (now + HEALTH_TTL_S, error)
+    return error
 
 
 async def report_all() -> list[ProviderReport]:
