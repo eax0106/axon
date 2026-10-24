@@ -14,12 +14,21 @@ from typing import Any
 
 COMPOSE = ["docker", "compose", "-f", str(Path(__file__).parents[1] / "deploy/docker-compose.yml")]
 API = f"http://localhost:{os.environ.get('AXON_API_PORT', '8000')}"
+ENGINE = f"http://localhost:{os.environ.get('AXON_ENGINE_PORT', '8001')}"
 MAX_IMAGE_BYTES = 1_000_000_000
 
 
-def get_json(path: str) -> Any:
-    with urllib.request.urlopen(API + path, timeout=5) as response:
+def get_json(path: str, base: str = API) -> Any:
+    with urllib.request.urlopen(base + path, timeout=5) as response:
         return json.load(response)
+
+
+def http_error(url: str, method: str = "GET") -> urllib.error.HTTPError:
+    try:
+        urllib.request.urlopen(urllib.request.Request(url, method=method), timeout=5)
+    except urllib.error.HTTPError as exc:
+        return exc
+    raise AssertionError(f"{method} {url} unexpectedly succeeded")
 
 
 def main() -> None:
@@ -49,20 +58,34 @@ def main() -> None:
         assert revision, "migrations did not run"
         print(f"migrated to {revision}")
         # /admin/providers needs an admin token since B1; 401 proves it is mounted and guarded.
-        try:
-            get_json("/admin/providers")
-            raise AssertionError("/admin/providers answered without a token")
-        except urllib.error.HTTPError as exc:
-            assert exc.code == 401, exc.code
-        for image in ("axon-api:dev", "axon-worker:dev"):
+        assert http_error(API + "/admin/providers").code == 401
+        assert get_json("/healthz", ENGINE) == {"status": "ok"}
+        # Without vendor keys the engine must refuse calls, not pretend to answer them.
+        refused = http_error(ENGINE + "/vobiz/answer", "POST")
+        assert refused.code == 503
+        assert json.load(refused)["error"] == "provider_not_configured"
+        for image in ("axon-api:dev", "axon-engine:dev", "axon-worker:dev"):
+            # Unpacked size of the image's filesystem. `docker image inspect` reports compressed
+            # size on some Docker setups and unpacked on others, so it can't be compared.
             size = subprocess.run(
-                ["docker", "image", "inspect", "--format", "{{.Size}}", image],
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--user",
+                    "root",
+                    "--entrypoint",
+                    "du",
+                    image,
+                    "-sxb",
+                    "/",
+                ],
                 capture_output=True,
                 text=True,
                 check=True,
-            ).stdout
-            assert int(size) < MAX_IMAGE_BYTES, f"{image} is {int(size) / 1e6:.0f} MB"
-            print(f"{image}: {int(size) / 1e6:.0f} MB")
+            ).stdout.split()[0]
+            assert int(size) < MAX_IMAGE_BYTES, f"{image} is {int(size) / 1e6:.0f} MB unpacked"
+            print(f"{image}: {int(size) / 1e6:.0f} MB unpacked")
     except Exception:
         subprocess.run([*COMPOSE, "ps", "-a"], check=False)
         subprocess.run([*COMPOSE, "logs", "--tail", "50"], check=False)

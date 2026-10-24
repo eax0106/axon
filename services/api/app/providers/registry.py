@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from app.providers.base import Provider, ProviderKind
+from app.providers.telephony.vobiz import VobizTelephony
 
 _VOBIZ = ("VOBIZ_AUTH_ID", "VOBIZ_AUTH_TOKEN")
 _GOOGLE = ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET")
@@ -42,8 +43,10 @@ VENDOR_KEYS: dict[ProviderKind, dict[str, tuple[str, ...]]] = {
     ProviderKind.NUMBER_KYC: {"vobiz": _VOBIZ},
 }
 
-# (kind, vendor) -> adapter class. Filled by the phases that build real adapters.
-ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {}
+# (kind, vendor) -> adapter class. Each phase adds the real adapters it builds.
+ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
+    (ProviderKind.TELEPHONY, "vobiz"): VobizTelephony,
+}
 
 Status = Literal["configured", "missing_key", "unhealthy"]
 HEALTH_TIMEOUT_S = 5.0

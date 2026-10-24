@@ -6,7 +6,14 @@ from app.providers.base import ProviderKind
 from app.providers.registry import VENDOR_KEYS
 
 ROOT = Path(__file__).parents[3]
-NON_PROVIDER_VARS = {"DATABASE_URL", "REDIS_URL", "AXON_JWT_SECRET", "AXON_TEST_DATABASE_URL"}
+NON_PROVIDER_VARS = {
+    "DATABASE_URL",
+    "REDIS_URL",
+    "AXON_JWT_SECRET",
+    "AXON_TEST_DATABASE_URL",
+    "AXON_TEST_REDIS_URL",
+    "AXON_ENGINE_PUBLIC_URL",
+}
 
 
 def test_env_example_lists_exactly_the_registry_keys_and_selectors() -> None:

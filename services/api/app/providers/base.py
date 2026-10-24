@@ -23,8 +23,8 @@ class ProviderKind(StrEnum):
 class Provider(ABC):
     """Base for every adapter.
 
-    ponytail: kind-specific interfaces (TelephonyProvider, SpeechToTextProvider, ...) are added
-    by the phase that builds their first real adapter (B2 telephony, B3 speech and LLM, ...).
+    ponytail: kind-specific interfaces are added by the phase that builds their first real
+    adapter (B2 telephony and storage, B3 speech and LLM, ...).
     """
 
     kind: ClassVar[ProviderKind]
@@ -33,3 +33,23 @@ class Provider(ABC):
     @abstractmethod
     async def health(self) -> None:
         """Make one cheap authenticated call to the vendor; raise if it fails."""
+
+
+class TelephonyProvider(Provider):
+    kind = ProviderKind.TELEPHONY
+
+    @abstractmethod
+    async def is_live(self, call_uuid: str) -> bool:
+        """Whether the carrier has this call up right now."""
+
+    @abstractmethod
+    async def hang_up(self, call_uuid: str) -> None:
+        """End the call; a call that already ended is not an error."""
+
+
+class ObjectStorageProvider(Provider):
+    kind = ProviderKind.STORAGE
+
+    @abstractmethod
+    async def put(self, key: str, data: bytes, content_type: str) -> None:
+        """Store `data` at `key`, replacing anything there."""

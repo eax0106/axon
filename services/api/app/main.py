@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
+from app.live import router as live_router
 from app.providers.registry import ProviderNotConfiguredError, report_all
 from app.settings import get_settings
 
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Axon Voice Engine API", lifespan=lifespan)
 app.include_router(auth_router)
+app.include_router(live_router)
 
 
 @app.exception_handler(AuthNotConfiguredError)
