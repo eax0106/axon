@@ -20,7 +20,7 @@ Sessions don't share chat history. **The repo is the memory:** `docs/PLAN.md`, `
 | Role | Always on | At its step |
 |---|---|---|
 | Orchestrator | `unlazy` orchestrated mode: `.unlazy/axon/PLAN.md` with one leaf per phase | — |
-| Backend builder | `unlazy` (write the phase GATES first) + `ponytail` (every line of code) | `/verify` before every commit |
+| Backend builder | `unlazy` (write the phase GATES first) + `ponytail` (every line of code); both invoked explicitly via the Skill tool at the start of every phase and confirmed in the report (owner rule, 2026-10-24) | `/verify` before every commit |
 | Reviewer | `unlazy` (`--reverify` the builder's gates) | `/thermo-nuclear-code-quality-review`, the only review skill |
 | Security tester | `unlazy` | `/strix` on the running local backend (needs Docker, a ~5.8 GB image, and `STRIX_LLM` + `LLM_API_KEY`) |
 | Frontend builder | `unlazy` + `ponytail` | `/verify` before commits. No design-workflow skills; follow `docs/DESIGN_DIRECTION.md` |
