@@ -126,7 +126,10 @@ async def run_call(
             user_idle_timeout=settings.silence_timeout_s,
         ),
     )
-    recorder = AudioBufferProcessor(num_channels=2)  # caller left, bot right
+    # Caller left, bot right, at the phone line's 8 kHz.
+    # ponytail: buffers the whole call in RAM (32 KB/s, ~19 MB for a 10-min call); stream chunks
+    # to storage with buffer_size if concurrent calls per engine make that matter.
+    recorder = AudioBufferProcessor(sample_rate=8000, num_channels=2)
     pipeline = Pipeline(
         [
             transport.input(),
@@ -184,6 +187,13 @@ async def run_call(
     )
     try:
         await PipelineRunner(handle_sigint=False).run(task)
+    except asyncio.CancelledError:
+        # Cancelling the pipeline when the caller hangs up surfaces here as CancelledError; that
+        # is a normal end of call, so finish it (recording, usage, `ended`). Re-raise any other.
+        current = asyncio.current_task()
+        if "caller_hung_up" not in ended or current is None:
+            raise
+        current.uncancel()
     finally:
         cap.cancel()
         observer.usage.ended_at = time.monotonic()

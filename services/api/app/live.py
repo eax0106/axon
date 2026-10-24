@@ -27,6 +27,9 @@ async def live_call(websocket: WebSocket, call_id: uuid.UUID, token: str = "") -
     Closes with 4401 for a bad token and 4404 for a call outside the user's account; otherwise
     forwards every event until the call's `ended` event or the client goes away.
     """
+    # Accept first: a close before accept becomes a plain HTTP 403 and the browser never sees
+    # the 4401 / 4404 code.
+    await websocket.accept()
     async with async_sessionmaker(websocket.app.state.db)() as session:
         try:
             user = await user_from_token(session, token)
@@ -37,7 +40,6 @@ async def live_call(websocket: WebSocket, call_id: uuid.UUID, token: str = "") -
     if call is None or call.account_id != user.account_id:
         await websocket.close(code=4404)
         return
-    await websocket.accept()
 
     async with websocket.app.state.redis.pubsub() as pubsub:
         await pubsub.subscribe(channel(str(call_id)))

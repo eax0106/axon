@@ -63,6 +63,7 @@ def _leg(kind: ProviderKind, service: type[FrameProcessor]) -> type[Provider]:
 class _Carrier(TelephonyProvider):
     name = "testcarrier"
     live = True
+    failures = 0  # hang-ups to fail before succeeding
     hangups: ClassVar[list[str]] = []
 
     async def health(self) -> None:
@@ -72,6 +73,9 @@ class _Carrier(TelephonyProvider):
         return self.live
 
     async def hang_up(self, call_uuid: str) -> None:
+        if _Carrier.failures:
+            _Carrier.failures -= 1
+            raise RuntimeError("carrier said 500")
         self.hangups.append(call_uuid)
 
 
@@ -104,7 +108,7 @@ def providers(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         monkeypatch.setenv(f"AXON_{kind.upper()}_PROVIDER", name)
     monkeypatch.setenv("AXON_ENGINE_PUBLIC_URL", "https://engine.example.in")
     monkeypatch.setattr(engine.call, "MIN_CALL_S", 0)
-    _Carrier.live, _Carrier.hangups = True, []
+    _Carrier.live, _Carrier.failures, _Carrier.hangups = True, 0, []
     yield
 
 
@@ -205,3 +209,42 @@ def test_public_url_is_required_to_answer(providers: None, monkeypatch: pytest.M
         response = client.post("/vobiz/answer")
     assert response.status_code == 503
     assert response.json()["missing_keys"] == ["AXON_ENGINE_PUBLIC_URL"]
+
+
+def test_a_failed_hang_up_is_retried_once(
+    providers: None, events: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _Carrier.failures = 1
+    _call(monkeypatch, events, max_call_s=2.0, silence_timeout_s=60.0)
+    assert _Carrier.hangups == [START["start"]["callId"]]
+
+
+def test_caller_hanging_up_ends_the_call(
+    providers: None, events: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        engine.main, "CallSettings", lambda language: CallSettings(language=language)
+    )
+    with TestClient(app) as client:
+        with client.websocket_connect("/vobiz/stream") as ws:
+            ws.send_text(json.dumps(START))
+            for _ in range(10):
+                ws.send_text(json.dumps({"event": "media", "media": {"payload": SILENCE_ULAW}}))
+        # leaving the block closes the socket, as Vobiz does when the caller hangs up
+        deadline = time.monotonic() + 10
+        while not (events and events[-1]["type"] == "ended") and time.monotonic() < deadline:
+            time.sleep(0.05)
+    assert events[-1] == {"type": "ended", "reason": "caller_hung_up"}
+
+
+@pytest.mark.parametrize("first", [None, "not json", json.dumps({"event": "start"})])
+def test_a_stream_without_a_valid_start_is_closed(
+    providers: None, monkeypatch: pytest.MonkeyPatch, first: str | None
+) -> None:
+    monkeypatch.setattr(engine.main, "START_TIMEOUT_S", 0.3)
+    with TestClient(app) as client, client.websocket_connect("/vobiz/stream") as ws:
+        if first is not None:
+            ws.send_text(first)
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_text()
+    assert closed.value.code == 1008

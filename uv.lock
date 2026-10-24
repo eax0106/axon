@@ -307,7 +307,7 @@ dependencies = [
 requires-dist = [
     { name = "axon-api", editable = "services/api" },
     { name = "fastapi" },
-    { name = "pipecat-ai", extras = ["local-smart-turn-v3", "silero", "websocket"] },
+    { name = "pipecat-ai", extras = ["silero", "websocket"], specifier = ">=1.14,<2" },
     { name = "redis" },
     { name = "uvicorn" },
 ]

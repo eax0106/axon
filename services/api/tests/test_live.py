@@ -79,8 +79,9 @@ def test_live_events_refuse_a_bad_token(
 ) -> None:
     _signup(db_client)
     call_id = _call(migrated_url)
-    with pytest.raises(WebSocketDisconnect) as closed:
-        with db_client.websocket_connect(f"/calls/{call_id}/live?token={bad}") as ws:
+    # The handshake completes (a pre-accept close would be an HTTP 403 without the code).
+    with db_client.websocket_connect(f"/calls/{call_id}/live?token={bad}") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_text()
     assert closed.value.code == 4401
 
@@ -91,7 +92,7 @@ def test_live_events_refuse_another_accounts_call(
     _signup(db_client)
     call_id = _call(migrated_url)
     other = _signup(db_client, email="someone@else.in")
-    with pytest.raises(WebSocketDisconnect) as closed:
-        with db_client.websocket_connect(f"/calls/{call_id}/live?token={other}") as ws:
+    with db_client.websocket_connect(f"/calls/{call_id}/live?token={other}") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_text()
     assert closed.value.code == 4404

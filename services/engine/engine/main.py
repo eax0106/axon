@@ -4,6 +4,7 @@ Vobiz flow: the call is answered -> Vobiz POSTs our answer URL -> we return XML 
 pointing at /vobiz/stream -> Vobiz opens that WebSocket and sends `start` then `media`.
 """
 
+import asyncio
 import json
 import os
 from collections.abc import AsyncIterator
@@ -24,6 +25,7 @@ from engine.legs import voice_legs
 from engine.vobiz import StreamStart, answer_xml
 
 PUBLIC_URL_ENV = "AXON_ENGINE_PUBLIC_URL"
+START_TIMEOUT_S = 10.0  # Vobiz sends `start` right after connecting
 SUPPORTED_LANGUAGES = {"te", "hi", "en"}
 
 
@@ -99,7 +101,11 @@ async def vobiz_stream(websocket: WebSocket, lang: str = "en", call: str = "") -
     except ProviderNotConfiguredError as exc:
         await websocket.close(code=1011, reason=f"provider_not_configured: {exc.detail}"[:120])
         return
-    start = await _read_start(websocket)
+    try:
+        start = await asyncio.wait_for(_read_start(websocket), START_TIMEOUT_S)
+    except (TimeoutError, json.JSONDecodeError, KeyError):
+        await websocket.close(code=1008, reason="no valid start message")
+        return
     # The stream URL is public, so only serve calls the carrier really has up.
     if not await telephony.is_live(start.call_id):
         logger.warning(f"vobiz stream for unknown call {start.call_id} refused")
@@ -107,7 +113,13 @@ async def vobiz_stream(websocket: WebSocket, lang: str = "en", call: str = "") -
         return
 
     async def hang_up() -> None:
-        await telephony.hang_up(start.call_id)
+        # One retry: a call left up after the AI ends it keeps costing the account money.
+        for attempt in (1, 2):
+            try:
+                await telephony.hang_up(start.call_id)
+                return
+            except Exception:
+                logger.exception(f"hang-up of {start.call_id} failed (attempt {attempt} of 2)")
 
     publish = redis_sink(websocket.app.state.redis, call or start.call_id)
     await run_call(websocket, start, legs, CallSettings(language=language), publish, hang_up)
