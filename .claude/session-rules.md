@@ -6,3 +6,4 @@ AXON PROJECT RULES (loaded at session start — mandatory)
 - Frontend: Opus only, no design-workflow skills; follow docs/DESIGN_DIRECTION.md.
 - No fake providers. No copying Outpero material. No secrets in git.
 - Allowed: commit, push the phase branch, open or update its PR. Never merge without the owner's yes. Never delete branches or force-push.
+- Caveman mode (full) is ALWAYS on for chat output to save tokens: invoke the `caveman` skill at session start. Code, commit messages, PR descriptions, GitHub reviews and docs stay in normal English.
