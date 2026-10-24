@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -224,20 +225,20 @@ def test_activate_needs_a_number_then_goes_live_and_pauses(
     assert api.post(path + "/activate", headers=owner).json()["status"] == "live"
 
 
-def test_switch_mode_clears_history_pauses_and_offers_a_rewrite(
+def test_switch_mode_detaches_history_keeps_purpose_and_pauses(
     api: TestClient, migrated_url: str
 ) -> None:
     from .conftest import sql
 
     owner = signup(api)
-    employee = hire(api, owner, channel="instant")
+    employee = hire(api, owner, channel="instant", purpose="transactional")
     path = f"/employees/{employee['id']}"
     account = sql(migrated_url, "SELECT account_id FROM employees")
     sql(migrated_url, "UPDATE employees SET status = 'live'")
     sql(
         migrated_url,
-        "INSERT INTO calls (account_id, employee_id, direction, channel, status)"
-        " VALUES (:a, :e, 'outbound', 'instant', 'completed')",
+        "INSERT INTO calls (account_id, employee_id, direction, channel, status, credits_charged)"
+        " VALUES (:a, :e, 'outbound', 'instant', 'completed', 12.5)",
         {"a": account, "e": employee["id"]},
     )
     assert (
@@ -247,10 +248,16 @@ def test_switch_mode_clears_history_pauses_and_offers_a_rewrite(
     switched = api.post(path + "/switch-mode", json={"channel": "bulk"}, headers=owner).json()
     assert switched["rewrite_offered"] is True
     assert switched["employee"]["channel"] == "bulk" and switched["employee"]["status"] == "paused"
-    assert sql(migrated_url, "SELECT count(*) FROM calls") == 0
+    assert switched["employee"]["purpose"] == "transactional"  # the owner's choice is not replaced
+    # The call is out of the employee's history but still on the account, charge and all.
+    row = sql(
+        migrated_url,
+        "SELECT count(*) FROM calls WHERE employee_id IS NULL AND credits_charged = 12.5",
+    )
+    assert row == 1
 
 
-def test_reset_wipes_script_versions_settings_and_history(
+def test_reset_wipes_script_versions_settings_but_keeps_the_calls(
     api: TestClient, migrated_url: str
 ) -> None:
     from .conftest import sql
@@ -261,10 +268,31 @@ def test_reset_wipes_script_versions_settings_and_history(
     api.put(path + "/script", json={"welcome_message": "Hello"}, headers=owner)
     api.put(path + "/settings", json={"style_pack": True}, headers=owner)
     api.post(path + "/publish", headers=owner)
+    account = sql(migrated_url, "SELECT account_id FROM employees")
+    sql(
+        migrated_url,
+        "INSERT INTO calls (account_id, employee_id, direction, channel, status)"
+        " VALUES (:a, :e, 'outbound', 'instant', 'completed')",
+        {"a": account, "e": employee["id"]},
+    )
     wiped = api.post(path + "/reset", headers=owner).json()
     assert wiped["status"] == "draft" and wiped["published_version"] is None
     assert wiped["script"]["welcome_message"] == "" and wiped["settings"]["style_pack"] is False
     assert sql(migrated_url, "SELECT count(*) FROM employee_versions") == 0
+    assert sql(migrated_url, "SELECT count(*) FROM calls WHERE employee_id IS NULL") == 1
+
+
+def test_a_missing_ambience_file_is_reported_not_silent(
+    api: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AXON_AMBIENCE_DIR", str(tmp_path))
+    owner = signup(api)
+    path = f"/employees/{hire(api, owner)['id']}"
+    assert api.get(path, headers=owner).json()["warnings"] == []
+    chosen = api.put(path + "/settings", json={"ambience": "office"}, headers=owner).json()
+    assert len(chosen["warnings"]) == 1 and "'office'" in chosen["warnings"][0]
+    (tmp_path / "office.wav").write_bytes(b"RIFF")
+    assert api.get(path, headers=owner).json()["warnings"] == []
 
 
 def test_update_changes_name_languages_and_voice_and_validates(api: TestClient) -> None:

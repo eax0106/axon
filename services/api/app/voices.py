@@ -17,11 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.auth import CurrentUser
 from app.db import Session
+from app.employees.limits import AiBudget
 from app.models import Voice, VoiceTier
 from app.providers.base import ProviderKind, TextToSpeechProvider
 from app.providers.registry import resolve
 from app.settings import get_settings
 
+# ponytail: placeholder scores until native-speaker QA (B14) measures each voice. They only say
+# "documented to speak this language"; nothing may rank or pick voices by the value.
 ALL = {"te": 0.7, "hi": 0.7, "en": 0.7}
 # (provider, provider_voice_id, tier, public_name, native_language, language_scores)
 SEED: tuple[tuple[str, str, VoiceTier, str, str, dict[str, float]], ...] = (
@@ -130,7 +133,7 @@ async def list_voices(
     return [voice_out(v) for v in voices if language is None or language in v.language_scores]
 
 
-@router.post("/voices/{voice_id}/preview")
+@router.post("/voices/{voice_id}/preview", dependencies=[AiBudget])
 async def preview(
     voice_id: uuid.UUID,
     _: CurrentUser,

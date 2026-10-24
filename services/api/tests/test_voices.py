@@ -126,3 +126,16 @@ def test_preview_rejects_unknown_voices_languages_and_speeds(api: TestClient) ->
         == 422
     )
     assert api.post(f"/voices/{telugu_only['id']}/preview").status_code == 401
+
+
+def test_previews_count_against_the_account_ai_budget(
+    api: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.employees import limits
+
+    monkeypatch.setattr(limits, "AI_PER_HOUR", 1)
+    owner = signup(api)
+    voice = api.get("/voices?language=en", headers=owner).json()[0]
+    path = f"/voices/{voice['id']}/preview?language=en"
+    assert api.post(path, headers=owner).status_code == 503  # first use of the budget: no key yet
+    assert api.post(path, headers=owner).status_code == 429

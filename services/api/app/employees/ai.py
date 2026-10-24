@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.auth import CurrentUser
 from app.db import Session
 from app.employees import runtime, service
+from app.employees.limits import AiBudget
 from app.employees.router import load
 from app.employees.script import (
     CaptureField,
@@ -118,7 +119,7 @@ class Questions(BaseModel):
     questions: list[str] = Field(max_length=5)
 
 
-@router.post("/ai/brief-questions")
+@router.post("/ai/brief-questions", dependencies=[AiBudget])
 async def brief_questions(body: Brief, _: CurrentUser) -> Questions:
     data = await ask(
         QUESTIONS_PROMPT,
@@ -163,7 +164,7 @@ def _script_from(data: dict[str, Any]) -> ScriptBundle:
         raise AiOutputError("the script did not match the expected shape") from exc
 
 
-@router.post("/ai/draft-agent")
+@router.post("/ai/draft-agent", dependencies=[AiBudget])
 async def draft_agent(body: DraftRequest, _: CurrentUser) -> Draft:
     answers = "\n".join(f"Q: {a.question}\nA: {a.answer}" for a in body.answers) or "(none)"
     data = await ask(
@@ -188,7 +189,7 @@ class StructureRequest(BaseModel):
     language: Literal["te", "hi", "en"] = "en"
 
 
-@router.post("/ai/structure-prompt")
+@router.post("/ai/structure-prompt", dependencies=[AiBudget])
 async def structure_prompt(body: StructureRequest, _: CurrentUser) -> ScriptBundle:
     data = await ask(
         STRUCTURE_PROMPT, f"Language: {LANGUAGE_NAMES[body.language]}.\n\nText:\n{body.text}"
@@ -200,7 +201,7 @@ class EditRequest(BaseModel):
     instruction: str = Field(min_length=1, max_length=2000)
 
 
-@router.post("/employees/{employee_id}/ai/edit-flow")
+@router.post("/employees/{employee_id}/ai/edit-flow", dependencies=[AiBudget])
 async def edit_flow(
     employee_id: uuid.UUID, body: EditRequest, user: CurrentUser, session: Session
 ) -> ScriptBundle:
@@ -225,7 +226,7 @@ class Transcript(BaseModel):
     text: str
 
 
-@router.post("/ai/transcribe-chunk")
+@router.post("/ai/transcribe-chunk", dependencies=[AiBudget])
 async def transcribe_chunk(
     request: Request,
     _: CurrentUser,
@@ -259,7 +260,7 @@ class ChatReply(BaseModel):
     reply: str
 
 
-@router.post("/employees/{employee_id}/chat")
+@router.post("/employees/{employee_id}/chat", dependencies=[AiBudget])
 async def chat(
     employee_id: uuid.UUID, body: ChatRequest, user: CurrentUser, session: Session
 ) -> ChatReply:

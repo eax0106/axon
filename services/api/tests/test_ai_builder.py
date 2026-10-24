@@ -271,3 +271,33 @@ def test_parse_json_accepts_what_models_actually_send(text: str, expected: dict[
 def test_parse_json_rejects_the_rest(text: str) -> None:
     with pytest.raises(AiOutputError):
         parse_json(text)
+
+
+def test_the_ai_endpoints_share_a_per_account_hourly_budget(
+    api: TestClient, vendor: Vendor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.employees import limits
+
+    monkeypatch.setattr(limits, "AI_PER_HOUR", 3)
+    owner, other = signup(api), signup(api, "b@example.com", "B")
+    employee = hire(api, owner)
+    vendor.text = '{"questions": ["Which cities?"]}'
+    assert api.post("/ai/brief-questions", json=BRIEF, headers=owner).status_code == 200
+    chat = {"messages": [{"role": "user", "content": "hi"}]}
+    vendor.text = "ok"
+    assert api.post(f"/employees/{employee}/chat", json=chat, headers=owner).status_code == 200
+    assert (
+        api.post("/ai/transcribe-chunk", content=b"RIFF" + bytes(10), headers=owner).status_code
+        == 200
+    )
+    # Fourth call in the hour, whichever endpoint: refused before any vendor call.
+    sent = len(vendor.requests)
+    for blocked in (
+        api.post("/ai/brief-questions", json=BRIEF, headers=owner),
+        api.post(f"/employees/{employee}/chat", json=chat, headers=owner),
+        api.post("/ai/draft-agent", json=BRIEF, headers=owner),
+    ):
+        assert blocked.status_code == 429
+    assert len(vendor.requests) == sent
+    vendor.text = '{"questions": ["Which cities?"]}'
+    assert api.post("/ai/brief-questions", json=BRIEF, headers=other).status_code == 200

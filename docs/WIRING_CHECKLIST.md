@@ -20,3 +20,4 @@ Filled in after the code is built (Track 3). Keys go into `.env` locally or the 
 | 14 | Strix: `STRIX_LLM` + `LLM_API_KEY`, Docker image (~5.8 GB) | Security test | SEC | Owner | todo |
 | 15 | Hosting account (India region) | Deployment | Launch | Owner, then Claude | todo |
 | 16 | Test phones + native Telugu and Hindi speakers | Quality checks | B2, B14 | Owner | todo |
+| 17 | Five licensed background-sound loops (Office, Call Center, Restaurant, Quiet Room, Retail Store), mono 16 kHz WAV, named `office.wav` etc. in `AXON_AMBIENCE_DIR` | Ambience setting on employees (otherwise calls play no background sound) | B4 | Owner | todo |

@@ -144,19 +144,19 @@ def test_a_carrier_failure_marks_the_call_failed(
     assert sql(migrated_url, "SELECT status::text FROM calls") == "failed"
 
 
-def test_at_most_five_test_calls_an_hour_across_phone_and_browser(
+def test_test_calls_are_capped_per_account_not_per_employee(
     api: TestClient, migrated_url: str, carrier: Carrier
 ) -> None:
     owner = signup(api)
     employee = hire(api, owner, migrated_url)
-    for _ in range(3):
+    for _ in range(4):
         assert (
             api.post(
                 f"/employees/{employee}/test-call", json={"phone": PHONE}, headers=owner
             ).status_code
             == 202
         )
-    for _ in range(2):
+    for _ in range(6):
         assert api.post(f"/employees/{employee}/web-test-call", headers=owner).status_code == 201
     assert (
         api.post(
@@ -164,11 +164,29 @@ def test_at_most_five_test_calls_an_hour_across_phone_and_browser(
         ).status_code
         == 429
     )
-    assert api.post(f"/employees/{employee}/web-test-call", headers=owner).status_code == 429
-    other = hire(api, owner, migrated_url, with_number=False)
-    assert (
-        api.post(f"/employees/{other}/web-test-call", headers=owner).status_code == 201
-    )  # per employee
+    # Making more employees (free) does not make more free calls.
+    for _ in range(3):
+        copy = api.post(f"/employees/{employee}/duplicate", headers=owner).json()["id"]
+        assert api.post(f"/employees/{copy}/web-test-call", headers=owner).status_code == 429
+    # Another account has its own allowance.
+    other = signup(api, "b@example.com", "B")
+    mine = api.post("/employees", json={"channel": "bulk"}, headers=other).json()["id"]
+    assert api.post(f"/employees/{mine}/web-test-call", headers=other).status_code == 201
+
+
+def test_parallel_requests_cannot_slip_past_the_cap(api: TestClient, migrated_url: str) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    owner = signup(api)
+    employee = hire(api, owner, migrated_url, with_number=False)
+
+    def ask(_: int) -> int:
+        return api.post(f"/employees/{employee}/web-test-call", headers=owner).status_code
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        codes = list(pool.map(ask, range(16)))
+    assert sorted(codes) == [201] * 10 + [429] * 6
+    assert sql(migrated_url, "SELECT count(*) FROM calls WHERE is_test") == 10
 
 
 def test_web_test_call_hands_out_a_signed_ticket_for_one_employee_and_call(

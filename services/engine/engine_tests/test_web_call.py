@@ -106,3 +106,51 @@ def test_a_valid_ticket_without_speech_keys_closes_with_provider_not_configured(
     web = api.post(f"/employees/{employee['id']}/web-test-call", headers=owner).json()
     closed = closed_with(web["ticket"])
     assert closed.code == 1011 and "provider_not_configured" in closed.reason
+
+
+def test_a_ticket_opens_exactly_one_call(api: TestClient) -> None:
+    owner = signup(api)
+    employee = api.post("/employees", json={"channel": "instant"}, headers=owner).json()
+    web = api.post(f"/employees/{employee['id']}/web-test-call", headers=owner).json()
+    first = closed_with(web["ticket"])
+    assert first.code == 1011  # accepted, then stopped for want of speech keys
+    second = closed_with(web["ticket"])
+    assert second.code == 1008 and second.reason == "ticket already used"
+
+
+def test_claiming_moves_a_queued_test_call_of_that_account_to_in_progress_once(
+    api: TestClient, migrated_url: str
+) -> None:
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from tests.conftest import sql
+
+    from engine.plan import claim_test_call
+
+    owner = signup(api)
+    employee = api.post("/employees", json={"channel": "instant"}, headers=owner).json()
+    web = api.post(f"/employees/{employee['id']}/web-test-call", headers=owner).json()
+    call = uuid.UUID(web["call_id"])
+    account = uuid.UUID(
+        sql(migrated_url, "SELECT account_id FROM calls WHERE id = :c", {"c": call}).__str__()
+    )
+
+    async def claim(account_id: uuid.UUID, call_id: uuid.UUID = call) -> bool:
+        engine = create_async_engine(migrated_url)
+        try:
+            return await claim_test_call(engine, call_id, account_id)
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(claim(uuid.uuid4())) is False  # another account's ticket
+    assert asyncio.run(claim(account)) is True
+    assert asyncio.run(claim(account)) is False
+    assert (
+        sql(migrated_url, "SELECT status::text FROM calls WHERE id = :c", {"c": call})
+        == "in_progress"
+    )
+    sql(
+        migrated_url,
+        "UPDATE calls SET is_test = false, status = 'queued' WHERE id = :c",
+        {"c": call},
+    )
+    assert asyncio.run(claim(account)) is False  # a real call is never claimable by a ticket

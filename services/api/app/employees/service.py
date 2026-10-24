@@ -3,7 +3,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.employees.lifecycle import Action, next_status
@@ -99,7 +99,12 @@ async def restore(session: AsyncSession, employee: Employee, version: int) -> in
 
 
 async def clear_history(session: AsyncSession, employee: Employee) -> None:
-    await session.execute(delete(Call).where(Call.employee_id == employee.id))
+    """Take the employee's calls out of its history. The rows stay: they are the account's billing,
+    statement and consent evidence, so they are detached (as deleting an employee does), not
+    deleted."""
+    await session.execute(
+        update(Call).where(Call.employee_id == employee.id).values(employee_id=None)
+    )
 
 
 async def reset(session: AsyncSession, employee: Employee) -> None:

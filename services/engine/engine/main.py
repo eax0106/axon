@@ -25,7 +25,7 @@ from app.settings import engine_public_url, get_settings
 from engine.call import CallSettings, run_call
 from engine.events import redis_sink
 from engine.legs import voice_legs
-from engine.plan import load_plan
+from engine.plan import claim_test_call, load_plan
 from engine.vobiz import StreamStart, VobizFrameSerializer, answer_xml
 from engine.web import WebFrameSerializer
 
@@ -164,6 +164,9 @@ async def web_stream(websocket: WebSocket, ticket: str = "") -> None:
     granted = read_ticket(ticket)
     if granted is None:
         await websocket.close(code=1008, reason="invalid or expired ticket")
+        return
+    if not await claim_test_call(websocket.app.state.db, granted.call_id, granted.account_id):
+        await websocket.close(code=1008, reason="ticket already used")
         return
     try:
         legs, settings = await _setup(

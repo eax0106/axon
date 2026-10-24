@@ -9,12 +9,12 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] AI drafts name, role, welcome line, multi-section call flow, capture fields
 - [x] Script editor: welcome message, sections (reorder, edit, delete), end-of-call rules, permanent FAQ section that can't be removed
 - [x] Script strictness dial 1–5
-- [x] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — B4 declares and prompts for them; values are filled by B5/B8 (leads) and extracted by B6/B10
+- [ ] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — B4 part done: both are declared and the prompt asks for them; rest: lead values in B5/B8, extraction in B6/B10
 - [x] Precedence: script = content, rules = conduct, voice = delivery only
-- [x] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4: setting + mixer hook; the sound files are not shipped
-- [x] Free test call to the owner's phone, browser web call, text chat sandbox
+- [ ] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4 part done: tiers, picker, preview, speed, placeholder avatar, ambience setting and mixer hook; rest: the five licensed ambience loops (WIRING_CHECKLIST #17)
+- [ ] Free test call to the owner's phone, browser web call, text chat sandbox — B4 part done: web call, chat sandbox, phone test call to any +91 mobile; rest: verify the owner's number and route test calls through DNC and the purpose rule (B7)
 - [x] Lifecycle draft, training, live, paused; live needs a number + switched on + published
-- [x] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits
+- [ ] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits — B4 part done: script publish gate, voice and capture instant, discard; rest: actions B10, training B11, webhooks B12
 - [x] Keep the last 3 published versions; restore any
 - [x] Switch channel (clears call history, offers a rewrite); start over (wipes script, training, history)
 - [x] Duplicate employee

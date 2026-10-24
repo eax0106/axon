@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser
 from app.db import Session
-from app.employees import runtime, service
+from app.employees import ambience, runtime, service
 from app.employees.lifecycle import Action, TransitionError, next_status
 from app.employees.script import LANGUAGES, EmployeeSettings, ScriptBundle
 from app.models import Channel, Employee, EmployeeStatus, Purpose, Role, User, Voice, VoiceTier
@@ -105,6 +105,7 @@ class EmployeeOut(BaseModel):
     avatar: dict[str, Any]
     script: ScriptBundle
     settings: EmployeeSettings
+    warnings: list[str]  # things that will not work as set, e.g. a missing ambience file
 
 
 def avatar(employee: Employee) -> dict[str, Any]:
@@ -118,6 +119,11 @@ def avatar(employee: Employee) -> dict[str, Any]:
 async def out(session: AsyncSession, employee: Employee) -> EmployeeOut:
     live = await service.latest_version(session, employee.id)
     voice = await session.get(Voice, employee.voice_id) if employee.voice_id else None
+    settings = service.settings_of(employee)
+    warnings = []
+    if ambience.is_missing(settings.ambience):
+        name = settings.ambience
+        warnings.append(f"ambience {name!r} has no sound file on this server: no background sound")
     return EmployeeOut(
         id=employee.id,
         name=employee.name,
@@ -133,7 +139,8 @@ async def out(session: AsyncSession, employee: Employee) -> EmployeeOut:
         has_pending_edits=service.has_pending_edits(employee, live),
         avatar=avatar(employee),
         script=service.bundle_of(employee),
-        settings=service.settings_of(employee),
+        settings=settings,
+        warnings=warnings,
     )
 
 
@@ -348,14 +355,14 @@ class SwitchMode(BaseModel):
 async def switch_mode(
     employee_id: uuid.UUID, body: SwitchMode, user: OwnerUser, session: Session
 ) -> dict[str, Any]:
-    """Change channel. Call history belongs to the old channel, so it is cleared; a live employee
-    is paused until it is activated again. The script is kept and a rewrite is offered."""
+    """Change channel. The employee's call history is detached (the calls stay on the account for
+    billing and records); a live employee is paused until it is activated again. The script and
+    purpose are kept and a rewrite is offered."""
     employee = await load(session, user, employee_id)
     if body.channel is employee.channel:
         raise HTTPException(409, "already on that channel")
     await service.clear_history(session, employee)
-    employee.channel = body.channel
-    employee.purpose = DEFAULT_PURPOSE[body.channel]
+    employee.channel = body.channel  # purpose is kept: it decides what the dialer may do
     if employee.status is EmployeeStatus.LIVE:
         employee.status = EmployeeStatus.PAUSED
     await session.commit()
