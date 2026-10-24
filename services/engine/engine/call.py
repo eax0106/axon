@@ -34,7 +34,7 @@ from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
 )
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
-from starlette.websockets import WebSocket
+from starlette.websockets import WebSocket, WebSocketState
 
 from app.providers.base import ObjectStorageProvider, ProviderKind
 from app.providers.registry import ProviderNotConfiguredError, require
@@ -143,7 +143,8 @@ async def run_call(
             aggregators.assistant(),
         ]
     )
-    observer = CallObserver(publish, transport.input())
+    live = _LiveEvents(publish)
+    observer = CallObserver(live.emit, transport.input())
     # ponytail: PipelineTask/PipelineRunner are deprecated in Pipecat 1.3 (removed in 2.0); the
     # PipelineWorker/WorkerRunner pair never returned after EndFrame here. Migrate with 2.0.
     task = PipelineTask(
@@ -172,7 +173,8 @@ async def run_call(
 
     @transport.event_handler("on_client_disconnected")
     async def _caller_gone(*_: Any) -> None:
-        ended.append("caller_hung_up")
+        if not ended:
+            ended.append("caller_hung_up")
         await task.cancel()
 
     @recorder.event_handler("on_audio_data")
@@ -185,24 +187,70 @@ async def run_call(
     cap = asyncio.get_running_loop().call_later(
         settings.max_call_s, lambda: asyncio.ensure_future(end("max_length"))
     )
+    error: BaseException | None = None
     try:
         await PipelineRunner(handle_sigint=False).run(task)
-    except asyncio.CancelledError:
-        # Cancelling the pipeline when the caller hangs up surfaces here as CancelledError; that
-        # is a normal end of call, so finish it (recording, usage, `ended`). Re-raise any other.
-        current = asyncio.current_task()
-        if "caller_hung_up" not in ended or current is None:
-            raise
-        current.uncancel()
+    except BaseException as exc:  # re-raised below, after the call is finished
+        error = exc
+        if not ended:
+            caller_gone = websocket.client_state == WebSocketState.DISCONNECTED
+            ended.append("caller_hung_up" if caller_gone else type(exc).__name__)
     finally:
         cap.cancel()
         observer.usage.ended_at = time.monotonic()
+    reason = ended[0] if ended else "pipeline_finished"
+    # However the pipeline exits, finish the call (recording, usage, `ended` last) in its own
+    # task: if this handler is being cancelled, its cancel scope would interrupt every await here.
+    finishing = asyncio.create_task(
+        _finish(live, publish, start.call_id, recording, observer.usage, reason)
+    )
+    _FINISHING.add(finishing)
+    finishing.add_done_callback(_FINISHING.discard)
+    try:
+        await asyncio.shield(finishing)
+    finally:
+        if error is not None:
+            raise error
+    return observer.usage
+
+
+class _LiveEvents:
+    """Gate for a call's live events: once closed, late pipeline events are dropped."""
+
+    def __init__(self, publish: EventSink) -> None:
+        self._publish = publish
+        self._lock = asyncio.Lock()
+        self._closed = False
+
+    async def emit(self, event: dict[str, Any]) -> None:
+        async with self._lock:
+            if not self._closed:
+                await self._publish(event)
+
+    async def close(self) -> None:
+        async with self._lock:  # waits for an in-flight emit to land first
+            self._closed = True
+
+
+_FINISHING: set[asyncio.Task[None]] = set()  # strong refs so finishing tasks aren't collected
+
+
+async def _finish(
+    live: "_LiveEvents",
+    publish: EventSink,
+    call_id: str,
+    recording: list[bytes],
+    usage: Usage,
+    reason: str,
+) -> None:
+    # Pipeline tasks still tearing down may emit late events (e.g. bot_stopped_speaking); close the
+    # live gate first so `ended` is always the last event.
+    await live.close()
     if recording:
         try:
-            await store_recording(start.call_id, recording[0], publish)
+            await store_recording(call_id, recording[0], publish)
         except Exception:
             logger.exception("recording upload failed")
             await publish({"type": "recording_not_stored", "detail": "upload failed"})
-    await publish(observer.usage.as_event())
-    await publish({"type": "ended", "reason": ended[0] if ended else "pipeline_finished"})
-    return observer.usage
+    await publish(usage.as_event())
+    await publish({"type": "ended", "reason": reason})
