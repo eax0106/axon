@@ -67,6 +67,9 @@ class _Carrier(TelephonyProvider):
     async def health(self) -> None:
         return None
 
+    async def originate(self, from_number: str, to_number: str, answer_url: str) -> str:
+        return "test-call"
+
     async def is_live(self, call_uuid: str) -> bool:
         return self.live
 
@@ -95,9 +98,9 @@ def events(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 def providers(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Every leg resolvable: test-only adapters plus keys for them."""
     services = {
-        (ProviderKind.STT, "testleg"): lambda _language: _SpeaksOnce(),
-        (ProviderKind.LLM, "testleg"): lambda _language: _Passthrough(),
-        (ProviderKind.TTS, "testleg"): lambda _language: _Passthrough(),
+        (ProviderKind.STT, "testleg"): lambda *_: _SpeaksOnce(),
+        (ProviderKind.LLM, "testleg"): lambda *_: _Passthrough(),
+        (ProviderKind.TTS, "testleg"): lambda *_: _Passthrough(),
     }
     adapters = {
         **{key: _leg(key[0]) for key in services},

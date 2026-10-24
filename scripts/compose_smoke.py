@@ -57,6 +57,26 @@ def main() -> None:
         ).stdout.strip()
         assert revision, "migrations did not run"
         print(f"migrated to {revision}")
+        voices = subprocess.run(
+            [
+                *COMPOSE,
+                "exec",
+                "-T",
+                "postgres",
+                "psql",
+                "-U",
+                "axon",
+                "-d",
+                "axon",
+                "-Atc",
+                "SELECT count(*) FROM voices",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert int(voices) > 0, "voice catalog was not seeded"
+        print(f"{voices} voices seeded")
         # /admin/providers needs an admin token since B1; 401 proves it is mounted and guarded.
         assert http_error(API + "/admin/providers").code == 401
         assert get_json("/healthz", ENGINE) == {"status": "ok"}

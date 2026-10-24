@@ -13,19 +13,36 @@ TIMEOUT_S = 10.0
 class VobizTelephony(TelephonyProvider):
     name = "vobiz"
 
-    def __init__(self) -> None:
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
+        self._transport = transport
         self.auth_id = os.environ["VOBIZ_AUTH_ID"]
         self._headers = {"X-Auth-ID": self.auth_id, "X-Auth-Token": os.environ["VOBIZ_AUTH_TOKEN"]}
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
-            base_url=f"{BASE_URL}/Account/{self.auth_id}", headers=self._headers, timeout=TIMEOUT_S
+            base_url=f"{BASE_URL}/Account/{self.auth_id}",
+            headers=self._headers,
+            timeout=TIMEOUT_S,
+            transport=self._transport,
         )
 
     async def health(self) -> None:
         # Cheapest authenticated read: the list of live calls.
         async with self._client() as client:
             (await client.get("/Call", params={"status": "live"})).raise_for_status()
+
+    async def originate(self, from_number: str, to_number: str, answer_url: str) -> str:
+        # The trailing slash is required: without it Vobiz answers 401.
+        body = {
+            "from": from_number.lstrip("+"),
+            "to": to_number.lstrip("+"),
+            "answer_url": answer_url,
+            "answer_method": "POST",
+        }
+        async with self._client() as client:
+            response = await client.post("/Call/", json=body)
+            response.raise_for_status()
+            return str(response.json()["request_uuid"])
 
     async def is_live(self, call_uuid: str) -> bool:
         async with self._client() as client:

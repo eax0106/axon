@@ -31,7 +31,7 @@ services:
   migrate:
     image: axon-api:dev
     build: { context: .., dockerfile: deploy/Dockerfile, args: { SERVICE: api } }
-    command: ["alembic", "-c", "services/api/alembic.ini", "upgrade", "head"]
+    command: ["sh", "-c", "alembic -c services/api/alembic.ini upgrade head && python -m app.voices"]
     environment: *app-env
     depends_on:
       postgres: { condition: service_healthy }

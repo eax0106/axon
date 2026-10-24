@@ -8,6 +8,10 @@ import os
 from dataclasses import dataclass
 from functools import cache
 
+from app.providers.base import ProviderKind, ProviderNotConfiguredError
+
+PUBLIC_URL_ENV = "AXON_ENGINE_PUBLIC_URL"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -25,3 +29,16 @@ def get_settings() -> Settings:
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
         jwt_secret=os.environ.get("AXON_JWT_SECRET", ""),
     )
+
+
+def engine_public_url() -> str:
+    """The engine's public https URL (the carrier and browsers must reach it), or a 503."""
+    url = os.environ.get(PUBLIC_URL_ENV, "").rstrip("/")
+    if not url.startswith("https://"):
+        raise ProviderNotConfiguredError(
+            ProviderKind.TELEPHONY,
+            "vobiz",
+            [PUBLIC_URL_ENV],
+            f"{PUBLIC_URL_ENV} must be the engine's public https URL (Vobiz must reach it)",
+        )
+    return url
