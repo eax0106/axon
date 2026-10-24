@@ -7,6 +7,7 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "asyncpg",
     "fastapi",
+    "httpx>=0.28.1",
     "pyjwt>=2.15.1",
     "redis",
     "sqlalchemy[asyncio]",

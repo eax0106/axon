@@ -1,0 +1,22 @@
+[project]
+name = "axon-engine"
+version = "0.0.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "axon-api",
+    "fastapi",
+    "pipecat-ai[local-smart-turn-v3,silero,websocket]",
+    "redis",
+    "uvicorn",
+]
+
+[tool.uv.sources]
+axon-api = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "engine"
+module-root = ""

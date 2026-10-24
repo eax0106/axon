@@ -52,6 +52,21 @@ services:
       timeout: 5s
       retries: 20
 
+  engine:
+    image: axon-engine:dev
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { SERVICE: engine } }
+    command: ["uvicorn", "engine.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    env_file: [{ path: ../.env, required: false }]
+    environment: *app-env
+    ports: ["${AXON_ENGINE_PORT:-8001}:8001"]
+    depends_on:
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8001/healthz', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   worker:
     image: axon-worker:dev
     build: { context: .., dockerfile: deploy/Dockerfile, args: { SERVICE: worker } }

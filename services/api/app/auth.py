@@ -12,6 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import Session
 from app.models import Account, Role, User
@@ -56,9 +57,13 @@ async def current_user(
 ) -> User:
     if credentials is None:
         raise _unauthorized("not authenticated")
+    return await user_from_token(session, credentials.credentials)
+
+
+async def user_from_token(session: AsyncSession, token: str) -> User:
     try:
         claims = jwt.decode(
-            credentials.credentials,
+            token,
             _secret(),
             algorithms=["HS256"],
             options={"require": ["sub", "exp", "iat"]},
