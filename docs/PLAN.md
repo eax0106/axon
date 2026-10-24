@@ -11,8 +11,8 @@ Legend: `todo` · `building` · `in review` · `changes` · `merged` · `blocked
 | B0 | Foundation (monorepo, Docker Compose, CI on 3 OSes, settings, provider registry) | Opus | merged | [#1](https://github.com/eax0106/axon/pull/1) f1a5f18 | 2 review rounds; L1 admin-gate carried to B1 |
 | B1 | Data model + auth | Opus | merged | [#2](https://github.com/eax0106/axon/pull/2) 0da5c82 | 2 review rounds; carry-overs B7 ledger idempotency, B13 token revocation, B14 rate limit |
 | B2 | Voice engine (Pipecat, Vobiz serializer) | Opus | merged | [#3](https://github.com/eax0106/axon/pull/3) 6cfe998 | 2 review rounds + image-size and end-of-call ordering fixes; carry-overs in docs/phases/b2.md |
-| B3 | Speech + LLM provider adapters | Sonnet | building | | |
-| B4 | AI employee builder | Sonnet | todo | | |
+| B3 | Speech + LLM provider adapters | Sonnet | merged | [#4](https://github.com/eax0106/axon/pull/4) dd356c0 | 2 review rounds; STT fixtures to regenerate with licensed TTS at wiring |
+| B4 | AI employee builder | Sonnet | building | | |
 | B5 | Instant channel | Sonnet | todo | | |
 | B6 | Post-call + data views | Sonnet | todo | | |
 | B7 | Billing + numbers (incl. number types and dialer rule table) | Sonnet | todo | | |
