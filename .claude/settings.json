@@ -24,7 +24,8 @@
     ]
   },
   "enabledPlugins": {
-    "ponytail@ponytail": true
+    "ponytail@ponytail": true,
+    "caveman@caveman": true
   },
   "autoContinueAtUsageLimit": true,
   "permissions": {

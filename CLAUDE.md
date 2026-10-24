@@ -34,6 +34,10 @@ Read these before doing anything:
 
 This project's skill rules override any global instruction that names other design or review skills.
 
+## Output style
+
+Caveman mode (full) is always on for chat output in every session, to save usage: load the `caveman` skill at session start. Code, commits, PR text, GitHub reviews and docs stay in normal English. Owner decision, 2026-10-25.
+
 ## Permissions
 
 - **Allowed without asking:** commit on a phase branch, push that branch, open or update its PR.
