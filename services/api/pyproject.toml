@@ -1,0 +1,13 @@
+[project]
+name = "axon-api"
+version = "0.0.0"
+requires-python = "==3.12.*"
+dependencies = ["asyncpg", "fastapi", "redis", "sqlalchemy[asyncio]", "uvicorn"]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "app"
+module-root = ""

@@ -1,0 +1,39 @@
+[project]
+name = "axon"
+version = "0.0.0"
+requires-python = "==3.12.*"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["services/api", "services/worker"]
+
+[dependency-groups]
+dev = ["httpx", "mypy", "pytest", "ruff"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RUF"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"services/*/tests/**" = ["S603", "S607"]
+"scripts/**" = ["S603", "S607", "S310"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = "services/api,services/worker"
+explicit_package_bases = true
+files = ["services/api/app", "services/api/tests", "services/worker/worker", "scripts", "conftest.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["services/api/tests"]
+# Explicit so tests never depend on editable-install .pth files (macOS may flag them hidden).
+pythonpath = ["services/api", "services/worker"]
+addopts = "-p pytester"
+markers = ["requires_keys(*keys): needs real vendor keys; skipped while any named key is unset"]
