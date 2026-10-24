@@ -4,21 +4,21 @@ Source: `docs/research/` (Outpero's public help centre and public app code). Beh
 Each row is ticked by the builder of the phase in brackets, and confirmed by that phase's reviewer.
 
 ## Agent ("AI employee") builder [B4]
-- [ ] Create an employee: pick channel (Instant / Bulk / Inbound), opening language plus an optional second language (English always on)
-- [ ] Brief by typing or by voice (chunked transcription); AI asks follow-up brief questions
-- [ ] AI drafts name, role, welcome line, multi-section call flow, capture fields
-- [ ] Script editor: welcome message, sections (reorder, edit, delete), end-of-call rules, permanent FAQ section that can't be removed
-- [ ] Script strictness dial 1–5
-- [ ] Pre-call variables (from webhook or CSV) and captured variables (extracted live)
-- [ ] Precedence: script = content, rules = conduct, voice = delivery only
-- [ ] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar
-- [ ] Free test call to the owner's phone, browser web call, text chat sandbox
-- [ ] Lifecycle draft, training, live, paused; live needs a number + switched on + published
-- [ ] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits
-- [ ] Keep the last 3 published versions; restore any
-- [ ] Switch channel (clears call history, offers a rewrite); start over (wipes script, training, history)
-- [ ] Duplicate employee
-- [ ] Toggles: style pack, power prompting, AI-acknowledgement disclosure
+- [x] Create an employee: pick channel (Instant / Bulk / Inbound), opening language plus an optional second language (English always on)
+- [x] Brief by typing or by voice (chunked transcription); AI asks follow-up brief questions
+- [x] AI drafts name, role, welcome line, multi-section call flow, capture fields
+- [x] Script editor: welcome message, sections (reorder, edit, delete), end-of-call rules, permanent FAQ section that can't be removed
+- [x] Script strictness dial 1–5
+- [x] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — B4 declares and prompts for them; values are filled by B5/B8 (leads) and extracted by B6/B10
+- [x] Precedence: script = content, rules = conduct, voice = delivery only
+- [x] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4: setting + mixer hook; the sound files are not shipped
+- [x] Free test call to the owner's phone, browser web call, text chat sandbox
+- [x] Lifecycle draft, training, live, paused; live needs a number + switched on + published
+- [x] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits
+- [x] Keep the last 3 published versions; restore any
+- [x] Switch channel (clears call history, offers a rewrite); start over (wipes script, training, history)
+- [x] Duplicate employee
+- [x] Toggles: style pack, power prompting, AI-acknowledgement disclosure
 
 ## Instant [B5]
 - [ ] Private intake URL per employee, `X-…-Lead-Secret` header, reveal and rotate secret

@@ -11,14 +11,21 @@ import asyncio
 import io
 import time
 import wave
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
+from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
+from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import EndFrame, Frame, TTSStoppedFrame
+from pipecat.frames.frames import (
+    EndFrame,
+    Frame,
+    FunctionCallResultProperties,
+    TTSStartedFrame,
+    TTSStoppedFrame,
+)
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -29,6 +36,8 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 from pipecat.processors.audio.audio_buffer_processor import AudioBufferProcessor
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.serializers.base_serializer import FrameSerializer
+from pipecat.services.llm_service import FunctionCallParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
@@ -38,17 +47,22 @@ from starlette.websockets import WebSocket, WebSocketState
 
 from app.providers.base import ObjectStorageProvider, ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import require
+from engine.ambience import mixer_for
 from engine.events import CallObserver, EventSink, Usage
-from engine.vobiz import StreamStart, VobizFrameSerializer, checkpoint
+from engine.goodbye import GoodbyeGate, PlayedStreamTap
+from engine.vobiz import checkpoint
 
 PIPELINE_RATE = 16000  # Smart Turn and Silero work at 16 kHz; the serializer converts to 8 kHz
 MIN_CALL_S, MAX_CALL_S = 10, 3600
+NO_REPLY = FunctionCallResultProperties(run_llm=False)
 
 
 @dataclass(frozen=True)
 class CallSettings:
     language: str = "en"
-    system_prompt: str = ""  # compiled from the employee's script in B4
+    system_prompt: str = ""  # compiled from the employee's script (app.employees.compiler)
+    ambience: str = "none"
+    ambience_volume: float = 0.3
     max_call_s: float = 600.0  # account setting, 10 s to 60 min
     silence_timeout_s: float = 20.0  # caller silent this long after the bot spoke -> end call
 
@@ -58,18 +72,25 @@ class CallSettings:
 
 
 class UtteranceCheckpoints(FrameProcessor):
-    """After each bot utterance, ask Vobiz to confirm (playedStream) when it finished playing."""
+    """After each bot utterance, ask Vobiz to confirm (playedStream) when it finished playing.
+    The goodbye gate learns from here which utterances are still in flight."""
 
-    def __init__(self) -> None:
+    def __init__(self, gate: GoodbyeGate) -> None:
         super().__init__()
         self._count = 0
+        self._gate = gate
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
+        if isinstance(frame, TTSStartedFrame):
+            self._gate.tts_started()
         await self.push_frame(frame, direction)
         if isinstance(frame, TTSStoppedFrame):
             self._count += 1
-            await self.push_frame(checkpoint(f"utt-{self._count}"))
+            name = f"utt-{self._count}"
+            self._gate.checkpoint_issued(name)
+            await self.push_frame(checkpoint(name))
+            self._gate.tts_stopped()
 
 
 def _wav(audio: bytes, sample_rate: int, channels: int) -> bytes:
@@ -94,30 +115,66 @@ async def store_recording(call_id: str, wav: bytes, publish: EventSink) -> None:
     await publish({"type": "recording_stored", "key": key})
 
 
+END_CALL = FunctionSchema(
+    name="end_call",
+    description=(
+        "Hang up. Call it right after your goodbye, once an end rule says the call is over."
+    ),
+    properties={},
+    required=[],
+)
+
+
+def register_end_call(llm: FrameProcessor, gate: GoodbyeGate) -> None:
+    """Let the LLM end the call. (A leg without function calling cannot, and that is fine.)"""
+    register = getattr(llm, "register_function", None)
+    if register is None:
+        return
+
+    async def end_call(params: FunctionCallParams) -> None:
+        await gate.request_end()
+        # The goodbye was already spoken; do not ask the LLM for another turn.
+        await params.result_callback({"status": "ending"}, properties=NO_REPLY)
+
+    register("end_call", end_call)
+
+
 async def run_call(
     websocket: WebSocket,
-    start: StreamStart,
+    call_id: str,
+    serializer: FrameSerializer,
     legs: tuple[FrameProcessor, FrameProcessor, FrameProcessor],
     settings: CallSettings,
     publish: EventSink,
-    hang_up: Callable[[], Awaitable[None]],
 ) -> Usage:
-    """Run the call until it ends; return what it used. `websocket` has already read `start`."""
+    """Run the call until it ends; return what it used. The caller has already accepted the
+    WebSocket and read any handshake; `serializer` speaks the stream protocol."""
     transport = FastAPIWebsocketTransport(
         websocket,
         FastAPIWebsocketParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
             add_wav_header=False,
-            serializer=VobizFrameSerializer(start, hang_up=hang_up),
+            serializer=serializer,
+            audio_out_mixer=mixer_for(settings.ambience, settings.ambience_volume),
         ),
     )
     stt, llm, tts = legs
     messages: list[Any] = (
         [{"role": "system", "content": settings.system_prompt}] if settings.system_prompt else []
     )
+    ended: list[str] = []
+    recording: list[bytes] = []
+
+    async def end(reason: str) -> None:
+        if not ended:
+            ended.append(reason)
+            await task.queue_frame(EndFrame())
+
+    gate = GoodbyeGate(end)
+    register_end_call(llm, gate)
     aggregators = LLMContextAggregatorPair(
-        LLMContext(messages=messages),
+        LLMContext(messages=messages, tools=ToolsSchema(standard_tools=[END_CALL])),
         user_params=LLMUserAggregatorParams(
             vad_analyzer=SileroVADAnalyzer(),
             user_turn_strategies=UserTurnStrategies(
@@ -133,11 +190,12 @@ async def run_call(
     pipeline = Pipeline(
         [
             transport.input(),
+            PlayedStreamTap(gate),
             stt,
             aggregators.user(),
             llm,
             tts,
-            UtteranceCheckpoints(),
+            UtteranceCheckpoints(gate),
             transport.output(),
             recorder,
             aggregators.assistant(),
@@ -159,13 +217,6 @@ async def run_call(
         idle_timeout_secs=None,  # the silence watchdog and the length cap end calls instead
         enable_rtvi=False,
     )
-    ended: list[str] = []
-    recording: list[bytes] = []
-
-    async def end(reason: str) -> None:
-        if not ended:
-            ended.append(reason)
-            await task.queue_frame(EndFrame())
 
     @aggregators.user().event_handler("on_user_turn_idle")
     async def _silence(_: Any) -> None:
@@ -182,7 +233,7 @@ async def run_call(
         if audio:
             recording.append(_wav(audio, sample_rate, channels))
 
-    await publish({"type": "started", "call_id": start.call_id, "language": settings.language})
+    await publish({"type": "started", "call_id": call_id, "language": settings.language})
     await recorder.start_recording()
     cap = asyncio.get_running_loop().call_later(
         settings.max_call_s, lambda: asyncio.ensure_future(end("max_length"))
@@ -197,12 +248,13 @@ async def run_call(
             ended.append("caller_hung_up" if caller_gone else type(exc).__name__)
     finally:
         cap.cancel()
+        gate.cancel()
         observer.usage.ended_at = time.monotonic()
     reason = ended[0] if ended else "pipeline_finished"
     # However the pipeline exits, finish the call (recording, usage, `ended` last) in its own
     # task: if this handler is being cancelled, its cancel scope would interrupt every await here.
     finishing = asyncio.create_task(
-        _finish(live, publish, start.call_id, recording, observer.usage, reason)
+        _finish(live, publish, call_id, recording, observer.usage, reason)
     )
     _FINISHING.add(finishing)
     finishing.add_done_callback(_FINISHING.discard)

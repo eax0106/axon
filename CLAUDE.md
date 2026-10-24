@@ -66,6 +66,7 @@ Every command works the same on macOS, Windows and Linux. Run from the repo root
 | Types | `uv run mypy` |
 | Tests | `uv run pytest`. Database tests need `AXON_TEST_DATABASE_URL` (a Postgres user that can create databases, e.g. `postgresql+asyncpg://axon:axon@localhost:5432/postgres` with the Compose Postgres up); without it they skip locally and fail in CI. Live-event tests also need `AXON_TEST_REDIS_URL` (e.g. `redis://localhost:6379/5`). Tests marked `requires_keys` skip until their keys are set |
 | Migrate the database | `uv run alembic -c services/api/alembic.ini upgrade head` (Compose runs this itself in the `migrate` service) |
+| Seed the voice catalog | `uv run --env-file .env python -m app.voices` (Compose runs this itself after migrating; safe to repeat) |
 | New migration after a model change | `uv run alembic -c services/api/alembic.ini revision --autogenerate -m "<what changed>"` |
 | Whole stack in Docker | `docker compose -f deploy/docker-compose.yml up -d --build --wait` |
 | Stack smoke test | `uv run python scripts/compose_smoke.py` (add `--down` to remove it after) |

@@ -31,7 +31,7 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from app.providers.base import ProviderKind
-from engine.services import SERVICES
+from engine.services import SERVICES, Delivery
 
 FIXTURES = Path(__file__).parent / "fixtures"
 LANGUAGES = ["te", "hi", "en"]
@@ -97,7 +97,7 @@ def is_text(frame: Frame) -> bool:
 
 
 def build(kind: ProviderKind, name: str, language: str) -> FrameProcessor:
-    return SERVICES[(kind, name)](language)
+    return SERVICES[(kind, name)](language, Delivery())
 
 
 @pytest.mark.parametrize("language", LANGUAGES)

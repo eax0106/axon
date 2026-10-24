@@ -247,7 +247,10 @@ class Employee(Base):
     number_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("numbers.id", ondelete="SET NULL"), unique=True
     )
+    # The editable script bundle. What calls use is the newest row in employee_versions.
     draft: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    # Voice, ambience, toggles and capture fields: applied to live calls immediately, no publish.
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -339,6 +342,8 @@ class Call(Base):
     transcript: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")
     captured: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     recording_key: Mapped[str | None] = mapped_column(String(500))
+    # Test calls (phone, browser) are free and excluded from stats and billing.
+    is_test: Mapped[bool] = mapped_column(server_default="false")
     created_at: Mapped[datetime] = _created()
 
 

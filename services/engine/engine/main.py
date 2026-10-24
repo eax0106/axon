@@ -6,33 +6,40 @@ pointing at /vobiz/stream -> Vobiz opens that WebSocket and sends `start` then `
 
 import asyncio
 import json
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Response, WebSocket
+from fastapi import FastAPI, Request, Response, WebSocket
 from loguru import logger
+from pipecat.processors.frame_processor import FrameProcessor
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import create_async_engine
+from starlette.websockets import WebSocketState
 
+from app.employees.tickets import read as read_ticket
 from app.main import provider_not_configured
 from app.providers.base import ProviderKind, ProviderNotConfiguredError, TelephonyProvider
 from app.providers.registry import require
-from app.settings import get_settings
+from app.settings import engine_public_url, get_settings
 from engine.call import CallSettings, run_call
 from engine.events import redis_sink
 from engine.legs import voice_legs
-from engine.vobiz import StreamStart, answer_xml
+from engine.plan import load_plan
+from engine.vobiz import StreamStart, VobizFrameSerializer, answer_xml
+from engine.web import WebFrameSerializer
 
-PUBLIC_URL_ENV = "AXON_ENGINE_PUBLIC_URL"
 START_TIMEOUT_S = 10.0  # Vobiz sends `start` right after connecting
 SUPPORTED_LANGUAGES = {"te", "hi", "en"}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.redis = Redis.from_url(get_settings().redis_url)
+    settings = get_settings()
+    app.state.redis = Redis.from_url(settings.redis_url)
+    app.state.db = create_async_engine(settings.database_url, pool_pre_ping=True)
     yield
+    await app.state.db.dispose()
     await app.state.redis.aclose()
 
 
@@ -46,18 +53,6 @@ def _telephony() -> TelephonyProvider:
     return provider
 
 
-def _public_url() -> str:
-    url = os.environ.get(PUBLIC_URL_ENV, "").rstrip("/")
-    if not url.startswith("https://"):
-        raise ProviderNotConfiguredError(
-            ProviderKind.TELEPHONY,
-            "vobiz",
-            [PUBLIC_URL_ENV],
-            f"{PUBLIC_URL_ENV} must be the engine's public https URL (Vobiz must reach it)",
-        )
-    return url
-
-
 def _language(lang: str) -> str:
     return lang if lang in SUPPORTED_LANGUAGES else "en"
 
@@ -67,19 +62,51 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+class _NoPlanError(Exception):
+    """The employee is unknown, or has nothing published and this is not a test call."""
+
+
+async def _setup(
+    app_: FastAPI, lang: str, employee: str, call: str
+) -> tuple[tuple[FrameProcessor, FrameProcessor, FrameProcessor], CallSettings]:
+    """The legs and settings for a call: the employee's own when `employee` is given, else the
+    defaults. Raises ProviderNotConfiguredError (503) or _NoPlanError."""
+    if not employee:
+        language = _language(lang)
+        return voice_legs(language), CallSettings(language=language)
+    plan = await load_plan(app_.state.db, employee, call)
+    if plan is None:
+        raise _NoPlanError
+    legs = voice_legs(plan.language, voice=plan.voice, speed=plan.tts_speed)
+    return legs, CallSettings(
+        language=plan.language,
+        system_prompt=plan.system_prompt,
+        ambience=plan.ambience,
+        ambience_volume=plan.ambience_volume,
+    )
+
+
 @app.post("/vobiz/answer")
-async def vobiz_answer(lang: str = "en", call: str = "") -> Response:
+async def vobiz_answer(
+    request: Request, lang: str = "en", call: str = "", employee: str = ""
+) -> Response:
     """Answer URL for Vobiz calls. 503 provider_not_configured until every leg can run.
 
     `call` is our calls.id when the dialer (B5) or inbound routing (B9) created the row; live
-    events are published under it, else under the carrier's call id.
+    events are published under it, else under the carrier's call id. `employee` selects whose
+    script, voice and settings the call runs on.
     """
-    language = _language(lang)
-    voice_legs(language)
+    try:
+        _, settings = await _setup(request.app, lang, employee, call)
+    except _NoPlanError:
+        return Response("employee not found or not published", status_code=404)
     _telephony()
-    stream_url = "wss://" + _public_url().removeprefix("https://") + "/vobiz/stream"
+    stream_url = "wss://" + engine_public_url().removeprefix("https://") + "/vobiz/stream"
+    query = {"lang": settings.language, "call": call}
+    if employee:
+        query["employee"] = employee
     return Response(
-        answer_xml(f"{stream_url}?{urlencode({'lang': language, 'call': call})}"),
+        answer_xml(f"{stream_url}?{urlencode(query)}"),
         media_type="application/xml",
     )
 
@@ -92,14 +119,18 @@ async def _read_start(websocket: WebSocket) -> StreamStart:
 
 
 @app.websocket("/vobiz/stream")
-async def vobiz_stream(websocket: WebSocket, lang: str = "en", call: str = "") -> None:
+async def vobiz_stream(
+    websocket: WebSocket, lang: str = "en", call: str = "", employee: str = ""
+) -> None:
     await websocket.accept()
-    language = _language(lang)
     try:
-        legs = voice_legs(language)
+        legs, settings = await _setup(websocket.app, lang, employee, call)
         telephony = _telephony()
     except ProviderNotConfiguredError as exc:
         await websocket.close(code=1011, reason=f"provider_not_configured: {exc.detail}"[:120])
+        return
+    except _NoPlanError:
+        await websocket.close(code=1008, reason="employee not found or not published")
         return
     try:
         start = await asyncio.wait_for(_read_start(websocket), START_TIMEOUT_S)
@@ -122,4 +153,33 @@ async def vobiz_stream(websocket: WebSocket, lang: str = "en", call: str = "") -
                 logger.exception(f"hang-up of {start.call_id} failed (attempt {attempt} of 2)")
 
     publish = redis_sink(websocket.app.state.redis, call or start.call_id)
-    await run_call(websocket, start, legs, CallSettings(language=language), publish, hang_up)
+    serializer = VobizFrameSerializer(start, hang_up=hang_up)
+    await run_call(websocket, start.call_id, serializer, legs, settings, publish)
+
+
+@app.websocket("/web/stream")
+async def web_stream(websocket: WebSocket, ticket: str = "") -> None:
+    """Browser test call. The ticket comes from the API (POST /employees/{id}/web-test-call)."""
+    await websocket.accept()
+    granted = read_ticket(ticket)
+    if granted is None:
+        await websocket.close(code=1008, reason="invalid or expired ticket")
+        return
+    try:
+        legs, settings = await _setup(
+            websocket.app, "en", str(granted.employee_id), str(granted.call_id)
+        )
+    except ProviderNotConfiguredError as exc:
+        await websocket.close(code=1011, reason=f"provider_not_configured: {exc.detail}"[:120])
+        return
+    except _NoPlanError:
+        await websocket.close(code=1008, reason="employee not found")
+        return
+    publish = redis_sink(websocket.app.state.redis, str(granted.call_id))
+    try:
+        await run_call(
+            websocket, str(granted.call_id), WebFrameSerializer(), legs, settings, publish
+        )
+    finally:
+        if websocket.client_state != WebSocketState.DISCONNECTED:
+            await websocket.close()

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Any
 
+import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
@@ -12,10 +13,14 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
+from app.employees.ai import router as ai_router
+from app.employees.calls import router as calls_router
+from app.employees.router import router as employees_router
 from app.live import router as live_router
 from app.providers.base import ProviderNotConfiguredError
 from app.providers.registry import report_all
 from app.settings import get_settings
+from app.voices import router as voices_router
 
 READY_TIMEOUT_S = 2.0
 
@@ -39,6 +44,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Axon Voice Engine API", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(live_router)
+app.include_router(employees_router)
+app.include_router(ai_router)
+app.include_router(calls_router)
+app.include_router(voices_router)
 
 
 @app.exception_handler(AuthNotConfiguredError)
@@ -63,6 +72,20 @@ async def provider_not_configured(_: Request, exc: ProviderNotConfiguredError) -
             "provider": exc.name,
             "missing_keys": exc.missing_keys,
             "detail": exc.detail,
+        },
+    )
+
+
+@app.exception_handler(httpx.HTTPError)
+async def vendor_error(_: Request, exc: httpx.HTTPError) -> JSONResponse:
+    """A vendor call failed (rejected key, outage, timeout): 502, never a bare 500."""
+    status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": "provider_error",
+            "vendor_status": status,
+            "detail": f"{type(exc).__name__} calling {exc.request.url.host}",
         },
     )
 

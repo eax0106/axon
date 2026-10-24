@@ -15,7 +15,7 @@ from app.models import VoiceTier
 from app.providers.base import ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import ADAPTERS, VENDOR_KEYS
 from engine.legs import voice_legs
-from engine.services import SERVICES
+from engine.services import SERVICES, Delivery
 
 LANGUAGES = ["te", "hi", "en"]
 EXPECTED = [
@@ -53,7 +53,7 @@ def test_every_speech_adapter_has_an_engine_service() -> None:
 def test_service_builds_for_each_language(
     kind: ProviderKind, name: str, service: type, language: str
 ) -> None:
-    built: Any = SERVICES[(kind, name)](language)
+    built: Any = SERVICES[(kind, name)](language, Delivery())
     if kind is not ProviderKind.LLM:
         assert str(built._settings.language).startswith(language)
     assert isinstance(built, service)
@@ -61,7 +61,7 @@ def test_service_builds_for_each_language(
 
 def test_models_and_voices_are_the_intended_ones() -> None:
     def settings(kind: ProviderKind, name: str) -> Any:
-        built: Any = SERVICES[(kind, name)]("te")
+        built: Any = SERVICES[(kind, name)]("te", Delivery())
         return built._settings
 
     assert settings(ProviderKind.STT, "sarvam").model == "saaras:v4"
@@ -77,7 +77,7 @@ def test_models_and_voices_are_the_intended_ones() -> None:
 
 def test_gemini_model_can_be_switched_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AXON_GEMINI_MODEL", "gemini-3.6-flash")
-    built: Any = SERVICES[(ProviderKind.LLM, "gemini")]("en")
+    built: Any = SERVICES[(ProviderKind.LLM, "gemini")]("en", Delivery())
     assert built._settings.model == "gemini-3.6-flash"
 
 
@@ -86,14 +86,14 @@ def test_cartesia_telugu_and_hindi_need_a_voice_id(monkeypatch: pytest.MonkeyPat
     monkeypatch.delenv("CARTESIA_VOICE_EN")
     cartesia = SERVICES[(ProviderKind.TTS, "cartesia")]
     with pytest.raises(ProviderNotConfiguredError) as raised:
-        cartesia("te")
+        cartesia("te", Delivery())
     assert raised.value.missing_keys == ["CARTESIA_VOICE_TE"]
-    assert cartesia("en")  # English has a documented default voice
+    assert cartesia("en", Delivery())  # English has a documented default voice
 
 
 def test_unsupported_language_is_rejected() -> None:
     with pytest.raises(ValueError, match="unsupported language"):
-        SERVICES[(ProviderKind.STT, "sarvam")]("ta")
+        SERVICES[(ProviderKind.STT, "sarvam")]("ta", Delivery())
 
 
 @pytest.mark.parametrize(
