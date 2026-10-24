@@ -4,6 +4,7 @@ Usage: uv run python scripts/compose_smoke.py [--down]
 """
 
 import json
+import os
 import subprocess
 import sys
 import urllib.request
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 COMPOSE = ["docker", "compose", "-f", str(Path(__file__).parents[1] / "deploy/docker-compose.yml")]
-API = "http://localhost:8000"
+API = f"http://localhost:{os.environ.get('AXON_API_PORT', '8000')}"
 MAX_IMAGE_BYTES = 1_000_000_000
 
 

@@ -2,7 +2,8 @@
 
 Selection: env `AXON_<KIND>_PROVIDER` (for example `AXON_TTS_PROVIDER=cartesia`), else the first
 vendor listed for that kind. A provider is `missing_key` when any of its keys is unset or empty,
-`unhealthy` when its adapter's health check fails, and `configured` otherwise.
+`unhealthy` when its adapter is not built yet or its health check fails, and `configured`
+only when keys are set and the adapter's health check passes.
 """
 
 import asyncio
@@ -72,16 +73,9 @@ def missing_keys(kind: ProviderKind, name: str) -> list[str]:
     return [key for key in VENDOR_KEYS[kind][name] if not os.environ.get(key)]
 
 
-def require(kind: ProviderKind) -> Provider:
-    """The selected adapter for `kind`, or ProviderNotConfiguredError (served as 503)."""
-    name = selected_name(kind)
-    env = f"AXON_{kind.upper()}_PROVIDER"
-    if name is None:
-        raise ProviderNotConfiguredError(kind, "", [], f"no {kind} vendor chosen yet")
-    if name not in VENDOR_KEYS[kind]:
-        raise ProviderNotConfiguredError(
-            kind, name, [env], f"{env}={name!r} is not a {kind} vendor"
-        )
+def resolve(kind: ProviderKind, name: str) -> Provider:
+    """The adapter for one vendor, or ProviderNotConfiguredError. Shared by require() and the
+    /admin/providers report so both always agree on whether a vendor can be used."""
     missing = missing_keys(kind, name)
     if missing:
         raise ProviderNotConfiguredError(
@@ -93,17 +87,34 @@ def require(kind: ProviderKind) -> Provider:
     return adapter()
 
 
+def require(kind: ProviderKind) -> Provider:
+    """The selected adapter for `kind`, or ProviderNotConfiguredError (served as 503)."""
+    name = selected_name(kind)
+    env = f"AXON_{kind.upper()}_PROVIDER"
+    if name is None:
+        raise ProviderNotConfiguredError(kind, "", [], f"no {kind} vendor chosen yet")
+    if name not in VENDOR_KEYS[kind]:
+        raise ProviderNotConfiguredError(
+            kind, name, [env], f"{env}={name!r} is not a {kind} vendor"
+        )
+    return resolve(kind, name)
+
+
 async def _report(kind: ProviderKind, name: str, selected: str | None) -> ProviderReport:
-    missing = missing_keys(kind, name)
-    adapter = ADAPTERS.get((kind, name))
-    status: Status = "missing_key" if missing else "configured"
-    error = None
-    if not missing and adapter is not None:
-        try:
-            await asyncio.wait_for(adapter().health(), HEALTH_TIMEOUT_S)
-        except Exception as exc:
-            status, error = "unhealthy", f"{type(exc).__name__}: {exc}"[:200]
-    return ProviderReport(kind, name, name == selected, status, missing, error)
+    def row(status: Status, missing: list[str], error: str | None = None) -> ProviderReport:
+        return ProviderReport(kind, name, name == selected, status, missing, error)
+
+    try:
+        provider = resolve(kind, name)
+    except ProviderNotConfiguredError as exc:
+        if exc.missing_keys:
+            return row("missing_key", exc.missing_keys)
+        return row("unhealthy", [], exc.detail)
+    try:
+        await asyncio.wait_for(provider.health(), HEALTH_TIMEOUT_S)
+    except Exception as exc:
+        return row("unhealthy", [], f"{type(exc).__name__}: {exc}"[:200])
+    return row("configured", [])
 
 
 async def report_all() -> list[ProviderReport]:

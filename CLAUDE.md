@@ -71,4 +71,4 @@ Every command works the same on macOS, Windows and Linux. Run from the repo root
 | API natively (needs Postgres + Redis, e.g. `docker compose -f deploy/docker-compose.yml up -d postgres redis`) | `uv run --env-file .env uvicorn app.main:app --app-dir services/api --reload` |
 | Worker natively | `uv run --env-file .env --directory services/worker python -m arq worker.main.WorkerSettings` |
 
-Config: copy `.env.example` to `.env` (never committed). Host ports can be moved with `AXON_API_PORT`, `AXON_PG_PORT`, `AXON_REDIS_PORT`.
+Config: copy `.env.example` to `.env` (never committed). Host ports can be moved with `AXON_API_PORT`, `AXON_PG_PORT`, `AXON_REDIS_PORT` (the smoke test follows `AXON_API_PORT`). To run two stacks at once (for example two worktrees), give each its own `COMPOSE_PROJECT_NAME` and its own ports; otherwise they share containers and the `pgdata` volume.
