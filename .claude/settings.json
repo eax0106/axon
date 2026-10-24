@@ -57,5 +57,8 @@
       "Bash(gh repo delete *)",
       "Bash(git add .env*)"
     ]
+  },
+  "worktree": {
+    "baseRef": "head"
   }
 }
