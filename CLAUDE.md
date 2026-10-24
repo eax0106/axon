@@ -64,11 +64,13 @@ Every command works the same on macOS, Windows and Linux. Run from the repo root
 | Install everything | `uv sync --all-packages` |
 | Lint + format check | `uv run ruff check .` and `uv run ruff format --check .` |
 | Types | `uv run mypy` |
-| Tests | `uv run pytest` (tests marked `requires_keys` skip until their keys are set) |
+| Tests | `uv run pytest`. Database tests need `AXON_TEST_DATABASE_URL` (a Postgres user that can create databases, e.g. `postgresql+asyncpg://axon:axon@localhost:5432/postgres` with the Compose Postgres up); without it they skip locally and fail in CI. Tests marked `requires_keys` skip until their keys are set |
+| Migrate the database | `uv run alembic -c services/api/alembic.ini upgrade head` (Compose runs this itself in the `migrate` service) |
+| New migration after a model change | `uv run alembic -c services/api/alembic.ini revision --autogenerate -m "<what changed>"` |
 | Whole stack in Docker | `docker compose -f deploy/docker-compose.yml up -d --build --wait` |
 | Stack smoke test | `uv run python scripts/compose_smoke.py` (add `--down` to remove it after) |
 | Stop the stack | `docker compose -f deploy/docker-compose.yml down` |
 | API natively (needs Postgres + Redis, e.g. `docker compose -f deploy/docker-compose.yml up -d postgres redis`) | `uv run --env-file .env uvicorn app.main:app --app-dir services/api --reload` |
 | Worker natively | `uv run --env-file .env --directory services/worker python -m arq worker.main.WorkerSettings` |
 
-Config: copy `.env.example` to `.env` (never committed). Host ports can be moved with `AXON_API_PORT`, `AXON_PG_PORT`, `AXON_REDIS_PORT` (the smoke test follows `AXON_API_PORT`). To run two stacks at once (for example two worktrees), give each its own `COMPOSE_PROJECT_NAME` and its own ports; otherwise they share containers and the `pgdata` volume.
+Config: copy `.env.example` to `.env` (never committed) and set `AXON_JWT_SECRET` for signup and login. Host ports can be moved with `AXON_API_PORT`, `AXON_PG_PORT`, `AXON_REDIS_PORT` (the smoke test follows `AXON_API_PORT`). To run two stacks at once (for example two worktrees), give each its own `COMPOSE_PROJECT_NAME` and its own ports; otherwise they share containers and the `pgdata` volume.

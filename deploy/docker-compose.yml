@@ -28,6 +28,14 @@ services:
       timeout: 3s
       retries: 20
 
+  migrate:
+    image: axon-api:dev
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { SERVICE: api } }
+    command: ["alembic", "-c", "services/api/alembic.ini", "upgrade", "head"]
+    environment: *app-env
+    depends_on:
+      postgres: { condition: service_healthy }
+
   api:
     image: axon-api:dev
     build: { context: .., dockerfile: deploy/Dockerfile, args: { SERVICE: api } }
@@ -36,7 +44,7 @@ services:
     environment: *app-env
     ports: ["${AXON_API_PORT:-8000}:8000"]
     depends_on:
-      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/readyz', timeout=2)"]

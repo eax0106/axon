@@ -20,6 +20,9 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RUF"]
 ignore = ["S101"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["app", "worker"]
+
 [tool.ruff.lint.per-file-ignores]
 "services/*/tests/**" = ["S603", "S607"]
 "scripts/**" = ["S603", "S607", "S310"]
@@ -29,11 +32,12 @@ strict = true
 python_version = "3.12"
 mypy_path = "services/api,services/worker"
 explicit_package_bases = true
-files = ["services/api/app", "services/api/tests", "services/worker/worker", "scripts", "conftest.py"]
+files = ["services/api/app", "services/api/migrations", "services/api/tests", "services/worker/worker", "scripts", "conftest.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["services/api/tests"]
 # Explicit so tests never depend on editable-install .pth files (macOS may flag them hidden).
 pythonpath = ["services/api", "services/worker"]
 addopts = "-p pytester"
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
 markers = ["requires_keys(*keys): needs real vendor keys; skipped while any named key is unset"]

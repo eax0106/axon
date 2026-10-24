@@ -4,12 +4,14 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.auth import AuthNotConfiguredError, require_admin
+from app.auth import router as auth_router
 from app.providers.registry import ProviderNotConfiguredError, report_all
 from app.settings import get_settings
 
@@ -33,6 +35,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Axon Voice Engine API", lifespan=lifespan)
+app.include_router(auth_router)
+
+
+@app.exception_handler(AuthNotConfiguredError)
+async def auth_not_configured(_: Request, __: AuthNotConfiguredError) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "auth_not_configured",
+            "missing_keys": ["AXON_JWT_SECRET"],
+            "detail": "AXON_JWT_SECRET must be set (at least 32 characters)",
+        },
+    )
 
 
 @app.exception_handler(ProviderNotConfiguredError)
@@ -75,7 +90,6 @@ async def readyz(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ready"})
 
 
-@app.get("/admin/providers")
+@app.get("/admin/providers", dependencies=[Depends(require_admin)])
 async def admin_providers() -> dict[str, Any]:
-    # ponytail: unauthenticated until B1 adds auth and roles; exposes key names, never values.
     return {"providers": [asdict(r) for r in await report_all()]}
