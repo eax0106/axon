@@ -65,14 +65,27 @@ def main() -> None:
         assert refused.code == 503
         assert json.load(refused)["error"] == "provider_not_configured"
         for image in ("axon-api:dev", "axon-engine:dev", "axon-worker:dev"):
+            # Unpacked size of the image's filesystem. `docker image inspect` reports compressed
+            # size on some Docker setups and unpacked on others, so it can't be compared.
             size = subprocess.run(
-                ["docker", "image", "inspect", "--format", "{{.Size}}", image],
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--user",
+                    "root",
+                    "--entrypoint",
+                    "du",
+                    image,
+                    "-sxb",
+                    "/",
+                ],
                 capture_output=True,
                 text=True,
                 check=True,
-            ).stdout
-            assert int(size) < MAX_IMAGE_BYTES, f"{image} is {int(size) / 1e6:.0f} MB"
-            print(f"{image}: {int(size) / 1e6:.0f} MB")
+            ).stdout.split()[0]
+            assert int(size) < MAX_IMAGE_BYTES, f"{image} is {int(size) / 1e6:.0f} MB unpacked"
+            print(f"{image}: {int(size) / 1e6:.0f} MB unpacked")
     except Exception:
         subprocess.run([*COMPOSE, "ps", "-a"], check=False)
         subprocess.run([*COMPOSE, "logs", "--tail", "50"], check=False)

@@ -2,7 +2,8 @@
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.11.31 /uv /usr/local/bin/uv
 ARG SERVICE
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
+# UV_NO_CACHE keeps the download cache (half the size) out of the image.
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_NO_CACHE=1 \
     PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1
 WORKDIR /app
 # Dependencies first so code edits don't reinstall them.
