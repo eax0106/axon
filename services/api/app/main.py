@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
 from app.live import router as live_router
-from app.providers.registry import ProviderNotConfiguredError, report_all
+from app.providers.base import ProviderNotConfiguredError
+from app.providers.registry import report_all
 from app.settings import get_settings
 
 READY_TIMEOUT_S = 2.0

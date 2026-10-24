@@ -37,7 +37,7 @@ files = ["services/api/app", "services/api/migrations", "services/api/tests", "s
 
 # Pipecat is only partly typed: allow calling its untyped functions and decorators from the engine.
 [[tool.mypy.overrides]]
-module = ["engine.*", "engine_tests.*"]
+module = ["engine.*", "engine_tests.*", "app.providers.speech.*"]
 disallow_untyped_calls = false
 disallow_untyped_decorators = false
 

@@ -12,7 +12,11 @@ import time
 from dataclasses import dataclass
 from typing import Literal
 
-from app.providers.base import Provider, ProviderKind
+from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
+from app.providers.speech.cartesia import CartesiaTTS
+from app.providers.speech.gemini import GeminiLLM
+from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
+from app.providers.speech.smallest import SmallestSTT, SmallestTTS
 from app.providers.telephony.vobiz import VobizTelephony
 
 _VOBIZ = ("VOBIZ_AUTH_ID", "VOBIZ_AUTH_TOKEN")
@@ -46,7 +50,17 @@ VENDOR_KEYS: dict[ProviderKind, dict[str, tuple[str, ...]]] = {
 # (kind, vendor) -> adapter class. Each phase adds the real adapters it builds.
 ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
     (ProviderKind.TELEPHONY, "vobiz"): VobizTelephony,
+    (ProviderKind.STT, "sarvam"): SarvamSTT,
+    (ProviderKind.STT, "smallest"): SmallestSTT,
+    (ProviderKind.LLM, "gemini"): GeminiLLM,
+    (ProviderKind.LLM, "sarvam"): SarvamLLM,
+    (ProviderKind.TTS, "sarvam"): SarvamTTS,
+    (ProviderKind.TTS, "smallest"): SmallestTTS,
+    (ProviderKind.TTS, "cartesia"): CartesiaTTS,
 }
+
+# Voice tier -> TTS vendor (BUILD_PLAN B3). An employee's tier picks its voice vendor per call.
+TIER_TTS = {"value": "sarvam", "standard": "smallest", "premium": "cartesia"}
 
 Status = Literal["configured", "missing_key", "unhealthy"]
 HEALTH_TIMEOUT_S = 5.0
@@ -54,12 +68,6 @@ HEALTH_TTL_S = 30.0
 # (kind, vendor) -> (monotonic expiry, error or None). Keeps /admin/providers from calling every
 # vendor on every request. ponytail: per-process; concurrent misses may both call the vendor.
 _health_cache: dict[tuple[ProviderKind, str], tuple[float, str | None]] = {}
-
-
-class ProviderNotConfiguredError(Exception):
-    def __init__(self, kind: ProviderKind, name: str, missing_keys: list[str], detail: str):
-        super().__init__(detail)
-        self.kind, self.name, self.missing_keys, self.detail = kind, name, missing_keys, detail
 
 
 @dataclass(frozen=True)
@@ -93,6 +101,13 @@ def resolve(kind: ProviderKind, name: str) -> Provider:
     if adapter is None:
         raise ProviderNotConfiguredError(kind, name, [], f"{kind} adapter {name!r} not built yet")
     return adapter()
+
+
+def tts_for_tier(tier: str) -> Provider:
+    """The TTS adapter for a voice tier, or ProviderNotConfiguredError (served as 503)."""
+    if tier not in TIER_TTS:
+        raise ValueError(f"unknown voice tier {tier!r}; expected {', '.join(TIER_TTS)}")
+    return resolve(ProviderKind.TTS, TIER_TTS[tier])
 
 
 def require(kind: ProviderKind) -> Provider:

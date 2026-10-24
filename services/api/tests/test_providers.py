@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from app.auth import require_admin
 from app.main import app, provider_not_configured
 from app.providers import registry
-from app.providers.base import Provider, ProviderKind
+from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
 
 
 class _BrokenVendor(Provider):
@@ -45,7 +45,7 @@ def as_admin() -> Iterator[None]:
 def needs_stt(no_keys: None) -> TestClient:
     """A test-only app with one route that needs the STT provider and the API's 503 handler."""
     test_app = FastAPI()
-    test_app.exception_handler(registry.ProviderNotConfiguredError)(provider_not_configured)
+    test_app.exception_handler(ProviderNotConfiguredError)(provider_not_configured)
 
     @test_app.get("/needs-stt")
     async def _needs_stt(
@@ -57,9 +57,14 @@ def needs_stt(no_keys: None) -> TestClient:
 
 
 def _register(adapter: type[Provider]) -> Iterator[None]:
-    registry.ADAPTERS[(adapter.kind, adapter.name)] = adapter
+    key = (adapter.kind, adapter.name)
+    real = registry.ADAPTERS.get(key)
+    registry.ADAPTERS[key] = adapter
     yield
-    del registry.ADAPTERS[(adapter.kind, adapter.name)]
+    if real is None:
+        del registry.ADAPTERS[key]
+    else:
+        registry.ADAPTERS[key] = real
 
 
 @pytest.fixture
@@ -104,6 +109,7 @@ def test_keys_without_a_built_adapter_report_unhealthy(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("CARTESIA_API_KEY", "set-in-test")
+    monkeypatch.delitem(registry.ADAPTERS, (ProviderKind.TTS, "cartesia"))
     row = _row(client, "tts", "cartesia")
     assert (row["status"], row["error"]) == ("unhealthy", "tts adapter 'cartesia' not built yet")
 
@@ -151,6 +157,7 @@ def test_keys_without_a_built_adapter_still_answer_503(
     needs_stt: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SARVAM_API_KEY", "set-in-test")
+    monkeypatch.delitem(registry.ADAPTERS, (ProviderKind.STT, "sarvam"))
     response = needs_stt.get("/needs-stt")
     assert response.status_code == 503
     assert response.json()["detail"] == "stt adapter 'sarvam' not built yet"

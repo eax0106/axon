@@ -36,8 +36,8 @@ from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from starlette.websockets import WebSocket, WebSocketState
 
-from app.providers.base import ObjectStorageProvider, ProviderKind
-from app.providers.registry import ProviderNotConfiguredError, require
+from app.providers.base import ObjectStorageProvider, ProviderKind, ProviderNotConfiguredError
+from app.providers.registry import require
 from engine.events import CallObserver, EventSink, Usage
 from engine.vobiz import StreamStart, VobizFrameSerializer, checkpoint
 
