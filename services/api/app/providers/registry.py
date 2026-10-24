@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from typing import Literal
 
+from app.models import VoiceTier
 from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
 from app.providers.speech.cartesia import CartesiaTTS
 from app.providers.speech.gemini import GeminiLLM
@@ -60,7 +61,11 @@ ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
 }
 
 # Voice tier -> TTS vendor (BUILD_PLAN B3). An employee's tier picks its voice vendor per call.
-TIER_TTS = {"value": "sarvam", "standard": "smallest", "premium": "cartesia"}
+TIER_TTS = {
+    VoiceTier.VALUE: "sarvam",
+    VoiceTier.STANDARD: "smallest",
+    VoiceTier.PREMIUM: "cartesia",
+}
 
 Status = Literal["configured", "missing_key", "unhealthy"]
 HEALTH_TIMEOUT_S = 5.0
@@ -103,10 +108,8 @@ def resolve(kind: ProviderKind, name: str) -> Provider:
     return adapter()
 
 
-def tts_for_tier(tier: str) -> Provider:
+def tts_for_tier(tier: VoiceTier) -> Provider:
     """The TTS adapter for a voice tier, or ProviderNotConfiguredError (served as 503)."""
-    if tier not in TIER_TTS:
-        raise ValueError(f"unknown voice tier {tier!r}; expected {', '.join(TIER_TTS)}")
     return resolve(ProviderKind.TTS, TIER_TTS[tier])
 
 

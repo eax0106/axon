@@ -4,6 +4,7 @@ import json
 import httpx
 import pytest
 
+from app.models import VoiceTier
 from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import ADAPTERS, TIER_TTS, VENDOR_KEYS, require, tts_for_tier
 from app.providers.speech.cartesia import CartesiaTTS
@@ -85,6 +86,8 @@ def test_health_smallest_lists_voices_with_bearer_key(monkeypatch: pytest.Monkey
 def test_health_cartesia_lists_one_voice_with_version_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("CARTESIA_VOICE_HI", "voice-hi")
+    monkeypatch.setenv("CARTESIA_VOICE_TE", "voice-te")
     request = health_request(monkeypatch, ProviderKind.TTS, "cartesia")
     assert str(request.url) == "https://api.cartesia.ai/voices?limit=1"
     assert request.headers["authorization"] == "Bearer test-key"
@@ -110,16 +113,30 @@ def test_health_raises_when_the_vendor_rejects_the_key(monkeypatch: pytest.Monke
 def test_tier_maps_value_standard_premium_to_sarvam_smallest_cartesia(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert TIER_TTS == {"value": "sarvam", "standard": "smallest", "premium": "cartesia"}
+    assert TIER_TTS == {
+        VoiceTier.VALUE: "sarvam",
+        VoiceTier.STANDARD: "smallest",
+        VoiceTier.PREMIUM: "cartesia",
+    }
     for tier, name in TIER_TTS.items():
         set_keys(monkeypatch, ProviderKind.TTS, name)
         assert tts_for_tier(tier).name == name
 
 
-def test_tier_unknown_is_rejected_and_missing_key_is_503(monkeypatch: pytest.MonkeyPatch) -> None:
-    with pytest.raises(ValueError, match="unknown voice tier"):
-        tts_for_tier("gold")
+def test_tier_missing_key_is_503(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CARTESIA_API_KEY", raising=False)
     with pytest.raises(ProviderNotConfiguredError) as raised:
-        tts_for_tier("premium")
+        tts_for_tier(VoiceTier.PREMIUM)
     assert raised.value.missing_keys == ["CARTESIA_API_KEY"]
+
+
+def test_cartesia_health_names_the_missing_hindi_and_telugu_voices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_keys(monkeypatch, ProviderKind.TTS, "cartesia")
+    monkeypatch.delenv("CARTESIA_VOICE_HI", raising=False)
+    monkeypatch.setenv("CARTESIA_VOICE_TE", "voice-te")
+    with pytest.raises(RuntimeError, match="CARTESIA_VOICE_HI"):
+        asyncio.run(
+            CartesiaTTS(transport=httpx.MockTransport(lambda _: httpx.Response(200))).health()
+        )

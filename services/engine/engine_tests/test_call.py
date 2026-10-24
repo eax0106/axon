@@ -20,6 +20,7 @@ from app.providers import registry
 from app.providers.base import Provider, ProviderKind, TelephonyProvider
 from engine.call import CallSettings
 from engine.main import app
+from engine.services import SERVICES
 
 from .test_vobiz import START, STREAM_ID
 
@@ -46,15 +47,12 @@ class _SpeaksOnce(_Passthrough):
             await self.push_frame(TTSStoppedFrame())
 
 
-def _leg(kind: ProviderKind, service: type[FrameProcessor]) -> type[Provider]:
+def _leg(kind: ProviderKind) -> type[Provider]:
     class Leg(Provider):
         name = "testleg"
 
         async def health(self) -> None:
             return None
-
-        def pipecat_service(self, language: str) -> FrameProcessor:
-            return service()
 
     Leg.kind = kind
     return Leg
@@ -96,12 +94,17 @@ def events(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 @pytest.fixture
 def providers(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Every leg resolvable: test-only adapters plus keys for them."""
+    services = {
+        (ProviderKind.STT, "testleg"): lambda _language: _SpeaksOnce(),
+        (ProviderKind.LLM, "testleg"): lambda _language: _Passthrough(),
+        (ProviderKind.TTS, "testleg"): lambda _language: _Passthrough(),
+    }
     adapters = {
-        (ProviderKind.STT, "testleg"): _leg(ProviderKind.STT, _SpeaksOnce),
-        (ProviderKind.LLM, "testleg"): _leg(ProviderKind.LLM, _Passthrough),
-        (ProviderKind.TTS, "testleg"): _leg(ProviderKind.TTS, _Passthrough),
+        **{key: _leg(key[0]) for key in services},
         (ProviderKind.TELEPHONY, "testcarrier"): _Carrier,
     }
+    for key, factory in services.items():
+        monkeypatch.setitem(SERVICES, key, factory)
     for kind, name in adapters:
         monkeypatch.setitem(registry.VENDOR_KEYS[kind], name, ())
         monkeypatch.setitem(registry.ADAPTERS, (kind, name), adapters[(kind, name)])

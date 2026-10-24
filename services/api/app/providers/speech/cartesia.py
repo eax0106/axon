@@ -4,19 +4,15 @@ REST base https://api.cartesia.ai, header `Authorization: Bearer <key>` and `Car
 """
 
 import os
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from app.providers.base import TextToSpeechProvider
-from app.providers.speech.common import VendorHealth, need_env, pipecat_language
+from app.providers.speech.common import VendorHealth
 
-if TYPE_CHECKING:
-    from pipecat.processors.frame_processor import FrameProcessor
-
-MODEL = "sonic-3.6"
 API_VERSION = "2026-08-14"
 # Cartesia documents English voice ids only; Hindi and Telugu voices are picked from the voice
-# library (play.cartesia.ai/voices) and set in CARTESIA_VOICE_HI / CARTESIA_VOICE_TE.
-ENGLISH_VOICE = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+# library (play.cartesia.ai/voices) and set in these variables.
+VOICE_ENV = {"hi": "CARTESIA_VOICE_HI", "te": "CARTESIA_VOICE_TE"}
 
 
 class CartesiaTTS(VendorHealth, TextToSpeechProvider):
@@ -30,17 +26,9 @@ class CartesiaTTS(VendorHealth, TextToSpeechProvider):
             "Cartesia-Version": API_VERSION,
         }
 
-    def voice(self, language: str) -> str:
-        if pipecat_language(language).value == "en":
-            return os.environ.get("CARTESIA_VOICE_EN") or ENGLISH_VOICE
-        return need_env(self, f"CARTESIA_VOICE_{language.upper()}")
-
-    def pipecat_service(self, language: str) -> "FrameProcessor":
-        from pipecat.services.cartesia.tts import CartesiaTTSService
-
-        return CartesiaTTSService(
-            api_key=os.environ["CARTESIA_API_KEY"],
-            settings=CartesiaTTSService.Settings(
-                model=MODEL, voice=self.voice(language), language=pipecat_language(language)
-            ),
-        )
+    async def health(self) -> None:
+        # A key alone is not enough: without a Hindi or Telugu voice those calls would 503.
+        missing = [var for var in VOICE_ENV.values() if not os.environ.get(var)]
+        if missing:
+            raise RuntimeError(f"set {', '.join(missing)} (voice ids from play.cartesia.ai/voices)")
+        await super().health()

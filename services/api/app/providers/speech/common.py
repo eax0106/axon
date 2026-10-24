@@ -1,27 +1,13 @@
-"""Shared by the speech and LLM adapters: the V1 languages and the vendor health request."""
+"""Shared by the speech and LLM adapters: the one vendor health request."""
 
-import os
+from abc import abstractmethod
 from typing import Any, ClassVar
 
 import httpx
 
-from app.providers.base import Provider, ProviderNotConfiguredError
+from app.providers.base import Provider
 
-LANGUAGES = ("te", "hi", "en")
 TIMEOUT_S = 10.0
-
-
-def check_language(language: str) -> str:
-    if language not in LANGUAGES:
-        raise ValueError(f"unsupported language {language!r}; V1 speaks {', '.join(LANGUAGES)}")
-    return language
-
-
-def pipecat_language(language: str) -> Any:
-    """The Pipecat `Language` for a V1 language code. Imported late: only the engine has Pipecat."""
-    from pipecat.transcriptions.language import Language
-
-    return Language(check_language(language))
 
 
 class VendorHealth(Provider):
@@ -35,8 +21,9 @@ class VendorHealth(Provider):
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._transport = transport
 
+    @abstractmethod
     def headers(self) -> dict[str, str]:
-        raise NotImplementedError
+        """Auth headers for the health request."""
 
     async def health(self) -> None:
         async with httpx.AsyncClient(timeout=TIMEOUT_S, transport=self._transport) as client:
@@ -48,12 +35,3 @@ class VendorHealth(Provider):
                 json=self.health_json,
             )
             response.raise_for_status()
-
-
-def need_env(kind_adapter: Provider, name: str) -> str:
-    """The value of a required env var, or ProviderNotConfiguredError (served as 503)."""
-    value = os.environ.get(name)
-    if not value:
-        detail = f"{kind_adapter.kind} provider {kind_adapter.name!r} needs {name}"
-        raise ProviderNotConfiguredError(kind_adapter.kind, kind_adapter.name, [name], detail)
-    return value
