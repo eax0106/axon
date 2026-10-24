@@ -16,8 +16,8 @@ from loguru import logger
 from redis.asyncio import Redis
 
 from app.main import provider_not_configured
-from app.providers.base import ProviderKind, TelephonyProvider
-from app.providers.registry import ProviderNotConfiguredError, require
+from app.providers.base import ProviderKind, ProviderNotConfiguredError, TelephonyProvider
+from app.providers.registry import require
 from app.settings import get_settings
 from engine.call import CallSettings, run_call
 from engine.events import redis_sink

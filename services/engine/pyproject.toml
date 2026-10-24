@@ -5,7 +5,7 @@ requires-python = "==3.12.*"
 dependencies = [
     "axon-api",
     "fastapi",
-    "pipecat-ai[silero,websocket]>=1.14,<2",
+    "pipecat-ai[google,sarvam,silero,websocket]>=1.14,<2",
     "redis",
     "uvicorn",
 ]

@@ -20,6 +20,12 @@ class ProviderKind(StrEnum):
     NUMBER_KYC = "number_kyc"
 
 
+class ProviderNotConfiguredError(Exception):
+    def __init__(self, kind: ProviderKind, name: str, missing_keys: list[str], detail: str):
+        super().__init__(detail)
+        self.kind, self.name, self.missing_keys, self.detail = kind, name, missing_keys, detail
+
+
 class Provider(ABC):
     """Base for every adapter.
 
@@ -53,3 +59,15 @@ class ObjectStorageProvider(Provider):
     @abstractmethod
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         """Store `data` at `key`, replacing anything there."""
+
+
+class SpeechToTextProvider(Provider):
+    kind = ProviderKind.STT
+
+
+class LLMProvider(Provider):
+    kind = ProviderKind.LLM
+
+
+class TextToSpeechProvider(Provider):
+    kind = ProviderKind.TTS
