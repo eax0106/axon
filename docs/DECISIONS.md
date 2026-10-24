@@ -16,3 +16,5 @@ Settled decisions. Don't reopen them without the owner. Newest at the bottom.
 | 2026-10-24 | Skills: unlazy always on in every session; ponytail for all code; thermo-nuclear-code-quality-review is the only review skill; Strix after the backend is complete; frontend by Opus only, no design-workflow skills | Owner decision |
 | 2026-10-24 | Session model: Opus orchestrator; Opus builder for B0–B2 and B13, Sonnet (high) for B3–B12 and B14; Opus reviewer per phase | Cost vs. quality |
 | 2026-10-24 | Brand: "Axon Voice Engine by ALTERX". Dashboard design language from alterx.co.in | Owner |
+| 2026-10-24 | Non-stop autonomous run of B0–B14: orchestrator auto squash-merges after reviewer APPROVE + gates ALL MET; planned dependencies, builds and tests pre-approved; usage-limit auto-continue on | Owner wants the build not to stop until B14 |
+| 2026-10-24 | GitHub account havishvardhan04-creator; local-git mode until it has write access to eax0106/axon, then push everything | Both accounts have read-only access today |

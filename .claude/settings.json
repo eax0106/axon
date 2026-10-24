@@ -25,5 +25,37 @@
   },
   "enabledPlugins": {
     "ponytail@ponytail": true
+  },
+  "autoContinueAtUsageLimit": true,
+  "permissions": {
+    "allow": [
+      "Bash(uv *)",
+      "Bash(uvx *)",
+      "Bash(pnpm *)",
+      "Bash(npm run *)",
+      "Bash(node *)",
+      "Bash(python3 *)",
+      "Bash(pytest *)",
+      "Bash(docker compose *)",
+      "Bash(docker build *)",
+      "Bash(git *)",
+      "Bash(gh pr *)",
+      "Bash(gh repo view *)",
+      "Bash(alembic *)",
+      "Bash(ruff *)",
+      "Bash(mypy *)",
+      "Bash(psql *)",
+      "Bash(redis-cli *)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git branch -D *)",
+      "Bash(git branch -d *)",
+      "Bash(git push origin --delete *)",
+      "Bash(git push * --delete *)",
+      "Bash(gh repo delete *)",
+      "Bash(git add .env*)"
+    ]
   }
 }
