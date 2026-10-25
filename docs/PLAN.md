@@ -13,8 +13,8 @@ Legend: `todo` · `building` · `in review` · `changes` · `merged` · `blocked
 | B2 | Voice engine (Pipecat, Vobiz serializer) | Opus | merged | [#3](https://github.com/eax0106/axon/pull/3) 6cfe998 | 2 review rounds + image-size and end-of-call ordering fixes; carry-overs in docs/phases/b2.md |
 | B3 | Speech + LLM provider adapters | Sonnet | merged | [#4](https://github.com/eax0106/axon/pull/4) dd356c0 | 2 review rounds; STT fixtures to regenerate with licensed TTS at wiring |
 | B4 | AI employee builder | Sonnet | merged | [#5](https://github.com/eax0106/axon/pull/5) 864401d | 2 review rounds; carry-overs in docs/phases/b4.md |
-| B5 | Instant channel | Sonnet | building | | |
-| B6 | Post-call + data views | Sonnet | todo | | |
+| B5 | Instant channel | Sonnet | merged | [#7](https://github.com/eax0106/axon/pull/7) b9ca988 | 2 review rounds; carry-overs in docs/phases/b5.md |
+| B6 | Post-call + data views | Sonnet | building | | |
 | B7 | Billing + numbers (incl. number types and dialer rule table) | Sonnet | todo | | |
 | B8 | Bulk campaigns | Sonnet | todo | | |
 | B9 | Inbound | Sonnet | todo | | |
