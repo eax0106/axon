@@ -54,3 +54,45 @@ def add_member(
         {"i": user_id, "a": uuid.UUID(account_id(client, owner)), "e": email},
     )
     return {"Authorization": f"Bearer {issue_token(User(id=user_id))}"}
+
+
+def live_employee(
+    client: TestClient,
+    url: str,
+    owner: dict[str, str],
+    *,
+    variables: tuple[str, ...] = (),
+    channel: str = "instant",
+    number: str = "+911400000001",
+    live: bool = True,
+) -> str:
+    """An employee that is published and live with a number attached (for dialer tests)."""
+    created = client.post("/employees", json={"channel": channel, "name": "Asha"}, headers=owner)
+    employee = str(created.json()["id"])
+    script = {"welcome_message": "Hi {{name}}", "pre_call_variables": list(variables)}
+    client.put(f"/employees/{employee}/script", json=script, headers=owner)
+    client.post(f"/employees/{employee}/publish", headers=owner)
+    account = sql(url, "SELECT account_id FROM employees WHERE id = :e", {"e": employee})
+    number_id = sql(
+        url,
+        "INSERT INTO numbers (account_id, provider, e164, number_type, status)"
+        " VALUES (:a, 'vobiz', :n, 'regular', 'active') RETURNING id",
+        {"a": account, "n": number},
+    )
+    sql(url, "UPDATE employees SET number_id = :n WHERE id = :e", {"n": number_id, "e": employee})
+    if live:
+        assert client.post(f"/employees/{employee}/activate", headers=owner).status_code == 200
+    return employee
+
+
+def run_db(url: str, work: Any) -> Any:
+    """Run `await work(session_factory)` against the test database on a fresh event loop."""
+
+    async def go() -> Any:
+        engine = create_async_engine(url)
+        try:
+            return await work(async_sessionmaker(engine, expire_on_commit=False))
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(go())

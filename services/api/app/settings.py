@@ -11,6 +11,7 @@ from functools import cache
 from app.providers.base import ProviderKind, ProviderNotConfiguredError
 
 PUBLIC_URL_ENV = "AXON_ENGINE_PUBLIC_URL"
+API_URL_ENV = "AXON_API_PUBLIC_URL"
 
 
 @dataclass(frozen=True)
@@ -40,5 +41,18 @@ def engine_public_url() -> str:
             "vobiz",
             [PUBLIC_URL_ENV],
             f"{PUBLIC_URL_ENV} must be the engine's public https URL (Vobiz must reach it)",
+        )
+    return url
+
+
+def api_public_url() -> str:
+    """The API's public https URL (the carrier calls it back when a call ends), or a 503."""
+    url = os.environ.get(API_URL_ENV, "").rstrip("/")
+    if not url.startswith("https://"):
+        raise ProviderNotConfiguredError(
+            ProviderKind.TELEPHONY,
+            "vobiz",
+            [API_URL_ENV],
+            f"{API_URL_ENV} must be the API's public https URL (Vobiz calls it when a call ends)",
         )
     return url

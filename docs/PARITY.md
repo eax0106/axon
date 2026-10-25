@@ -21,13 +21,13 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Toggles: style pack, power prompting, AI-acknowledgement disclosure
 
 ## Instant [B5]
-- [ ] Private intake URL per employee, `X-…-Lead-Secret` header, reveal and rotate secret
-- [ ] Lead fields mapped to pre-call variables; unknown fields ignored
-- [ ] Intake log: accepted / deduplicated / rejected; test lead without a real call
-- [ ] Dial delay; calling window (hard limit 6 AM–10 PM); out-of-window rule: next window / +3h / +6h / next day / hold
-- [ ] Retry ladder, up to 9 steps (10 attempts total)
-- [ ] Queue console; redial; one-off call to any number
-- [ ] Lead sources: website POST, Meta Lead Ads, Google Sheets, Zapier / Pabbly / n8n guides
+- [x] Private intake URL per employee, `X-…-Lead-Secret` header, reveal and rotate secret
+- [x] Lead fields mapped to pre-call variables; unknown fields ignored
+- [x] Intake log: accepted / deduplicated / rejected; test lead without a real call
+- [x] Dial delay; calling window (hard limit 6 AM–10 PM); out-of-window rule: next window / +3h / +6h / next day / hold
+- [x] Retry ladder, up to 9 steps (10 attempts total)
+- [x] Queue console; redial; one-off call to any number
+- [x] Lead sources: website POST, Meta Lead Ads, Google Sheets, Zapier / Pabbly / n8n guides
 
 ## Bulk [B8]
 - [ ] Contacts by CSV, paste or manual entry; column-to-variable mapping with no silent guessing; saved contact lists

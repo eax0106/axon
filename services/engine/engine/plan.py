@@ -6,7 +6,7 @@ from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.employees.runtime import CallPlan, plan_for
-from app.models import Call, CallStatus, Employee
+from app.models import Call, CallStatus, Employee, Lead
 
 
 def _uuid(value: str) -> uuid.UUID | None:
@@ -29,8 +29,14 @@ async def load_plan(db: AsyncEngine, employee: str, call: str = "") -> CallPlan 
             return None
         call_id = _uuid(call) if call else None
         record = await session.get(Call, call_id) if call_id else None
-        is_test = record is not None and record.is_test and record.employee_id == employee_id
-        return await plan_for(session, row, use_draft=is_test)
+        own = record is not None and record.employee_id == employee_id
+        is_test = own and record is not None and record.is_test
+        lead = (
+            await session.get(Lead, record.lead_id) if own and record and record.lead_id else None
+        )
+        # What the lead source gave us fills the script's variables (and is fenced as data there).
+        variables = {"name": lead.name or "", **lead.fields} if lead else None
+        return await plan_for(session, row, use_draft=is_test, variables=variables)
 
 
 async def claim_test_call(db: AsyncEngine, call_id: uuid.UUID, account_id: uuid.UUID) -> bool:
