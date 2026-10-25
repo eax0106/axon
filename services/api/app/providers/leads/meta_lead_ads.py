@@ -44,7 +44,7 @@ class MetaLeadAds(LeadSourceProvider):
     def challenge(self, mode: str, verify_token: str, challenge: str) -> str | None:
         """The text to answer Meta's verification GET with, or None if it is not ours."""
         expected = os.environ["META_VERIFY_TOKEN"]
-        if mode == "subscribe" and hmac.compare_digest(verify_token, expected):
+        if mode == "subscribe" and hmac.compare_digest(verify_token.encode(), expected.encode()):
             return challenge
         return None
 
@@ -53,7 +53,7 @@ class MetaLeadAds(LeadSourceProvider):
             return False
         secret = os.environ["META_APP_SECRET"].encode()
         digest = hmac.new(secret, body, hashlib.sha256).hexdigest()
-        return hmac.compare_digest(header.removeprefix("sha256="), digest)
+        return hmac.compare_digest(header.removeprefix("sha256=").encode(), digest.encode())
 
     def events(self, payload: dict[str, Any]) -> list[LeadgenEvent]:
         found = []
@@ -65,6 +65,14 @@ class MetaLeadAds(LeadSourceProvider):
                         LeadgenEvent(str(value["leadgen_id"]), str(value.get("form_id", "")))
                     )
         return found
+
+    async def can_read_form(self, form_id: str, page_token: str) -> bool:
+        """Proof that whoever holds this page token may read this lead form."""
+        async with self._client() as client:
+            response = await client.get(
+                f"{GRAPH}/{form_id}", params={"fields": "id", "access_token": page_token}
+            )
+        return response.status_code == 200 and str(response.json().get("id")) == form_id
 
     async def fetch_lead(self, leadgen_id: str, page_token: str) -> dict[str, str]:
         """The lead's form answers as {field name: first value}."""

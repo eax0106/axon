@@ -177,8 +177,6 @@ class Account(Base):
     id: Mapped[uuid.UUID] = _pk()
     name: Mapped[str] = mapped_column(String(200))
     business_name: Mapped[str | None] = mapped_column(String(200))
-    # Local time for calling windows: a fixed UTC offset (India: +330, no daylight saving).
-    utc_offset_minutes: Mapped[int] = mapped_column(server_default="330")
     created_at: Mapped[datetime] = _created()
 
 
@@ -352,7 +350,10 @@ class Call(Base):
     # Dialer queue: a queued call with scheduled_for NULL is held until someone redials it.
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempt: Mapped[int] = mapped_column(server_default="1")
+    # The carrier's id for the dial request, and for the call itself once it reports one (the
+    # call-end callback carries both; the carrier's record is keyed by the call id).
     carrier_call_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    carrier_leg_id: Mapped[str | None] = mapped_column(String(100), index=True)
     created_at: Mapped[datetime] = _created()
 
 

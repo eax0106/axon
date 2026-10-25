@@ -30,6 +30,9 @@ def sign(url: str = URL, nonce: str | None = None, token: str = TOKEN) -> dict[s
 
 
 class Cdr:
+    """The carrier's record of the call, keyed by the call's own id (`leg-1`), not the id of the
+    dial request (`req-1`)."""
+
     def __init__(self) -> None:
         self.record: dict[str, Any] | None = {
             "billsec": 0,
@@ -40,7 +43,9 @@ class Cdr:
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.asked.append(request.url.path)
-        return httpx.Response(404) if self.record is None else httpx.Response(200, json=self.record)
+        if request.url.path.endswith("/leg-1") and self.record is not None:
+            return httpx.Response(200, json=self.record)
+        return httpx.Response(404)
 
 
 @pytest.fixture
@@ -77,15 +82,19 @@ def ringing_call(api: TestClient, url: str) -> None:
         url,
         "INSERT INTO calls (account_id, employee_id, lead_id, direction, channel, status,"
         " attempt, carrier_call_id)"
-        " VALUES (:a, :e, :l, 'outbound', 'instant', 'ringing', 1, 'vz-1')",
+        " VALUES (:a, :e, :l, 'outbound', 'instant', 'ringing', 1, 'req-1')",
         {"a": account, "e": employee, "l": lead},
     )
 
 
 def hangup(
-    client: TestClient, headers: dict[str, str], uuid: str = "vz-1", body: str | None = None
+    client: TestClient, headers: dict[str, str], uuid: str = "leg-1", body: str | None = None
 ) -> Any:
-    form = body if body is not None else f"CallUUID={uuid}&Event=Hangup&CallStatus=completed"
+    form = (
+        body
+        if body is not None
+        else f"CallUUID={uuid}&RequestUUID=req-1&Event=Hangup&CallStatus=completed"
+    )
     return client.post(
         "/vobiz/events",
         content=form,
@@ -108,7 +117,7 @@ def test_a_signed_callback_settles_the_call_from_the_carrier_record(
     client, cdr = api
     ringing_call(client, migrated_url)
     assert hangup(client, sign()).status_code == 200
-    assert cdr.asked == ["/api/v1/Account/MA_TEST/cdr/vz-1"]
+    assert cdr.asked == ["/api/v1/Account/MA_TEST/cdr/leg-1"]  # the call id, not the request id
     assert statuses(migrated_url) == ["busy", "queued"]  # settled, and the retry is queued
     assert sql(migrated_url, "SELECT duration_s FROM calls WHERE attempt = 1") == 25
 
@@ -120,7 +129,7 @@ def test_the_unsigned_body_is_never_believed(
     ringing_call(client, migrated_url)
     cdr.record = {"billsec": 0, "duration": 20, "hangup_cause": "NO_ANSWER"}
     # The body says completed with a long duration; the carrier's own record says nobody answered.
-    body = "CallUUID=vz-1&CallStatus=completed&Duration=600&Status=completed"
+    body = "CallUUID=leg-1&RequestUUID=req-1&CallStatus=completed&Duration=600&Status=completed"
     assert hangup(client, sign(), body=body).status_code == 200
     assert statuses(migrated_url)[0] == "no_answer"
 
@@ -167,7 +176,7 @@ def test_unknown_calls_are_ignored_and_a_missing_record_leaves_the_call_for_the_
 ) -> None:
     client, cdr = api
     ringing_call(client, migrated_url)
-    assert hangup(client, sign(), uuid="vz-unknown").status_code == 200
+    assert hangup(client, sign(), body="CallUUID=nope&RequestUUID=nada").status_code == 200
     assert hangup(client, sign(), body="nothing=useful").status_code == 200
     assert statuses(migrated_url) == ["ringing"]
     cdr.record = None  # the carrier has not written the record yet
@@ -187,3 +196,28 @@ def test_without_carrier_keys_or_a_public_url_it_is_503(
     monkeypatch.setenv("AXON_API_PUBLIC_URL", "https://api.example.in")
     monkeypatch.delenv("VOBIZ_AUTH_TOKEN")
     assert hangup(client, sign()).json()["error"] == "provider_not_configured"
+
+
+def test_a_callback_naming_only_the_request_id_finds_the_call_but_cannot_guess_the_outcome(
+    api: tuple[TestClient, Cdr], migrated_url: str
+) -> None:
+    """Never turn "no record yet" into "not answered": the call stays as it is."""
+    client, cdr = api
+    ringing_call(client, migrated_url)
+    assert hangup(client, sign(), body="RequestUUID=req-1&Event=Hangup").status_code == 200
+    assert statuses(migrated_url) == ["ringing"]
+    assert cdr.asked == ["/api/v1/Account/MA_TEST/cdr/req-1"]
+
+
+def test_the_call_id_from_the_callback_is_remembered_for_later_lookups(
+    api: tuple[TestClient, Cdr], migrated_url: str
+) -> None:
+    client, cdr = api
+    ringing_call(client, migrated_url)
+    cdr.record = None  # not written yet
+    assert hangup(client, sign()).status_code == 200
+    assert sql(migrated_url, "SELECT carrier_leg_id FROM calls") == "leg-1"
+    cdr.record = {"billsec": 12, "duration": 30, "hangup_cause": "NORMAL_CLEARING"}
+    # A second callback that names the call by its call id alone still finds the row.
+    assert hangup(client, sign(), body="CallUUID=leg-1").status_code == 200
+    assert statuses(migrated_url) == ["completed"]

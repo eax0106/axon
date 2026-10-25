@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.employees import service as employees
@@ -17,7 +17,6 @@ from app.employees.compiler import clean_value
 from app.instant import rules
 from app.instant.rules import DialerSettings
 from app.models import (
-    Account,
     Call,
     CallStatus,
     Channel,
@@ -82,11 +81,15 @@ async def process(
 ) -> Result:
     """Run one lead through the rules. `dry_run` (test leads) decides and logs but creates no lead
     and no call. Commits."""
-    account = await session.get(Account, employee.account_id)
-    assert account is not None  # FK guarantees it
     settings = DialerSettings.model_validate(employee.dialer or {})
     declared = employees.bundle_of(employee).pre_call_variables
     phone = normalize_phone(pick(payload, PHONE_KEYS))
+    if phone is not None:
+        # One lead at a time per employee and number, so two posts of the same lead (Zapier and n8n
+        # retry) cannot both pass the duplicate check or both create the lead.
+        await session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtextextended(f"{employee.id}:{phone}", 0)))
+        )
     result = await _decide(session, employee, settings, phone, now, dry_run, dedupe)
     if result.status is IntakeStatus.ACCEPTED:
         result.variables = map_fields(payload, declared)
@@ -95,7 +98,7 @@ async def process(
         if not dry_run:
             lead = await _upsert_lead(session, employee, phone, name, result.variables)
             result.lead_id = lead.id
-            at = rules.first_attempt_time(now, settings, account.utc_offset_minutes)
+            at = rules.first_attempt_time(now, settings, rules.IST)
             call = Call(
                 account_id=employee.account_id,
                 employee_id=employee.id,

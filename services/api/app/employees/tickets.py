@@ -52,3 +52,37 @@ def read(token: str) -> WebTicket | None:
         )
     except (jwt.InvalidTokenError, KeyError, ValueError):
         return None
+
+
+OAUTH_TTL = timedelta(minutes=10)
+OAUTH_TYPE = "sheets_oauth"
+
+
+def issue_oauth_state(
+    user_id: uuid.UUID, employee_id: uuid.UUID, now: datetime | None = None
+) -> str:
+    """The `state` of a Google consent link: signed, random, short-lived, and bound to the user and
+    employee who asked for it, so a link crafted by someone else cannot be completed by them."""
+    now = now or datetime.now(UTC)
+    claims = {
+        "typ": OAUTH_TYPE,
+        "user": str(user_id),
+        "employee": str(employee_id),
+        "nonce": uuid.uuid4().hex,
+        "iat": now,
+        "exp": now + OAUTH_TTL,
+    }
+    return jwt.encode(claims, _secret(), algorithm="HS256")
+
+
+def read_oauth_state(token: str) -> tuple[uuid.UUID, uuid.UUID] | None:
+    """(user id, employee id) the state was issued for, or None if it is forged or expired."""
+    try:
+        claims = jwt.decode(
+            token, _secret(), algorithms=["HS256"], options={"require": ["typ", "exp", "iat"]}
+        )
+        if claims["typ"] != OAUTH_TYPE:
+            return None
+        return uuid.UUID(claims["user"]), uuid.UUID(claims["employee"])
+    except (jwt.InvalidTokenError, KeyError, ValueError):
+        return None

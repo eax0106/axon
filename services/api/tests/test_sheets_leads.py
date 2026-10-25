@@ -9,6 +9,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.employees import tickets
 from app.instant import sheets as poller
 from app.providers.base import ProviderKind
 from app.providers.google.sheets import SCOPE, TOKEN_URL, GoogleSheets, consent_url
@@ -26,11 +27,14 @@ class Google:
         self.rows: list[list[str]] = [HEADER, ["Old Lead", "9000000001", "1"]]
         self.requests: list[httpx.Request] = []
         self.token_error: str | None = None
+        self.revoked: set[str] = set()
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if str(request.url) == TOKEN_URL:
             form = parse_qs(request.content.decode())
+            if form.get("refresh_token", [""])[0] in self.revoked:
+                return httpx.Response(400, json={"error": "invalid_grant"})
             if self.token_error:
                 return httpx.Response(400, json={"error": self.token_error})
             if form["grant_type"] == ["authorization_code"]:
@@ -61,18 +65,23 @@ def api(
     yield db_client, google
 
 
+def consent_state(client: TestClient, employee: str, owner: dict[str, str]) -> str:
+    url = client.get(
+        f"/employees/{employee}/instant/sheets/consent-url",
+        params={"redirect_uri": "https://app.example.in/cb"},
+        headers=owner,
+    ).json()["url"]
+    state: str = parse_qs(url.split("?", 1)[1])["state"][0]
+    return state
+
+
 def connected(client: TestClient, url: str) -> tuple[str, dict[str, str]]:
     owner = signup(client)
     employee = live_employee(client, url, owner, variables=("budget",))
     base = f"/employees/{employee}/instant/sheets"
-    assert (
-        client.post(
-            base + "/connect",
-            json={"code": "auth-code", "redirect_uri": "https://app.example.in/cb"},
-            headers=owner,
-        ).status_code
-        == 200
-    )
+    state = consent_state(client, employee, owner)
+    body = {"code": "auth-code", "redirect_uri": "https://app.example.in/cb", "state": state}
+    assert client.post(base + "/connect", json=body, headers=owner).status_code == 200
     assert (
         client.put(
             base, json={"sheet_id": "sheet-1", "range": "Sheet1!A:C"}, headers=owner
@@ -104,9 +113,9 @@ def test_the_consent_url_asks_for_read_only_offline_access(api: tuple[TestClient
         and query["access_type"] == ["offline"]
         and query["client_id"] == ["client-1"]
     )
-    assert query["state"] == [employee] and url == consent_url(
-        "https://app.example.in/cb", employee
-    )
+    state = query["state"][0]
+    assert state != employee and tickets.read_oauth_state(state) is not None  # signed, unguessable
+    assert url == consent_url("https://app.example.in/cb", state)
 
 
 def test_connecting_exchanges_the_code_and_stores_the_refresh_token(
@@ -222,3 +231,76 @@ def test_without_google_keys_the_sheets_endpoints_are_503(
     )
     assert response.status_code == 503 and response.json()["kind"] == "sheets"
     assert json.dumps(response.json())
+
+
+def test_the_oauth_state_must_be_ours_for_this_user_and_employee(
+    api: tuple[TestClient, Google], migrated_url: str
+) -> None:
+    import uuid
+
+    client, google = api
+    owner, other = signup(client), signup(client, "b@example.com", "B")
+    employee = client.post("/employees", json={"channel": "instant"}, headers=owner).json()["id"]
+    mine = client.post("/employees", json={"channel": "instant"}, headers=owner).json()["id"]
+    path = f"/employees/{employee}/instant/sheets/connect"
+    good = consent_state(client, employee, owner)
+    body = {"code": "c", "redirect_uri": "https://app.example.in/cb"}
+    user_id = uuid.UUID(
+        str(sql(migrated_url, "SELECT id FROM users WHERE email = 'owner@example.com'"))
+    )
+    expired = tickets.issue_oauth_state(
+        user_id, uuid.UUID(employee), now=datetime(2020, 1, 1, tzinfo=UTC)
+    )
+    forged = tickets.issue_oauth_state(user_id, uuid.UUID(employee))[:-3] + "abc"
+    other_employee = consent_state(client, mine, owner)
+    for state in ("", "garbage", forged, expired, employee, other_employee):
+        response = client.post(path, json={**body, "state": state}, headers=owner)
+        assert response.status_code in (400, 422), state
+    # A state issued to someone else cannot be completed by this user.
+    assert client.post(path, json={**body, "state": good}, headers=other).status_code == 404
+    assert (
+        sql(
+            migrated_url,
+            "SELECT count(*) FROM lead_connections WHERE google_refresh_token IS NOT NULL",
+        )
+        == 0
+    )
+    assert not [
+        r
+        for r in google.requests
+        if parse_qs(r.content.decode()).get("grant_type") == ["authorization_code"]
+    ]
+    assert client.post(path, json={**body, "state": good}, headers=owner).status_code == 200
+
+
+def test_one_revoked_sheet_does_not_stop_the_others(
+    api: tuple[TestClient, Google], migrated_url: str
+) -> None:
+    client, google = api
+    connected(client, migrated_url)
+    owner2 = signup(client, "b@example.com", "B")
+    employee2 = live_employee(
+        client, migrated_url, owner2, variables=("budget",), number="+911400000002"
+    )
+    base2 = f"/employees/{employee2}/instant/sheets"
+    body = {
+        "code": "c",
+        "redirect_uri": "https://app.example.in/cb",
+        "state": consent_state(client, employee2, owner2),
+    }
+    assert client.post(base2 + "/connect", json=body, headers=owner2).status_code == 200
+    assert (
+        client.put(
+            base2, json={"sheet_id": "sheet-2", "range": "Sheet1!A:C"}, headers=owner2
+        ).status_code
+        == 200
+    )
+    google.rows += [["Ravi", "9876543210", "5 lakh"]]
+    first = sql(migrated_url, "SELECT id FROM lead_connections ORDER BY created_at LIMIT 1")
+    sql(
+        migrated_url,
+        "UPDATE lead_connections SET google_refresh_token = 'revoked' WHERE id = :i",
+        {"i": first},
+    )
+    google.revoked.add("revoked")
+    assert poll(migrated_url) == 1  # the healthy connection still delivered its row

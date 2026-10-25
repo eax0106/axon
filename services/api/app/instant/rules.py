@@ -1,8 +1,9 @@
 """Dialer rules for the Instant channel, as pure functions of time.
 
 Nothing here reads the clock or the database: every function takes `now`, so the tests can walk
-a lead through a whole day. Times are timezone-aware datetimes; the account's local time is a
-fixed UTC offset (India has no daylight saving; named zones arrive with other markets).
+a lead through a whole day. Times are timezone-aware datetimes. The functions take the UTC offset
+as a parameter so tests can show it matters, but the dialer always passes `IST`: the hard limit is
+measured in the callee's time, and every number we can dial is Indian (no daylight saving).
 
 Hard limits, not settings: calls only between 6 AM and 10 PM local time (the default window is
 9 AM to 9 PM; see DialerSettings). Start is inclusive and
@@ -14,6 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+IST = 330  # minutes east of UTC. Every dialable number is Indian, so the calling hours are India's.
 HARD_START_MIN, HARD_END_MIN = 6 * 60, 22 * 60
 MAX_LADDER_STEPS = 9  # 1 first attempt + 9 retries = 10 attempts
 OutOfWindow = Literal["next_window", "plus_3h", "plus_6h", "next_day", "hold"]

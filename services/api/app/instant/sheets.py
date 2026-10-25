@@ -1,5 +1,6 @@
 """Take new rows from each connected Google Sheet and run them through intake."""
 
+import logging
 from datetime import datetime
 
 from sqlalchemy import select
@@ -9,13 +10,16 @@ from app.instant import intake
 from app.models import Employee, LeadConnection
 from app.providers.base import SheetsProvider
 
+log = logging.getLogger("axon.instant")
+
 
 async def poll_connection(
     session: AsyncSession, connection: LeadConnection, sheets: SheetsProvider, now: datetime
 ) -> int:
     """New rows since the cursor, header first: the header row names the fields. Returns how many
     rows were taken. ponytail: the cursor moves after each row's own commit, so a crash between
-    the two can offer one row twice; the intake dedupe window absorbs it."""
+    the two can offer one row twice; the intake dedupe window absorbs it. The cursor is a row
+    count, so deleting rows above it makes new rows be skipped: append-only sheets only."""
     if not (connection.google_refresh_token and connection.sheet_id and connection.sheet_range):
         return 0
     rows = await sheets.read_rows(
@@ -48,8 +52,13 @@ async def poll_all(
         )
     total = 0
     for connection_id in ids:
-        async with factory() as session:
-            connection = await session.get(LeadConnection, connection_id)
-            if connection is not None:
-                total += await poll_connection(session, connection, sheets, now)
+        try:
+            async with factory() as session:
+                connection = await session.get(LeadConnection, connection_id)
+                if connection is not None:
+                    total += await poll_connection(session, connection, sheets, now)
+        except Exception as exc:  # one revoked token must not stop everyone else's sheets
+            log.warning(
+                "sheet poll for connection %s failed: %s", connection_id, type(exc).__name__
+            )
     return total

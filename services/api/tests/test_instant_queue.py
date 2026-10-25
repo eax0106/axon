@@ -177,3 +177,12 @@ def test_the_console_is_scoped_to_the_account(api: TestClient, migrated_url: str
         api.post(f"/employees/{second}/instant/queue/{call}/cancel", headers=owner).status_code
         == 404
     )
+
+
+def test_a_double_click_on_redial_queues_the_lead_once(api: TestClient, migrated_url: str) -> None:
+    _, owner, base = setup(api, migrated_url)
+    last = lead_call(migrated_url, "no_answer", None, attempt=10)
+    first = api.post(f"{base}/queue/{last}/redial", headers=owner).json()["call_id"]
+    second = api.post(f"{base}/queue/{last}/redial", headers=owner).json()["call_id"]
+    assert first == second
+    assert sql(migrated_url, "SELECT count(*) FROM calls WHERE status = 'queued'") == 1

@@ -230,27 +230,14 @@ def test_test_lead_shows_the_decision_without_a_call(api: TestClient, migrated_u
     assert {e["source"] for e in log} == {"test"} and len(log) == 2
 
 
-def test_account_utc_offset_is_owner_set_and_bounded(api: TestClient, migrated_url: str) -> None:
+def test_the_calling_hours_cannot_be_moved_by_the_account(
+    api: TestClient, migrated_url: str
+) -> None:
     owner = signup(api)
-    member = add_member(api, migrated_url, owner)
-    assert (
-        api.put(
-            "/accounts/me/utc-offset", json={"utc_offset_minutes": 345}, headers=owner
-        ).status_code
-        == 200
-    )
-    assert sql(migrated_url, "SELECT utc_offset_minutes FROM accounts") == 345
-    assert (
-        api.put(
-            "/accounts/me/utc-offset", json={"utc_offset_minutes": 345}, headers=member
-        ).status_code
-        == 403
-    )
-    bad_offsets: list[Any] = [-721, 841, "x"]
-    for bad in bad_offsets:
-        assert (
-            api.put(
-                "/accounts/me/utc-offset", json={"utc_offset_minutes": bad}, headers=owner
-            ).status_code
-            == 422
+    for method in ("PUT", "POST", "PATCH"):
+        response = api.request(
+            method, "/accounts/me/utc-offset", json={"utc_offset_minutes": 0}, headers=owner
         )
+        assert response.status_code in (404, 405)
+    columns = "SELECT count(*) FROM information_schema.columns WHERE column_name = :c"
+    assert sql(migrated_url, columns, {"c": "utc_offset_minutes"}) == 0

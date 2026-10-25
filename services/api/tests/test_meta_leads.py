@@ -16,7 +16,7 @@ from .helpers import live_employee, seed, signup
 APP_SECRET = "app-secret"  # noqa: S105 - test credential
 VERIFY = "verify-me"
 FORM = "1234567890"
-WEBHOOK = {
+WEBHOOK: dict[str, Any] = {
     "object": "page",
     "entry": [
         {
@@ -59,9 +59,15 @@ class Graph:
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
         self.status = 200
+        self.can_read_form = True
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
+        if request.url.path.endswith(f"/{FORM}") or request.url.path.endswith("/forms-not-ours"):
+            readable = request.url.path.endswith(f"/{FORM}") and self.can_read_form
+            return httpx.Response(200 if readable else 403, json={"id": FORM})
+        if request.url.path.endswith("/lead-bad"):
+            return httpx.Response(400, json={"error": "token expired"})
         return httpx.Response(self.status, json=GRAPH_LEAD)
 
 
@@ -115,6 +121,7 @@ def test_a_signed_lead_is_fetched_and_run_through_intake(
 ) -> None:
     client, graph = api
     employee, owner = connect(client, migrated_url)
+    graph.requests.clear()  # the connect-time check of the page token is not under test here
     raw, headers = signed(WEBHOOK)
     response = client.post("/lead-intake/meta", content=raw, headers=headers)
     assert response.status_code == 200 and response.json() == {"handled": 1}
@@ -135,6 +142,7 @@ def test_unsigned_tampered_and_wrongly_signed_posts_are_refused(
 ) -> None:
     client, graph = api
     connect(client, migrated_url)
+    graph.requests.clear()
     raw, headers = signed(WEBHOOK)
     cases = [
         (raw, {"Content-Type": "application/json"}),
@@ -163,14 +171,17 @@ def test_a_form_nobody_connected_is_ignored(
     assert graph.requests == []
 
 
-def test_a_graph_failure_is_a_502_so_meta_retries(
+def test_a_graph_failure_is_logged_and_does_not_fail_the_webhook(
     api: tuple[TestClient, Graph], migrated_url: str
 ) -> None:
     client, graph = api
     connect(client, migrated_url)
     graph.status = 400
     raw, headers = signed(WEBHOOK)
-    assert client.post("/lead-intake/meta", content=raw, headers=headers).status_code == 502
+    # One failing lead is isolated: the webhook still answers 200 and the owner sees it in the log.
+    assert client.post("/lead-intake/meta", content=raw, headers=headers).json() == {"handled": 0}
+    employee_log = sql(migrated_url, "SELECT reason FROM lead_intake_log")
+    assert employee_log.startswith("could not read the lead from Meta")
 
 
 def test_a_form_can_feed_only_one_employee(
@@ -184,7 +195,7 @@ def test_a_form_can_feed_only_one_employee(
         json={"form_id": FORM, "page_access_token": "t"},
         headers=owner,
     )
-    assert response.status_code == 409
+    assert response.status_code == 409 and "another employee" not in response.text
 
 
 def test_events_are_read_from_the_leadgen_changes_only() -> None:
@@ -206,3 +217,39 @@ def test_health_reads_the_app_with_its_own_token(api: tuple[TestClient, Graph]) 
 def test_without_meta_keys_the_webhook_is_503(db_client: TestClient, no_keys: None) -> None:
     assert db_client.get("/lead-intake/meta").status_code == 503
     assert db_client.post("/lead-intake/meta", content=b"{}").json()["kind"] == "leads"
+
+
+def test_one_bad_lead_does_not_stop_the_others_in_the_same_batch(
+    api: tuple[TestClient, Graph], migrated_url: str
+) -> None:
+    client, _ = api
+    employee, owner = connect(client, migrated_url)
+    two = json.loads(json.dumps(WEBHOOK))
+    bad = json.loads(json.dumps(WEBHOOK["entry"][0]["changes"][0]))
+    bad["value"]["leadgen_id"] = "lead-bad"
+    two["entry"][0]["changes"].insert(0, bad)
+    raw, headers = signed(two)
+    assert client.post("/lead-intake/meta", content=raw, headers=headers).json() == {"handled": 1}
+    log = client.get(f"/employees/{employee}/instant/intake-log", headers=owner).json()
+    assert sorted(e["status"] for e in log) == ["accepted", "rejected"]
+
+
+def test_connecting_a_form_needs_a_token_that_can_read_it(
+    api: tuple[TestClient, Graph], migrated_url: str
+) -> None:
+    client, graph = api
+    owner = signup(client)
+    employee = live_employee(client, migrated_url, owner)
+    graph.can_read_form = False
+    response = client.put(
+        f"/employees/{employee}/instant/meta",
+        json={"form_id": FORM, "page_access_token": "someone-elses"},
+        headers=owner,
+    )
+    assert response.status_code == 422 and "cannot read" in response.text
+    assert (
+        sql(migrated_url, "SELECT count(*) FROM lead_connections WHERE meta_form_id IS NOT NULL")
+        == 0
+    )
+    probe = graph.requests[-1]
+    assert dict(probe.url.params) == {"fields": "id", "access_token": "someone-elses"}

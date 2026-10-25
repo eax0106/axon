@@ -3,6 +3,7 @@
 (signature)."""
 
 import hmac
+import logging
 import time
 import uuid
 from datetime import UTC, datetime
@@ -11,18 +12,19 @@ from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, PlainTextResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db import Session
 from app.instant import dialer, intake
-from app.models import Call, Employee, IntakeStatus, LeadConnection
+from app.models import Call, Employee, IntakeStatus, LeadConnection, LeadIntakeEntry
 from app.providers.base import ProviderKind, TelephonyProvider
 from app.providers.leads.meta_lead_ads import MetaLeadAds
 from app.providers.registry import require
 from app.settings import api_public_url
 
 router = APIRouter()
+log = logging.getLogger("axon.instant")
 
 SECRET_HEADER = "X-Axon-Lead-Secret"  # noqa: S105 - a header name
 NONCE_TTL_S = 300.0
@@ -82,8 +84,29 @@ async def meta_leads(request: Request, session: Session) -> dict[str, int]:
             continue  # a form nobody here connected
         employee = await session.get(Employee, connection.employee_id)
         assert employee is not None  # FK guarantees it
-        fields = await provider.fetch_lead(event.leadgen_id, connection.meta_page_token)
-        await intake.process(session, employee, fields, source="meta", now=datetime.now(UTC))
+        account_id, employee_id = (
+            employee.account_id,
+            employee.id,
+        )  # still readable after a rollback
+        try:
+            fields = await provider.fetch_lead(event.leadgen_id, connection.meta_page_token)
+            await intake.process(session, employee, fields, source="meta", now=datetime.now(UTC))
+        except Exception as exc:
+            # One bad form (revoked token, squatter) must not fail the batch for everyone else:
+            # Meta would retry the whole thing. Say so in the owner's intake log instead.
+            await session.rollback()
+            log.warning("meta lead %s failed: %s", event.leadgen_id, type(exc).__name__)
+            session.add(
+                LeadIntakeEntry(
+                    account_id=account_id,
+                    employee_id=employee_id,
+                    source="meta",
+                    status=IntakeStatus.REJECTED,
+                    reason=f"could not read the lead from Meta ({type(exc).__name__})",
+                )
+            )
+            await session.commit()
+            continue
         handled += 1
     return {"handled": handled}
 
@@ -138,10 +161,15 @@ async def vobiz_events(request: Request) -> Response:
     if not _fresh(nonce, time.time()):
         raise HTTPException(status.HTTP_409_CONFLICT, "nonce already used")
     form = parse_qs((await request.body()).decode("utf-8", "replace"))
-    carrier_id = (form.get("CallUUID") or form.get("RequestUUID") or [""])[0]
+    leg_id = (form.get("CallUUID") or [""])[0]
+    ids = [i for i in (leg_id, (form.get("RequestUUID") or [""])[0]) if i]
     factory = async_sessionmaker(request.app.state.db, expire_on_commit=False)
     async with factory() as session:
-        call = await session.scalar(select(Call).where(Call.carrier_call_id == carrier_id))
+        call = await session.scalar(
+            select(Call).where(or_(Call.carrier_call_id.in_(ids), Call.carrier_leg_id.in_(ids)))
+        )
     if call is not None:
-        await dialer.settle_from_carrier(factory, telephony, call.id, datetime.now(UTC))
+        await dialer.settle_from_carrier(
+            factory, telephony, call.id, datetime.now(UTC), leg_id=leg_id or None
+        )
     return Response(status_code=status.HTTP_200_OK)

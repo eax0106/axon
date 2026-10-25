@@ -228,3 +228,30 @@ def test_log_counts_match_what_happened(api: TestClient, migrated_url: str) -> N
             return {s.value: n for s, n in rows}
 
     assert run_db(migrated_url, counts) == {"accepted": 1, "deduplicated": 1, "rejected": 1}
+
+
+def test_two_posts_of_the_same_new_lead_at_once_make_one_lead_and_one_call(
+    api: TestClient, migrated_url: str
+) -> None:
+    """Zapier and n8n retry: both attempts arrive together and neither may fail or double-queue."""
+    import asyncio
+    import uuid
+
+    owner = signup(api)
+    employee = uuid.UUID(live_employee(api, migrated_url, owner))
+
+    async def work(factory: Any) -> list[IntakeStatus]:
+        async def one() -> IntakeStatus:
+            async with factory() as session:
+                row = await session.get(Employee, employee)
+                result = await intake.process(
+                    session, row, {"phone": "9876543210"}, source="website", now=NOW
+                )
+                return result.status
+
+        return list(await asyncio.gather(*(one() for _ in range(6))))
+
+    statuses = run_db(migrated_url, work)
+    assert sorted(s.value for s in statuses) == ["accepted"] + ["deduplicated"] * 5
+    assert sql(migrated_url, "SELECT count(*) FROM calls") == 1
+    assert sql(migrated_url, "SELECT count(*) FROM leads") == 1

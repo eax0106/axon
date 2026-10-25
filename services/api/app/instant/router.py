@@ -13,12 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser
 from app.db import Session
+from app.employees import tickets
 from app.employees.router import OwnerUser, load
 from app.instant import intake, rules
 from app.instant.public import SECRET_HEADER
 from app.instant.rules import DialerSettings
 from app.models import (
-    Account,
     Call,
     CallStatus,
     Channel,
@@ -32,10 +32,10 @@ from app.models import (
 )
 from app.providers.base import ProviderKind, SheetsProvider
 from app.providers.google import sheets as google_sheets
+from app.providers.leads.meta_lead_ads import MetaLeadAds
 from app.providers.registry import require
 
 router = APIRouter()
-Offset = Annotated[int, Field(ge=-720, le=840)]
 ACTIVE = (CallStatus.QUEUED, CallStatus.RINGING, CallStatus.IN_PROGRESS)
 
 
@@ -60,20 +60,6 @@ async def connection_of(session: AsyncSession, employee: Employee) -> LeadConnec
         session.add(found)
         await session.commit()
     return found
-
-
-class OffsetBody(BaseModel):
-    utc_offset_minutes: Offset
-
-
-@router.put("/accounts/me/utc-offset")
-async def set_offset(body: OffsetBody, user: OwnerUser, session: Session) -> OffsetBody:
-    """The account's local time for calling windows, as minutes east of UTC (India: 330)."""
-    account = await session.get(Account, user.account_id)
-    assert account is not None  # FK guarantees it
-    account.utc_offset_minutes = body.utc_offset_minutes
-    await session.commit()
-    return body
 
 
 @router.get("/employees/{employee_id}/instant")
@@ -328,13 +314,20 @@ async def redial(
     )
     if on_dnc:
         raise HTTPException(status.HTTP_409_CONFLICT, "number is on the do-not-call list")
-    account = await session.get(Account, employee.account_id)
-    assert account is not None  # FK guarantees it
     settings = DialerSettings.model_validate(employee.dialer or {})
-    when = rules.next_window_start(datetime.now(UTC), settings, account.utc_offset_minutes)
+    when = rules.next_window_start(datetime.now(UTC), settings, rules.IST)
     if call.status is CallStatus.QUEUED:
         call.scheduled_for = when  # releases a held call, or brings a waiting one forward
         target = call
+    elif waiting := await session.scalar(
+        select(Call).where(
+            Call.employee_id == employee.id,
+            Call.lead_id == lead.id,
+            Call.status == CallStatus.QUEUED,
+        )
+    ):
+        waiting.scheduled_for = when  # a double click does not queue the lead twice
+        target = waiting
     else:
         target = Call(
             account_id=call.account_id,
@@ -363,16 +356,24 @@ async def connect_meta(
     """Send this lead form's leads to the employee. The page token is how we read each lead."""
     employee = await instant_employee(session, user, employee_id)
     connection = await connection_of(session, employee)
+    if not await meta_provider().can_read_form(body.form_id, body.page_access_token):
+        raise HTTPException(422, "that token cannot read that lead form")
     taken = await session.scalar(
         select(LeadConnection.id).where(
             LeadConnection.meta_form_id == body.form_id, LeadConnection.id != connection.id
         )
     )
     if taken:
-        raise HTTPException(status.HTTP_409_CONFLICT, "that form already feeds another employee")
+        raise HTTPException(status.HTTP_409_CONFLICT, "that form is already connected")
     connection.meta_form_id, connection.meta_page_token = body.form_id, body.page_access_token
     await session.commit()
     return {"form_id": body.form_id}
+
+
+def meta_provider() -> MetaLeadAds:
+    provider = require(ProviderKind.LEADS)
+    assert isinstance(provider, MetaLeadAds)
+    return provider
 
 
 def sheets_provider() -> SheetsProvider:
@@ -390,11 +391,13 @@ async def sheets_consent_url(
 ) -> dict[str, str]:
     employee = await instant_employee(session, user, employee_id)
     sheets_provider()  # 503 until the Google OAuth client is configured
-    return {"url": google_sheets.consent_url(redirect_uri, state=str(employee.id))}
+    state = tickets.issue_oauth_state(user.id, employee.id)
+    return {"url": google_sheets.consent_url(redirect_uri, state=state)}
 
 
 class SheetsConnect(BaseModel):
     code: str = Field(min_length=1, max_length=2000)
+    state: str = Field(min_length=1, max_length=2000)
     redirect_uri: str = Field(min_length=8, max_length=500)
 
 
@@ -403,6 +406,10 @@ async def sheets_connect(
     employee_id: uuid.UUID, body: SheetsConnect, user: OwnerUser, session: Session
 ) -> dict[str, bool]:
     employee = await instant_employee(session, user, employee_id)
+    if tickets.read_oauth_state(body.state) != (user.id, employee.id):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "bad or expired state: start the connection again"
+        )
     refresh = await sheets_provider().exchange_code(body.code, body.redirect_uri)
     connection = await connection_of(session, employee)
     connection.google_refresh_token = refresh

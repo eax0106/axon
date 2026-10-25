@@ -33,12 +33,17 @@ def api(db_client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatc
 
 
 class Carrier:
-    """Vobiz as the dialer sees it: places calls, and later reports how each one went."""
+    """Vobiz as the dialer sees it. The dial request gets one id (`req-N`); the carrier's record
+    of the finished call is keyed by the call's own id (`leg-N`), as in Plivo-style APIs. Set
+    `same_ids` to model a carrier that uses one id for both."""
 
     def __init__(self) -> None:
         self.placed: list[dict[str, Any]] = []
         self.cdr: dict[str, dict[str, Any] | None] = {}
         self.fail_next = False
+        self.timeout_next = False
+        self.same_ids = False
+        self.live: set[str] = set()
         self.default_cdr: dict[str, Any] | None = {
             "billsec": 0,
             "duration": 30,
@@ -47,14 +52,22 @@ class Carrier:
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if request.method == "POST":
+            if self.timeout_next:
+                self.timeout_next = False
+                raise httpx.ReadTimeout("no answer from the carrier", request=request)
             if self.fail_next:
                 self.fail_next = False
                 return httpx.Response(402, json={"error": "low balance"})
             self.placed.append(json.loads(request.content))
             return httpx.Response(
-                200, json={"message": "Call fired", "request_uuid": f"vz-{len(self.placed)}"}
+                200, json={"message": "Call fired", "request_uuid": f"req-{len(self.placed)}"}
             )
-        record = self.cdr.get(request.url.path.rsplit("/", 1)[-1], self.default_cdr)
+        carrier_id = request.url.path.rsplit("/", 1)[-1]
+        if "/cdr/" not in request.url.path:  # is_live
+            return httpx.Response(200 if carrier_id in self.live else 404)
+        if carrier_id.startswith("req-") and not self.same_ids:
+            return httpx.Response(404)
+        record = self.cdr.get(carrier_id, self.default_cdr)
         return httpx.Response(404) if record is None else httpx.Response(200, json=record)
 
 
@@ -109,9 +122,17 @@ def events(url: str) -> list[str]:
     return run_db(url, work)  # type: ignore[no-any-return]
 
 
+def leg_of(url: str, call_id: Any) -> str:
+    request_id = sql(url, "SELECT carrier_call_id FROM calls WHERE id = :c", {"c": call_id})
+    return str(request_id).replace("req-", "leg-")
+
+
 def end_call(url: str, adapter: VobizTelephony, call_id: Any, now: datetime) -> str:
+    """The call-end callback: it names the call by its own id, which differs from the request id."""
+    leg = leg_of(url, call_id)
+
     async def work(factory: Any) -> str:
-        return await dialer.settle_from_carrier(factory, adapter, call_id, now)
+        return await dialer.settle_from_carrier(factory, adapter, call_id, now, leg_id=leg)
 
     return run_db(url, work)  # type: ignore[no-any-return]
 
@@ -149,7 +170,7 @@ def test_it_places_only_due_calls_from_the_employees_number(
         f"https://engine.example.in/vobiz/answer?employee={employee}&call="
     )
     assert body["hangup_url"] == "https://api.example.in/vobiz/events"
-    assert sql(migrated_url, "SELECT status::text || carrier_call_id FROM calls") == "ringingvz-1"
+    assert sql(migrated_url, "SELECT status::text || carrier_call_id FROM calls") == "ringingreq-1"
     assert tick(migrated_url, adapter, NOW + timedelta(seconds=90)) == []  # never dialed twice
 
 
@@ -330,44 +351,124 @@ def test_a_carrier_refusal_counts_as_a_failed_attempt_and_is_retried(
     assert "dial_failed" in events(migrated_url)
 
 
-def test_stale_ringing_calls_are_settled_from_the_carrier_or_given_up_on(
+def reap(url: str, adapter: VobizTelephony, now: datetime) -> int:
+    async def work(factory: Any) -> int:
+        return await dialer.reap_stale(factory, adapter, now)
+
+    result: int = run_db(url, work)
+    return result
+
+
+def test_a_call_nobody_can_account_for_is_held_not_retried(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    """No callback, no record, not live any more: the person may well have answered."""
+    fake, adapter = carrier
+    employee, owner = setup(api, migrated_url)
+    lead_in(migrated_url, employee, "9876543210")
+    tick(migrated_url, adapter, NOW)
+    assert reap(migrated_url, adapter, NOW + timedelta(minutes=2)) == 0  # not stale yet
+    assert reap(migrated_url, adapter, NOW + timedelta(minutes=5)) == 0  # stale, not given up
+    assert calls(migrated_url)[0][1] == "ringing"
+    assert reap(migrated_url, adapter, NOW + timedelta(minutes=20)) == 1
+    rows = calls(migrated_url)
+    assert [c[1] for c in rows] == ["failed", "queued"]
+    assert rows[1][2] is None  # held: no time to dial, so the dialer leaves it alone
+    assert "no_carrier_report" in events(migrated_url)
+    assert tick(migrated_url, adapter, NOW + timedelta(days=2)) == [] and len(fake.placed) == 1
+    queue = api.get(f"/employees/{employee}/instant/queue", headers=owner).json()
+    assert [i["state"] for i in queue["active"]] == ["held"]
+
+
+def test_a_call_that_is_still_live_is_never_given_up_on(
     api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
 ) -> None:
     fake, adapter = carrier
     employee, _ = setup(api, migrated_url)
     lead_in(migrated_url, employee, "9876543210")
     tick(migrated_url, adapter, NOW)
-
-    async def reap(now: datetime) -> int:
-        async def work(factory: Any) -> int:
-            return await dialer.reap_stale(factory, adapter, now)
-
-        result: int = await asyncio.to_thread(run_db, migrated_url, work)
-        return result
-
-    assert asyncio.run(reap(NOW + timedelta(minutes=2))) == 0  # not stale yet
-    fake.cdr["vz-1"] = None  # the carrier has no record yet
-    assert asyncio.run(reap(NOW + timedelta(minutes=5))) == 0
-    assert calls(migrated_url)[0][1] == "ringing"
-    assert asyncio.run(reap(NOW + timedelta(minutes=20))) == 1  # given up on
-    assert [c[1] for c in calls(migrated_url)] == ["failed", "queued"]
-    assert "no_carrier_report" in events(migrated_url)
+    fake.live.add("req-1")  # the call is still up (a long conversation)
+    assert reap(migrated_url, adapter, NOW + timedelta(hours=2)) == 0
+    assert [c[1] for c in calls(migrated_url)] == ["ringing"]
 
 
 def test_stale_ringing_with_a_carrier_record_uses_it(
     api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
 ) -> None:
+    """A carrier that keys its record by the request id too (Vobiz docs say the two are equal)."""
+    fake, adapter = carrier
+    fake.same_ids = True
+    employee, _ = setup(api, migrated_url)
+    lead_in(migrated_url, employee, "9876543210")
+    tick(migrated_url, adapter, NOW)
+    fake.cdr["req-1"] = {"billsec": 30, "duration": 40, "hangup_cause": "NORMAL_CLEARING"}
+    assert reap(migrated_url, adapter, NOW + timedelta(minutes=5)) == 1
+    assert [c[1] for c in calls(migrated_url)] == ["completed"]
+
+
+def test_the_record_is_found_by_the_call_id_when_it_differs_from_the_request_id(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
     fake, adapter = carrier
     employee, _ = setup(api, migrated_url)
     lead_in(migrated_url, employee, "9876543210")
     tick(migrated_url, adapter, NOW)
-    fake.cdr["vz-1"] = {"billsec": 30, "duration": 40, "hangup_cause": "NORMAL_CLEARING"}
+    fake.cdr["leg-1"] = {"billsec": 77, "duration": 90, "hangup_cause": "NORMAL_CLEARING"}
+    assert end_call(migrated_url, adapter, first_call_id(migrated_url), NOW) == "settled"
+    assert [c[1] for c in calls(migrated_url)] == ["completed"]  # answered: no redial
+    assert sql(migrated_url, "SELECT carrier_leg_id FROM calls") == "leg-1"
 
-    def work(factory: Any) -> Any:
-        return dialer.reap_stale(factory, adapter, NOW + timedelta(minutes=5))
 
-    assert run_db(migrated_url, work) == 1
-    assert [c[1] for c in calls(migrated_url)] == ["completed"]
+def test_a_carrier_timeout_while_dialing_holds_the_lead_instead_of_retrying(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    """The call may have been placed even though we never heard back."""
+    fake, adapter = carrier
+    employee, _ = setup(api, migrated_url)
+    lead_in(migrated_url, employee, "9876543210")
+    fake.timeout_next = True
+    assert [p.outcome for p in tick(migrated_url, adapter, NOW)] == ["held"]
+    rows = calls(migrated_url)
+    assert [(r[0], r[1]) for r in rows] == [(1, "failed"), (2, "queued")] and rows[1][2] is None
+    assert "dial_unconfirmed" in events(migrated_url)
+
+
+def test_concurrent_settles_queue_one_next_attempt(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    """A callback and the reaper (or two callbacks) race to settle the same ringing call."""
+    _fake, adapter = carrier
+    employee, _ = setup(api, migrated_url)
+    lead_in(migrated_url, employee, "9876543210")
+    tick(migrated_url, adapter, NOW)
+    call = first_call_id(migrated_url)
+
+    async def work(factory: Any) -> list[str]:
+        return list(
+            await asyncio.gather(
+                *(
+                    dialer.settle_from_carrier(factory, adapter, call, NOW, leg_id="leg-1")
+                    for _ in range(6)
+                )
+            )
+        )
+
+    assert set(run_db(migrated_url, work)) == {"settled"}
+    assert [c[1] for c in calls(migrated_url)] == ["busy", "queued"]  # one retry, not six
+
+
+def test_the_hard_limit_is_indian_time_whatever_the_account_asks_for(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup(api, migrated_url, **FULL_DAY)
+    assert api.put(
+        "/accounts/me/utc-offset", json={"utc_offset_minutes": 0}, headers=owner
+    ).status_code in (404, 405)
+    night_ist = datetime(2026, 11, 2, 17, 30, tzinfo=UTC)  # 23:00 IST, 17:30 UTC
+    lead_in(migrated_url, employee, "9876543210", now=night_ist)
+    assert tick(migrated_url, adapter, night_ist) == [] and fake.placed == []
+    assert calls(migrated_url)[0][2] == datetime(2026, 11, 3, 0, 30, tzinfo=UTC)  # 06:00 IST
 
 
 def test_two_workers_never_place_the_same_call(

@@ -12,13 +12,13 @@ new row, scheduled by the retry ladder, until the 10th attempt.
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.instant import policy, rules
 from app.instant.rules import DialerSettings
 from app.models import (
-    Account,
     Call,
     CallEvent,
     CallStatus,
@@ -66,9 +66,14 @@ async def settle(
     status: CallStatus,
     now: datetime,
     duration_s: int | None = None,
+    *,
+    hold_next: bool = False,
 ) -> Call | None:
     """Record how an attempt ended and, if it was not answered and the ladder allows, queue the
-    next attempt. Returns the next attempt, if any. Does not commit."""
+    next attempt. Returns the next attempt, if any. Does not commit.
+
+    `hold_next` is for an outcome nobody knows: the next attempt is queued but held (no time), so
+    a person is never called again on a guess, and the lead is not lost either."""
     if call.status in (
         CallStatus.COMPLETED,
         CallStatus.BUSY,
@@ -82,14 +87,13 @@ async def settle(
     if status is CallStatus.COMPLETED or call.lead_id is None or call.employee_id is None:
         return None
     employee = await session.get(Employee, call.employee_id)
-    account = await session.get(Account, call.account_id)
-    if employee is None or account is None:
+    if employee is None:
         return None
     settings = DialerSettings.model_validate(employee.dialer or {})
     if not rules.has_retry(call.attempt, settings):
         await _event(session, call, "attempts_used_up", attempts=call.attempt)
         return None
-    at = rules.retry_time(call.attempt, now, settings, account.utc_offset_minutes)
+    at = None if hold_next else rules.retry_time(call.attempt, now, settings, rules.IST)
     nxt = Call(
         account_id=call.account_id,
         employee_id=call.employee_id,
@@ -123,13 +127,17 @@ async def dial_due(
         try:
             carrier_id = await telephony.originate(item.from_number, item.to_phone, answer, hangup)
         except Exception as exc:
+            # A refusal (HTTP error status) means no call was placed: a plain failed attempt. Any
+            # other failure (timeout, dropped connection) may have placed it: hold, never retry.
+            refused = isinstance(exc, httpx.HTTPStatusError)
             async with factory() as session:
-                call = await session.get(Call, item.call_id)
+                call = await session.get(Call, item.call_id, with_for_update=True)
                 assert call is not None
-                await _event(session, call, "dial_failed", error=type(exc).__name__)
-                await settle(session, call, CallStatus.FAILED, now)
+                kind = "dial_failed" if refused else "dial_unconfirmed"
+                await _event(session, call, kind, error=type(exc).__name__)
+                await settle(session, call, CallStatus.FAILED, now, hold_next=not refused)
                 await session.commit()
-            results.append(Dialed(item.call_id, "failed"))
+            results.append(Dialed(item.call_id, "failed" if refused else "held"))
             continue
         async with factory() as session:
             await session.execute(
@@ -178,8 +186,7 @@ async def _claim(
 async def _decide(session: AsyncSession, call: Call, now: datetime) -> _Claim:
     employee = await session.get(Employee, call.employee_id) if call.employee_id else None
     lead = await session.get(Lead, call.lead_id) if call.lead_id else None
-    account = await session.get(Account, call.account_id)
-    if employee is None or lead is None or account is None:
+    if employee is None or lead is None:
         call.status = CallStatus.CANCELED
         await _event(session, call, "cancelled", reason="employee or lead no longer exists")
         return _Claim(call.id, "cancelled")
@@ -197,8 +204,8 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> _Claim:
         call.scheduled_for = now + NOT_READY_RETRY
         return _Claim(call.id, "rescheduled")
     settings = DialerSettings.model_validate(employee.dialer or {})
-    if not rules.in_window(now, settings, account.utc_offset_minutes):
-        call.scheduled_for = rules.adjust(now, settings, account.utc_offset_minutes)
+    if not rules.in_window(now, settings, rules.IST):
+        call.scheduled_for = rules.adjust(now, settings, rules.IST)
         await _event(session, call, "outside_window", next=str(call.scheduled_for))
         return _Claim(call.id, "held" if call.scheduled_for is None else "rescheduled")
     verdict = policy.check_dial(employee, number, lead.phone)
@@ -212,19 +219,36 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> _Claim:
     return _Claim(call.id, "dial", employee.id, number.e164, lead.phone)
 
 
+async def _detail(telephony: TelephonyProvider, call: Call) -> CallDetail | None:
+    """The carrier's record of a call. It is keyed by the call's own id, which the call-end
+    callback gives us; the dial-request id is tried too (some carriers use one id for both)."""
+    for carrier_id in dict.fromkeys(filter(None, (call.carrier_leg_id, call.carrier_call_id))):
+        detail = await telephony.call_detail(carrier_id)
+        if detail is not None:
+            return detail
+    return None
+
+
 async def settle_from_carrier(
     factory: async_sessionmaker[AsyncSession],
     telephony: TelephonyProvider,
     call_id: object,
     now: datetime,
+    leg_id: str | None = None,
 ) -> str:
-    """Ask the carrier how a call went and settle it. 'pending' if its record is not there yet."""
+    """Ask the carrier how a call went and settle it. 'pending' if its record is not there yet.
+    The call row is locked, so a callback and the reaper cannot both queue the next attempt."""
     async with factory() as session:
-        call = await session.get(Call, call_id)
+        call = await session.get(Call, call_id, with_for_update=True)
         if call is None or call.carrier_call_id is None:
             return "unknown"
-        detail = await telephony.call_detail(call.carrier_call_id)
+        if call.status not in (CallStatus.RINGING, CallStatus.IN_PROGRESS):
+            return "settled"  # already settled: callbacks arrive more than once
+        if leg_id and not call.carrier_leg_id:
+            call.carrier_leg_id = leg_id
+        detail = await _detail(telephony, call)
         if detail is None:
+            await session.commit()  # keeps the leg id for the next try
             return "pending"
         await settle(session, call, outcome_of(detail), now, detail.duration_s)
         await session.commit()
@@ -234,8 +258,9 @@ async def settle_from_carrier(
 async def reap_stale(
     factory: async_sessionmaker[AsyncSession], telephony: TelephonyProvider, now: datetime
 ) -> int:
-    """Calls still ringing long after they were placed: no end callback came. Ask the carrier;
-    a call it never reports on counts as a failed attempt so the lead is not lost."""
+    """Calls still ringing long after they were placed: no end callback came. Ask the carrier. If
+    it still has nothing and the call is no longer live, nobody knows what happened (it may have
+    been answered), so the attempt is closed as failed and the lead is HELD, never auto-retried."""
     async with factory() as session:
         stale = list(
             await session.scalars(
@@ -250,13 +275,21 @@ async def reap_stale(
     for call in stale:
         state = await settle_from_carrier(factory, telephony, call.id, now)
         too_old = call.started_at is not None and call.started_at < now - GIVE_UP_AFTER
-        if state in ("pending", "unknown") and too_old:
+        if state in ("pending", "unknown") and too_old and not await _still_live(telephony, call):
             async with factory() as session:
-                row = await session.get(Call, call.id)
+                row = await session.get(Call, call.id, with_for_update=True)
                 assert row is not None
-                await _event(session, row, "no_carrier_report")
-                await settle(session, row, CallStatus.FAILED, now)
-                await session.commit()
-            state = "settled"
+                if row.status is CallStatus.RINGING:
+                    await _event(session, row, "no_carrier_report")
+                    await settle(session, row, CallStatus.FAILED, now, hold_next=True)
+                    await session.commit()
+                    state = "settled"
         reaped += state == "settled"
     return reaped
+
+
+async def _still_live(telephony: TelephonyProvider, call: Call) -> bool:
+    for carrier_id in filter(None, (call.carrier_leg_id, call.carrier_call_id)):
+        if await telephony.is_live(carrier_id):
+            return True
+    return False
