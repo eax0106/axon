@@ -34,7 +34,7 @@ from app.providers.base import LLMProvider, ProviderKind, ProviderNotConfiguredE
 from app.providers.registry import require
 
 log = logging.getLogger("axon.postcall")
-BATCH = 10
+BATCH = 3  # a batch must finish inside the worker's job timeout: 3 x 60 s of LLM
 CLAIM_TIMEOUT = timedelta(minutes=10)  # an `analysing` claim older than this was abandoned
 STALE_TEST_QUEUED = timedelta(minutes=10)  # a web ticket lives 2 minutes
 STALE_TEST_RUNNING = timedelta(minutes=90)  # longer than the longest call (60 minutes)
@@ -153,12 +153,12 @@ async def _apply(
     if lead is not None and remember and result.memory:
         lead.memory = result.memory
     if lead is not None and result.do_not_call:
-        await _add_to_dnc(session, call, lead)
+        await _add_to_dnc(session, call, lead, result.do_not_call_quote)
     elif lead is not None and employee is not None and result.callback_at:
         await _schedule_callback(session, call, lead, employee, result.callback_at)
 
 
-async def _add_to_dnc(session: AsyncSession, call: Call, lead: Lead) -> None:
+async def _add_to_dnc(session: AsyncSession, call: Call, lead: Lead, quote: str | None) -> None:
     exists = await session.scalar(
         select(DncEntry.id).where(
             DncEntry.account_id == call.account_id, DncEntry.phone == lead.phone
@@ -170,7 +170,7 @@ async def _add_to_dnc(session: AsyncSession, call: Call, lead: Lead) -> None:
                 account_id=call.account_id,
                 phone=lead.phone,
                 source=DncSource.CALLER_REQUEST,
-                reason=f"asked not to be called again (call {call.id})",
+                reason=f'asked not to be called again: "{quote}" (call {call.id})'[:500],
             )
         )
         session.add(
@@ -178,8 +178,8 @@ async def _add_to_dnc(session: AsyncSession, call: Call, lead: Lead) -> None:
                 account_id=call.account_id,
                 kind="do_not_call_added",
                 title="Number added to the do-not-call list",
-                body=f"{lead.name or lead.phone} asked not to be called again. "
-                "We will not call this number again.",
+                body=f'{lead.name or lead.phone} said: "{quote}". We will not call this number '
+                "again. If this is a mistake, remove the number from the do-not-call list.",
             )
         )
     # Nothing already waiting for this number may still ring.

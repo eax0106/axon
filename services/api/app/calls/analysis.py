@@ -8,7 +8,6 @@ the allowed lists become null. Output that is not the expected JSON is a failed 
 a guessed one, and a call where the caller said nothing is not sent to the model at all.
 """
 
-import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, timezone
@@ -48,6 +47,7 @@ class Analysis:
     captured: dict[str, str | None] = field(default_factory=dict)
     callback_at: datetime | None = None
     do_not_call: bool = False
+    do_not_call_quote: str | None = None  # the caller's words, so the owner can see why
     memory: str | None = None
 
 
@@ -68,8 +68,12 @@ def transcript_text(turns: Turns) -> str:
 
 def _norm(text: str) -> str:
     """Case, accents, punctuation and spacing do not matter when checking a quote."""
-    decomposed = unicodedata.normalize("NFKC", text).casefold()
-    return " ".join(re.sub(r"[^\w\s]", " ", decomposed).split())
+    folded = unicodedata.normalize("NFKC", text).casefold()
+    # Only punctuation (P*) and symbols (S*) become spaces. Combining marks (M*: the vowel signs
+    # and virama of Hindi and Telugu) belong to their word: dropping them would shred a word into
+    # its consonants.
+    spaced = "".join(" " if unicodedata.category(c)[0] in "PS" else c for c in folded)
+    return " ".join(spaced.split())
 
 
 MIN_QUOTE_CHARS = 6  # "yes", "no" and "ok" are in almost every call and prove nothing
@@ -180,6 +184,8 @@ def parse(
     result.do_not_call = (
         dnc.get("requested") is True and caller_quoted(dnc.get("quote"), turns) is not None
     )
+    if result.do_not_call:
+        result.do_not_call_quote = _clean(dnc.get("quote"), 200)
     if result.outcome == "do_not_call" and not result.do_not_call:
         result.outcome = None  # the model said so but nothing the caller said backs it
     if result.do_not_call:

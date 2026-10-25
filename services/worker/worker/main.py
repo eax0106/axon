@@ -93,7 +93,7 @@ class WorkerSettings:
     functions = (ping,)
     cron_jobs = (
         cron(dial_tick, second=set(range(0, 60, 3)), run_at_startup=False, timeout=50),
-        cron(post_call_tick, second=set(range(5, 60, 10)), run_at_startup=False, timeout=50),
+        cron(post_call_tick, second=set(range(5, 60, 10)), run_at_startup=False, timeout=240),
         cron(reap_tick, second=15, run_at_startup=False, timeout=50),
         cron(sheets_tick, second=45, run_at_startup=False, timeout=50),
     )

@@ -241,8 +241,12 @@ def test_do_not_call_adds_the_number_cancels_waiting_calls_and_says_so(
     assert (
         sql(migrated_url, "SELECT count(*) FROM calls WHERE is_callback") == 0
     )  # asking not to be called wins
-    kinds = [n["kind"] for n in client.get("/notifications", headers=owner).json()["items"]]
-    assert kinds == ["do_not_call_added"]
+    notes = client.get("/notifications", headers=owner).json()["items"]
+    assert [n["kind"] for n in notes] == ["do_not_call_added"]
+    # The owner can see the caller's own words, and so judge (and undo) the decision.
+    assert 'said: "Do not call me again"' in notes[0]["body"]
+    reason = sql(migrated_url, "SELECT reason FROM dnc_entries WHERE phone = '+919876543210'")
+    assert reason.startswith('asked not to be called again: "Do not call me again"')
     make_call(migrated_url, employee, turns)
     process(migrated_url)
     assert sql(migrated_url, "SELECT count(*) FROM dnc_entries") == 1
@@ -479,3 +483,11 @@ def test_a_claim_nobody_finished_is_taken_again_after_ten_minutes_but_not_before
     )
     assert process(migrated_url) == 1
     assert row(migrated_url, call, "analysis_status") == "done"
+
+
+def test_a_batch_is_small_enough_for_the_workers_job_timeout() -> None:
+    from worker import main as worker
+
+    cron = next(job for job in worker.WorkerSettings.cron_jobs if job.name == "cron:post_call_tick")
+    assert isinstance(cron.timeout_s, int | float)
+    assert postcall.BATCH * 60 < cron.timeout_s  # three LLM calls at their 60 s limit fit

@@ -294,3 +294,74 @@ def test_the_value_must_be_made_of_the_words_of_its_quote() -> None:
     assert captured_with("5 lakh", quote)["budget"] is None  # converted, not said
     assert captured_with("₹10 lakh", "yes my budget is around five lakh rupees")["budget"] is None
     assert captured_with("", quote)["budget"] is None
+
+
+HINDI: list[dict[str, Any]] = [
+    {"role": "assistant", "text": "नमस्ते, मैं आशा बोल रही हूँ। क्या मैं आपसे बात कर सकती हूँ?"},
+    {"role": "user", "text": "मेरा बजट पांच लाख रुपये है। मुझे फोन मत करो, धन्यवाद।"},
+]
+TELUGU_CALL: list[dict[str, Any]] = [
+    {"role": "assistant", "text": "నమస్కారం, నేను ఆశా మాట్లాడుతున్నాను."},
+    {"role": "user", "text": "నేను హైదరాబాద్ లో ఉంటాను. ఇంకా నాకు ఫోన్ చేయవద్దు, ధన్యవాదాలు."},
+]
+
+
+def test_normalising_keeps_indian_language_words_whole() -> None:
+    """Vowel signs and the virama are combining marks, not punctuation: they stay in their word."""
+    assert analysis._norm("मुझे फोन मत करो, धन्यवाद।") == "मुझे फोन मत करो धन्यवाद"
+    assert analysis._norm("వద్దు!") == "వద్దు"
+    assert analysis._norm("హైదరాబాద్ లో ఉంటాను.") == "హైదరాబాద్ లో ఉంటాను"
+    assert analysis._norm("  Hello,  WORLD!! ₹5 ") == "hello world 5"  # symbols and punctuation go
+    assert analysis._norm("a_b-c") == "a b c"
+
+
+def test_a_real_hindi_quote_is_accepted_and_a_shredded_one_is_not() -> None:
+    assert analysis.caller_quoted("मुझे फोन मत करो", HINDI) == "मुझे फोन मत करो"
+    assert analysis.caller_quoted("मुझे फोन मत करो।", HINDI) == "मुझे फोन मत करो"
+    for shredded in ("म झ फ न मत कर", "म झ फ न", "मझ फन मत कर", "ुझे ोन"):
+        assert analysis.caller_quoted(shredded, HINDI) is None, shredded
+    stop = {"requested": True, "quote": "मुझे फोन मत करो"}
+    result = run(reply(do_not_call=stop), HINDI)
+    assert result.do_not_call and result.do_not_call_quote == "मुझे फोन मत करो"
+    assert not run(
+        reply(do_not_call={"requested": True, "quote": "म झ फ न मत कर"}), HINDI
+    ).do_not_call
+
+
+def test_a_real_telugu_quote_is_accepted_and_a_shredded_one_is_not() -> None:
+    assert analysis.caller_quoted("నాకు ఫోన్ చేయవద్దు", TELUGU_CALL) == "నాకు ఫోన్ చేయవద్దు"
+    for shredded in ("న క ఫ న చ య వ ద ద", "వద ద", "హ దర బ ద"):
+        assert analysis.caller_quoted(shredded, TELUGU_CALL) is None, shredded
+    stop = {"requested": True, "quote": "నాకు ఫోన్ చేయవద్దు"}
+    assert run(reply(do_not_call=stop), TELUGU_CALL).do_not_call
+    assert not run(
+        reply(do_not_call={"requested": True, "quote": "న క ఫ న చ య"}), TELUGU_CALL
+    ).do_not_call
+
+
+def test_a_captured_value_in_devanagari_or_telugu_must_be_the_words_of_its_quote() -> None:
+    quote = analysis._norm("मेरा बजट पांच लाख रुपये है")
+    assert analysis.value_in_quote("पांच लाख", quote)
+    assert analysis.value_in_quote("पांच लाख रुपये", quote)
+    assert not analysis.value_in_quote("दस लाख", quote)  # a different number
+    assert not analysis.value_in_quote("5 लाख", quote)  # converted, not said
+    assert not analysis.value_in_quote("प च ल ख", quote)  # consonants only
+    assert not analysis.value_in_quote("ां", quote)  # a lone mark
+    telugu = analysis._norm("నేను హైదరాబాద్ లో ఉంటాను")
+    assert analysis.value_in_quote("హైదరాబాద్", telugu)
+    assert not analysis.value_in_quote("చెన్నై", telugu)
+    assert not analysis.value_in_quote("ద్", telugu) and not analysis.value_in_quote("హ దర", telugu)
+
+
+def test_captured_values_in_hindi_and_telugu_end_to_end() -> None:
+    wanted = [
+        CaptureField(name="budget", description="बजट"),
+        CaptureField(name="city", description="शहर"),
+    ]
+    given = {
+        "budget": {"value": "पांच लाख", "quote": "मेरा बजट पांच लाख रुपये है"},
+        "city": {"value": "दिल्ली", "quote": "मेरा बजट पांच लाख रुपये है"},  # not in the quote
+    }
+    model = Model(reply(captured=given, callback={"at": None, "quote": None}))
+    got = asyncio.run(analysis.analyse(model, HINDI, wanted, NOW))
+    assert got.captured == {"budget": "पांच लाख", "city": None}
