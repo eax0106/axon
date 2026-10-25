@@ -21,3 +21,6 @@ Filled in after the code is built (Track 3). Keys go into `.env` locally or the 
 | 15 | Hosting account (India region) | Deployment | Launch | Owner, then Claude | todo |
 | 16 | Test phones + native Telugu and Hindi speakers | Quality checks | B2, B14 | Owner | todo |
 | 17 | Five licensed background-sound loops (Office, Call Center, Restaurant, Quiet Room, Retail Store), mono 16 kHz WAV, named `office.wav` etc. in `AXON_AMBIENCE_DIR` | Ambience setting on employees (otherwise calls play no background sound) | B4 | Owner | todo |
+| 18 | Public https URLs for the API and the engine (`AXON_API_PUBLIC_URL`, `AXON_ENGINE_PUBLIC_URL`; a tunnel locally) | Vobiz call-end callbacks and answer URL | B2, B5 | Owner, then Claude | todo |
+| 19 | Meta app id (`META_APP_ID`) with `META_APP_SECRET`, `META_VERIFY_TOKEN`, a page access token per lead form, `leads_retrieval` permission | Meta Lead Ads into Instant | B5 | Owner, then Claude | todo |
+| 20 | Real Vobiz call-end callback and CDR check: confirm the callback payload/format and the `/cdr/{uuid}` fields against one live call | Dialer outcomes (busy, no answer, answered) | B5 | Claude | todo |

@@ -77,6 +77,6 @@ Every command works the same on macOS, Windows and Linux. Run from the repo root
 | Stop the stack | `docker compose -f deploy/docker-compose.yml down` |
 | API natively (needs Postgres + Redis, e.g. `docker compose -f deploy/docker-compose.yml up -d postgres redis`) | `uv run --env-file .env uvicorn app.main:app --app-dir services/api --reload` |
 | Voice engine natively | `uv run --env-file .env uvicorn engine.main:app --app-dir services/engine --port 8001` (Vobiz needs it on a public https URL: set `AXON_ENGINE_PUBLIC_URL`, e.g. a cloudflared tunnel) |
-| Worker natively | `uv run --env-file .env --directory services/worker python -m arq worker.main.WorkerSettings` |
+| Worker natively (the Instant dialer and the Sheets poller; needs Postgres, Redis and the Vobiz keys + public URLs to place calls) | `uv run --env-file .env --directory services/worker python -m arq worker.main.WorkerSettings` |
 
 Config: copy `.env.example` to `.env` (never committed) and set `AXON_JWT_SECRET` for signup and login. Host ports can be moved with `AXON_API_PORT`, `AXON_ENGINE_PORT`, `AXON_PG_PORT`, `AXON_REDIS_PORT` (the smoke test follows `AXON_API_PORT`). To run two stacks at once (for example two worktrees), give each its own `COMPOSE_PROJECT_NAME` and its own ports; otherwise they share containers and the `pgdata` volume.

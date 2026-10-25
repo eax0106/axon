@@ -16,6 +16,8 @@ from app.auth import router as auth_router
 from app.employees.ai import router as ai_router
 from app.employees.calls import router as calls_router
 from app.employees.router import router as employees_router
+from app.instant.public import router as instant_public_router
+from app.instant.router import router as instant_router
 from app.live import router as live_router
 from app.providers.base import ProviderNotConfiguredError
 from app.providers.registry import report_all
@@ -47,6 +49,8 @@ app.include_router(live_router)
 app.include_router(employees_router)
 app.include_router(ai_router)
 app.include_router(calls_router)
+app.include_router(instant_router)
+app.include_router(instant_public_router)
 app.include_router(voices_router)
 
 

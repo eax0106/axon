@@ -2,7 +2,10 @@
 name = "axon-worker"
 version = "0.0.0"
 requires-python = "==3.12.*"
-dependencies = ["arq"]
+dependencies = ["arq", "axon-api"]
+
+[tool.uv.sources]
+axon-api = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]

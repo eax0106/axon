@@ -5,7 +5,7 @@ the duration of a test); B3 brings the real speech and LLM adapters."""
 import base64
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar
 
 import pytest
@@ -67,8 +67,16 @@ class _Carrier(TelephonyProvider):
     async def health(self) -> None:
         return None
 
-    async def originate(self, from_number: str, to_number: str, answer_url: str) -> str:
+    async def originate(
+        self, from_number: str, to_number: str, answer_url: str, hangup_url: str | None = None
+    ) -> str:
         return "test-call"
+
+    def callback_is_authentic(self, url: str, headers: Mapping[str, str]) -> bool:
+        return True
+
+    async def call_detail(self, call_uuid: str) -> None:
+        return None
 
     async def is_live(self, call_uuid: str) -> bool:
         return self.live

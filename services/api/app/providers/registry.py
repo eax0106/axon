@@ -14,6 +14,8 @@ from typing import Literal
 
 from app.models import VoiceTier
 from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
+from app.providers.google.sheets import GoogleSheets
+from app.providers.leads.meta_lead_ads import MetaLeadAds
 from app.providers.speech.cartesia import CartesiaTTS
 from app.providers.speech.gemini import GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
@@ -44,13 +46,15 @@ VENDOR_KEYS: dict[ProviderKind, dict[str, tuple[str, ...]]] = {
     ProviderKind.WHATSAPP: {"interakt": ("INTERAKT_API_KEY",), "aisensy": ("AISENSY_API_KEY",)},
     ProviderKind.CALENDAR: {"google": _GOOGLE},
     ProviderKind.SHEETS: {"google": _GOOGLE},
-    ProviderKind.LEADS: {"meta_lead_ads": ("META_APP_SECRET", "META_VERIFY_TOKEN")},
+    ProviderKind.LEADS: {"meta_lead_ads": ("META_APP_ID", "META_APP_SECRET", "META_VERIFY_TOKEN")},
     ProviderKind.NUMBER_KYC: {"vobiz": _VOBIZ},
 }
 
 # (kind, vendor) -> adapter class. Each phase adds the real adapters it builds.
 ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
     (ProviderKind.TELEPHONY, "vobiz"): VobizTelephony,
+    (ProviderKind.LEADS, "meta_lead_ads"): MetaLeadAds,
+    (ProviderKind.SHEETS, "google"): GoogleSheets,
     (ProviderKind.STT, "sarvam"): SarvamSTT,
     (ProviderKind.STT, "smallest"): SmallestSTT,
     (ProviderKind.LLM, "gemini"): GeminiLLM,

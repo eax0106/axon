@@ -251,6 +251,8 @@ class Employee(Base):
     draft: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     # Voice, ambience, toggles and capture fields: applied to live calls immediately, no publish.
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    # Instant dialer rules (window, delay, out-of-window rule, retry ladder); see instant/rules.py.
+    dialer: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -312,6 +314,7 @@ class CampaignContact(Base):
 
 class Call(Base):
     __tablename__ = "calls"
+    __table_args__ = (Index("ix_calls_queue", "status", "scheduled_for"),)
     id: Mapped[uuid.UUID] = _pk()
     account_id: Mapped[uuid.UUID] = _account_fk()
     employee_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -344,6 +347,56 @@ class Call(Base):
     recording_key: Mapped[str | None] = mapped_column(String(500))
     # Test calls (phone, browser) are free and excluded from stats and billing.
     is_test: Mapped[bool] = mapped_column(server_default="false")
+    # Dialer queue: a queued call with scheduled_for NULL is held until someone redials it.
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt: Mapped[int] = mapped_column(server_default="1")
+    # The carrier's id for the dial request, and for the call itself once it reports one (the
+    # call-end callback carries both; the carrier's record is keyed by the call id).
+    carrier_call_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    carrier_leg_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    created_at: Mapped[datetime] = _created()
+
+
+class IntakeStatus(StrEnum):
+    ACCEPTED = "accepted"
+    DEDUPLICATED = "deduplicated"
+    REJECTED = "rejected"
+
+
+class LeadConnection(Base):
+    """An Instant employee's lead sources: the private intake URL and secret, Meta and Sheets."""
+
+    __tablename__ = "lead_connections"
+    id: Mapped[uuid.UUID] = _pk()  # the public part of the intake URL
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), unique=True
+    )
+    # Stored as written because the owner can reveal it again; compared in constant time.
+    secret: Mapped[str] = mapped_column(String(64))
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    meta_form_id: Mapped[str | None] = mapped_column(String(50), unique=True)
+    meta_page_token: Mapped[str | None] = mapped_column(Text)
+    sheet_id: Mapped[str | None] = mapped_column(String(100))
+    sheet_range: Mapped[str | None] = mapped_column(String(100))
+    google_refresh_token: Mapped[str | None] = mapped_column(Text)
+    sheet_cursor: Mapped[int] = mapped_column(server_default="0")  # rows already taken, header too
+    created_at: Mapped[datetime] = _created()
+
+
+class LeadIntakeEntry(Base):
+    __tablename__ = "lead_intake_log"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(20))  # website, meta, sheets, manual, test
+    status: Mapped[IntakeStatus] = mapped_column(_enum(IntakeStatus, "intake_status"))
+    reason: Mapped[str | None] = mapped_column(String(200))
+    phone: Mapped[str | None] = mapped_column(String(20))
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"))
+    call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("calls.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = _created()
 
 

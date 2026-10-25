@@ -318,10 +318,14 @@ version = "0.0.0"
 source = { editable = "services/worker" }
 dependencies = [
     { name = "arq" },
+    { name = "axon-api" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "arq" }]
+requires-dist = [
+    { name = "arq" },
+    { name = "axon-api", editable = "services/api" },
+]
 
 [[package]]
 name = "certifi"
