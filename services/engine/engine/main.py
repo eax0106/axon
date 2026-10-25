@@ -6,6 +6,7 @@ pointing at /vobiz/stream -> Vobiz opens that WebSocket and sends `start` then `
 
 import asyncio
 import json
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from urllib.parse import urlencode
@@ -26,6 +27,7 @@ from engine.call import CallSettings, run_call
 from engine.events import redis_sink
 from engine.legs import voice_legs
 from engine.plan import claim_test_call, load_plan
+from engine.records import CallRecorder
 from engine.vobiz import StreamStart, VobizFrameSerializer, answer_xml
 from engine.web import WebFrameSerializer
 
@@ -60,6 +62,14 @@ def _language(lang: str) -> str:
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _recorder(app_: FastAPI, call: str) -> CallRecorder | None:
+    """The recorder for our own `calls` row, when the answer URL named one."""
+    try:
+        return CallRecorder(app_.state.db, uuid.UUID(call))
+    except ValueError:
+        return None
 
 
 class _NoPlanError(Exception):
@@ -154,7 +164,17 @@ async def vobiz_stream(
 
     publish = redis_sink(websocket.app.state.redis, call or start.call_id)
     serializer = VobizFrameSerializer(start, hang_up=hang_up)
-    await run_call(websocket, start.call_id, serializer, legs, settings, publish)
+    recorder = _recorder(websocket.app, call)
+    await run_call(
+        websocket,
+        start.call_id,
+        serializer,
+        legs,
+        settings,
+        publish,
+        recorder,
+        carrier_call_id=start.call_id,
+    )
 
 
 @app.websocket("/web/stream")
@@ -168,20 +188,24 @@ async def web_stream(websocket: WebSocket, ticket: str = "") -> None:
     if not await claim_test_call(websocket.app.state.db, granted.call_id, granted.account_id):
         await websocket.close(code=1008, reason="ticket already used")
         return
+    # The ticket is spent and the call is in progress: whatever goes wrong now must close the row.
+    recorder = CallRecorder(websocket.app.state.db, granted.call_id)
     try:
         legs, settings = await _setup(
             websocket.app, "en", str(granted.employee_id), str(granted.call_id)
         )
     except ProviderNotConfiguredError as exc:
+        await recorder.abandon("provider_not_configured")
         await websocket.close(code=1011, reason=f"provider_not_configured: {exc.detail}"[:120])
         return
     except _NoPlanError:
+        await recorder.abandon("employee_not_found")
         await websocket.close(code=1008, reason="employee not found")
         return
     publish = redis_sink(websocket.app.state.redis, str(granted.call_id))
     try:
         await run_call(
-            websocket, str(granted.call_id), WebFrameSerializer(), legs, settings, publish
+            websocket, str(granted.call_id), WebFrameSerializer(), legs, settings, publish, recorder
         )
     finally:
         if websocket.client_state != WebSocketState.DISCONNECTED:

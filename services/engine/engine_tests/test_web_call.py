@@ -99,13 +99,24 @@ def test_a_valid_ticket_for_an_unknown_employee_is_refused(api: TestClient) -> N
 
 
 def test_a_valid_ticket_without_speech_keys_closes_with_provider_not_configured(
-    api: TestClient,
+    api: TestClient, migrated_url: str
 ) -> None:
     owner = signup(api)
     employee = api.post("/employees", json={"channel": "instant"}, headers=owner).json()
     web = api.post(f"/employees/{employee['id']}/web-test-call", headers=owner).json()
     closed = closed_with(web["ticket"])
     assert closed.code == 1011 and "provider_not_configured" in closed.reason
+    # The ticket was spent and the call claimed; a failed setup must close the row, not strand it.
+    from tests.conftest import sql
+
+    assert (
+        sql(migrated_url, "SELECT status::text FROM calls WHERE id = :c", {"c": web["call_id"]})
+        == "failed"
+    )
+    assert (
+        sql(migrated_url, "SELECT type FROM call_events WHERE call_id = :c", {"c": web["call_id"]})
+        == "setup_failed"
+    )
 
 
 def test_a_ticket_opens_exactly_one_call(api: TestClient) -> None:

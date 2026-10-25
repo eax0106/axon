@@ -50,6 +50,7 @@ from app.providers.registry import require
 from engine.ambience import mixer_for
 from engine.events import CallObserver, EventSink, Usage
 from engine.goodbye import GoodbyeGate, PlayedStreamTap
+from engine.records import CallRecorder
 from engine.vobiz import checkpoint
 
 PIPELINE_RATE = 16000  # Smart Turn and Silero work at 16 kHz; the serializer converts to 8 kHz
@@ -103,16 +104,18 @@ def _wav(audio: bytes, sample_rate: int, channels: int) -> bytes:
     return buffer.getvalue()
 
 
-async def store_recording(call_id: str, wav: bytes, publish: EventSink) -> None:
+async def store_recording(call_id: str, wav: bytes, publish: EventSink) -> str | None:
+    """Upload the recording; returns its storage key, or None when it could not be stored."""
     key = f"recordings/{call_id}.wav"
     try:
         storage = require(ProviderKind.STORAGE)
     except ProviderNotConfiguredError as exc:
         await publish({"type": "recording_not_stored", "detail": exc.detail})
-        return
+        return None
     assert isinstance(storage, ObjectStorageProvider)
     await storage.put(key, wav, "audio/wav")
     await publish({"type": "recording_stored", "key": key})
+    return key
 
 
 END_CALL = FunctionSchema(
@@ -146,6 +149,8 @@ async def run_call(
     legs: tuple[FrameProcessor, FrameProcessor, FrameProcessor],
     settings: CallSettings,
     publish: EventSink,
+    call_record: CallRecorder | None = None,
+    carrier_call_id: str | None = None,
 ) -> Usage:
     """Run the call until it ends; return what it used. The caller has already accepted the
     WebSocket and read any handshake; `serializer` speaks the stream protocol."""
@@ -201,7 +206,7 @@ async def run_call(
             aggregators.assistant(),
         ]
     )
-    live = _LiveEvents(publish)
+    live = _LiveEvents(publish, call_record)
     observer = CallObserver(live.emit, transport.input())
     # ponytail: PipelineTask/PipelineRunner are deprecated in Pipecat 1.3 (removed in 2.0); the
     # PipelineWorker/WorkerRunner pair never returned after EndFrame here. Migrate with 2.0.
@@ -233,6 +238,8 @@ async def run_call(
         if audio:
             recording.append(_wav(audio, sample_rate, channels))
 
+    if call_record is not None:
+        await call_record.started(carrier_call_id)
     await publish({"type": "started", "call_id": call_id, "language": settings.language})
     await recorder.start_recording()
     cap = asyncio.get_running_loop().call_later(
@@ -254,7 +261,7 @@ async def run_call(
     # However the pipeline exits, finish the call (recording, usage, `ended` last) in its own
     # task: if this handler is being cancelled, its cancel scope would interrupt every await here.
     finishing = asyncio.create_task(
-        _finish(live, publish, call_id, recording, observer.usage, reason)
+        _finish(live, publish, call_id, recording, observer.usage, reason, call_record)
     )
     _FINISHING.add(finishing)
     finishing.add_done_callback(_FINISHING.discard)
@@ -269,14 +276,17 @@ async def run_call(
 class _LiveEvents:
     """Gate for a call's live events: once closed, late pipeline events are dropped."""
 
-    def __init__(self, publish: EventSink) -> None:
+    def __init__(self, publish: EventSink, recorder: CallRecorder | None = None) -> None:
         self._publish = publish
+        self._recorder = recorder
         self._lock = asyncio.Lock()
         self._closed = False
 
     async def emit(self, event: dict[str, Any]) -> None:
         async with self._lock:
             if not self._closed:
+                if self._recorder is not None:
+                    self._recorder.tap(event)
                 await self._publish(event)
 
     async def close(self) -> None:
@@ -294,15 +304,28 @@ async def _finish(
     recording: list[bytes],
     usage: Usage,
     reason: str,
+    recorder: CallRecorder | None,
 ) -> None:
     # Pipeline tasks still tearing down may emit late events (e.g. bot_stopped_speaking); close the
     # live gate first so `ended` is always the last event.
     await live.close()
+
+    async def emit(event: dict[str, Any]) -> None:
+        if recorder is not None:
+            recorder.tap(event)
+        await publish(event)
+
+    key: str | None = None
     if recording:
         try:
-            await store_recording(call_id, recording[0], publish)
+            key = await store_recording(call_id, recording[0], emit)
         except Exception:
             logger.exception("recording upload failed")
-            await publish({"type": "recording_not_stored", "detail": "upload failed"})
-    await publish(usage.as_event())
-    await publish({"type": "ended", "reason": reason})
+            await emit({"type": "recording_not_stored", "detail": "upload failed"})
+    await emit(usage.as_event())
+    await emit({"type": "ended", "reason": reason})
+    if recorder is not None:
+        try:
+            await recorder.finished(reason, key)
+        except Exception:
+            logger.exception("could not write the call record")

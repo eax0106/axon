@@ -18,3 +18,6 @@ Settled decisions. Don't reopen them without the owner. Newest at the bottom.
 | 2026-10-24 | Brand: "Axon Voice Engine by ALTERX". Dashboard design language from alterx.co.in | Owner |
 | 2026-10-24 | Non-stop autonomous run of B0–B14: orchestrator auto squash-merges after reviewer APPROVE + gates ALL MET; planned dependencies, builds and tests pre-approved; usage-limit auto-continue on | Owner wants the build not to stop until B14 |
 | 2026-10-24 | GitHub account havishvardhan04-creator; local-git mode until it has write access to eax0106/axon, then push everything | Both accounts have read-only access today |
+| 2026-10-25 | Instant calling window: default 9 AM–9 PM, inside the hard 6 AM–10 PM IST limit (approved). The Instant strict/relaxed setting stays parked pending the legal opinion. | TRAI schedule II bands; owner-proxy decision |
+| 2026-10-25 | Calling hours are always fixed IST (UTC+5:30): no account time zone, no tzdata dependency. Revisit only for Stage C / non-India markets. | Every dialable number is Indian; India has no daylight saving; Windows needs tzdata for named zones |
+| 2026-10-25 | Meta page access tokens are entered by hand per lead form for V1; the OAuth connect flow is built in Track 3. | Needs a verified Meta app; keeps V1 shippable |

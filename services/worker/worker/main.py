@@ -1,4 +1,4 @@
-"""Arq worker: the Instant dialer and the Sheets lead poller.
+"""Arq worker: the Instant dialer, the post-call analysis and the Sheets lead poller.
 
 Run: `arq worker.main.WorkerSettings`. Health: `arq --check worker.main.WorkerSettings`.
 Every tick is a plain function of the database and `now` (app.instant), so the worker is only
@@ -14,6 +14,7 @@ from arq import cron
 from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.calls import postcall
 from app.instant import dialer
 from app.instant.sheets import poll_all
 from app.providers.base import (
@@ -61,13 +62,21 @@ async def dial_tick(ctx: dict[str, Any]) -> int:
 
 
 async def reap_tick(ctx: dict[str, Any]) -> int:
-    """Every minute: settle calls whose end callback never came."""
+    """Every minute: settle calls whose end callback never came, and close test calls that never
+    finished (an unused browser ticket, a call whose setup failed)."""
+    now = datetime.now(UTC)
+    reaped = await postcall.reap_test_calls(_factory(ctx), now)
     try:
         telephony = require(ProviderKind.TELEPHONY)
         assert isinstance(telephony, TelephonyProvider)
     except ProviderNotConfiguredError:
-        return 0
-    return await dialer.reap_stale(_factory(ctx), telephony, datetime.now(UTC))
+        return reaped
+    return reaped + await dialer.reap_stale(_factory(ctx), telephony, now)
+
+
+async def post_call_tick(ctx: dict[str, Any]) -> int:
+    """Every few seconds: analyse calls that just ended (summary, outcome, captured fields)."""
+    return await postcall.process_pending(_factory(ctx), datetime.now(UTC))
 
 
 async def sheets_tick(ctx: dict[str, Any]) -> int:
@@ -84,6 +93,7 @@ class WorkerSettings:
     functions = (ping,)
     cron_jobs = (
         cron(dial_tick, second=set(range(0, 60, 3)), run_at_startup=False, timeout=50),
+        cron(post_call_tick, second=set(range(5, 60, 10)), run_at_startup=False, timeout=240),
         cron(reap_tick, second=15, run_at_startup=False, timeout=50),
         cron(sheets_tick, second=45, run_at_startup=False, timeout=50),
     )

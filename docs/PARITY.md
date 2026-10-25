@@ -9,7 +9,7 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] AI drafts name, role, welcome line, multi-section call flow, capture fields
 - [x] Script editor: welcome message, sections (reorder, edit, delete), end-of-call rules, permanent FAQ section that can't be removed
 - [x] Script strictness dial 1–5
-- [ ] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — B4 part done: both are declared and the prompt asks for them; rest: lead values in B5/B8, extraction in B6/B10
+- [ ] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — done so far: both declared and prompted (B4), lead values filled and fenced (B5), captured values extracted after each call (B6); rest: CSV values for Bulk (B8) and extraction during the call (B10)
 - [x] Precedence: script = content, rules = conduct, voice = delivery only
 - [ ] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4 part done: tiers, picker, preview, speed, placeholder avatar, ambience setting and mixer hook; rest: the five licensed ambience loops (WIRING_CHECKLIST #17)
 - [ ] Free test call to the owner's phone, browser web call, text chat sandbox — B4 part done: web call, chat sandbox, phone test call to any +91 mobile; rest: verify the owner's number and route test calls through DNC and the purpose rule (B7)
@@ -50,14 +50,14 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [ ] Concurrent callers limited by the number's channels
 
 ## Post-call and data [B6]
-- [ ] Recording, transcript, summary, sentiment, outcome, captured fields; nothing invented when a field is missing
-- [ ] Conversations: all calls; filters (outcome, sentiment, employee, source, campaign, direction, date, duration, credits); remembered filters; CSV export
-- [ ] Call detail: timeline, notes, share summary
-- [ ] Leads: one per phone number across channels; table, card and kanban by outcome; notes; export with a field picker
-- [ ] Caller memory across calls (toggle, reset)
-- [ ] "Call me at 6" callback scheduling across channels
-- [ ] Dashboard and performance: channel split, connect / qualify / conversion %, best hour, leaderboard, within-60-s speed, 7/30/90-day and custom ranges
-- [ ] Notifications (bell), auto-DNC confirmation, announcements
+- [x] Recording, transcript, summary, sentiment, outcome, captured fields; nothing invented when a field is missing
+- [x] Conversations: all calls; filters (outcome, sentiment, employee, source, campaign, direction, date, duration, credits); remembered filters; CSV export
+- [x] Call detail: timeline, notes, share summary
+- [x] Leads: one per phone number across channels; table, card and kanban by outcome; notes; export with a field picker
+- [x] Caller memory across calls (toggle, reset)
+- [x] "Call me at 6" callback scheduling across channels
+- [x] Dashboard and performance: channel split, connect / qualify / conversion %, best hour, leaderboard, within-60-s speed, 7/30/90-day and custom ranges
+- [ ] Notifications (bell), auto-DNC confirmation, announcements — B6 part done: bell, unread count, mark read, callback and auto-DNC confirmations; rest: announcements (admin console, B13), low-balance alert (B7)
 
 ## Billing and numbers [B7]
 - [ ] Prepaid credits, 1 credit = ₹1, never expire, 50 free credits; top-up presets or custom amount by card or UPI

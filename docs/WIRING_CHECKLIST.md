@@ -15,7 +15,7 @@ Filled in after the code is built (Track 3). Keys go into `.env` locally or the 
 | 9 | Razorpay key id, secret, webhook secret | Credit top-ups | B7 | Owner | todo |
 | 10 | Transactional email provider key | Low-balance, summaries, alerts | B6, B9 | Claude | todo |
 | 11 | Google Cloud OAuth client (verified app) | Calendar, Sheets | B5, B10 | Owner, then Claude | todo |
-| 12 | Meta developer app (Lead Ads webhook) | Instant leads from ads | B5 | Owner, then Claude | todo |
+| 12 | Meta developer app (Lead Ads webhook) | Instant leads from ads | B5 | Owner, then Claude | todo. V1: page tokens are entered by hand per lead form; the Meta OAuth connect flow is built in Track 3 |
 | 13 | WhatsApp BSP (Interakt or AiSensy) + approved templates | WhatsApp actions | B10 | Owner | todo |
 | 14 | Strix: `STRIX_LLM` + `LLM_API_KEY`, Docker image (~5.8 GB) | Security test | SEC | Owner | todo |
 | 15 | Hosting account (India region) | Deployment | Launch | Owner, then Claude | todo |

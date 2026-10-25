@@ -35,7 +35,12 @@ def run_ticks(url: str, monkeypatch: pytest.MonkeyPatch, *ticks: Any) -> list[An
 def test_the_cron_schedule_and_hooks() -> None:
     settings = worker.WorkerSettings
     names = {job.name: job for job in settings.cron_jobs}
-    assert set(names) == {"cron:dial_tick", "cron:reap_tick", "cron:sheets_tick"}
+    assert set(names) == {
+        "cron:dial_tick",
+        "cron:post_call_tick",
+        "cron:reap_tick",
+        "cron:sheets_tick",
+    }
     assert names["cron:dial_tick"].second == set(
         range(0, 60, 3)
     )  # a lead waits seconds, not minutes
