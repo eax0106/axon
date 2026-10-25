@@ -58,6 +58,9 @@ def upgrade() -> None:
     op.add_column("calls", sa.Column("analysis_status", sa.String(length=20), nullable=True))
     op.add_column("calls", sa.Column("analysis_error", sa.String(length=200), nullable=True))
     op.add_column(
+        "calls", sa.Column("analysis_started_at", sa.DateTime(timezone=True), nullable=True)
+    )
+    op.add_column(
         "calls", sa.Column("is_callback", sa.Boolean(), server_default="false", nullable=False)
     )
     op.create_index("ix_calls_account_created", "calls", ["account_id", "created_at"], unique=False)
@@ -79,6 +82,7 @@ def downgrade() -> None:
     op.drop_index("ix_calls_analysis", table_name="calls")
     op.drop_index("ix_calls_account_created", table_name="calls")
     op.drop_column("calls", "is_callback")
+    op.drop_column("calls", "analysis_started_at")
     op.drop_column("calls", "analysis_error")
     op.drop_column("calls", "analysis_status")
     op.drop_column("accounts", "caller_memory")

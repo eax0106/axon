@@ -225,3 +225,72 @@ def test_the_prompt_carries_the_transcript_the_fields_and_the_clock() -> None:
     off = Model(reply())
     asyncio.run(analysis.analyse(off, TURNS, CAPTURE, NOW, old_memory="secret", remember=False))
     assert "secret" not in off.prompt and "memory is off" in off.prompt
+
+
+def captured_with(
+    value: str, quote: str, turns: list[dict[str, Any]] = TURNS
+) -> dict[str, str | None]:
+    entry = {"budget": {"value": value, "quote": quote}, "city": {"value": None, "quote": None}}
+    return run(reply(captured=entry), turns).captured
+
+
+@pytest.mark.parametrize("trivial", ["ok", "no", "yes", "ha", "Yes.", "I", "  "])
+def test_a_trivial_quote_proves_nothing(trivial: str) -> None:
+    turns = [*TURNS, {"role": "user", "text": "Yes. Okay, no problem. Ha."}]
+    assert captured_with("yes", trivial, turns)["budget"] is None
+    callback = {"at": "2026-11-03T18:00:00+05:30", "quote": trivial}
+    assert run(reply(callback=callback), turns).callback_at is None
+
+
+def test_a_lone_no_cannot_put_a_number_on_the_do_not_call_list() -> None:
+    turns = [{"role": "assistant", "text": "Shall I call again?"}, {"role": "user", "text": "No."}]
+    for quote in ("no", "No.", "No"):
+        result = run(
+            reply(do_not_call={"requested": True, "quote": quote}, outcome="do_not_call"), turns
+        )
+        assert not result.do_not_call and result.outcome is None
+
+
+def test_short_but_real_quotes_are_accepted() -> None:
+    assert (
+        captured_with("500081", "500081", [{"role": "user", "text": "My pincode is 500081."}])[
+            "budget"
+        ]
+        == "500081"
+    )
+    two_words = [{"role": "user", "text": "Please stop calling."}]
+    assert run(
+        reply(do_not_call={"requested": True, "quote": "stop calling"}), two_words
+    ).do_not_call
+
+
+def test_words_the_agent_said_are_never_a_quote() -> None:
+    agent_line = "Is this a good time"
+    assert captured_with("a good time", agent_line)["budget"] is None
+    label = "Caller Yes I am in Hyderabad"  # the transcript labels are not speech
+    assert captured_with("Hyderabad", label)["budget"] is None
+
+
+def test_a_quote_cannot_be_stitched_together_from_two_caller_turns() -> None:
+    turns = [
+        {"role": "user", "text": "I live in Hyderabad."},
+        {"role": "assistant", "text": "Great."},
+        {"role": "user", "text": "My budget is five lakh."},
+    ]
+    stitched = "Hyderabad My budget is five lakh"
+    assert captured_with("five lakh", stitched, turns)["budget"] is None
+    assert captured_with("five lakh", "My budget is five lakh", turns)["budget"] == "five lakh"
+    callback = {"at": "2026-11-03T18:00:00+05:30", "quote": "Hyderabad My budget"}
+    assert run(reply(callback=callback), turns).callback_at is None
+    stop = {"requested": True, "quote": "Hyderabad My budget"}
+    assert not run(reply(do_not_call=stop), turns).do_not_call
+
+
+def test_the_value_must_be_made_of_the_words_of_its_quote() -> None:
+    quote = "my budget is around five lakh rupees"
+    assert captured_with("five lakh rupees", quote)["budget"] == "five lakh rupees"
+    assert captured_with("Five Lakh", quote)["budget"] == "Five Lakh"  # case is not a rewrite
+    assert captured_with("ten lakh", quote)["budget"] is None  # a different number
+    assert captured_with("5 lakh", quote)["budget"] is None  # converted, not said
+    assert captured_with("₹10 lakh", "yes my budget is around five lakh rupees")["budget"] is None
+    assert captured_with("", quote)["budget"] is None

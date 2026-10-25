@@ -203,19 +203,89 @@ def test_the_reason_decides_completed_or_failed(
     assert fetch(url, call)["status"] == status
 
 
-def test_test_calls_are_not_queued_for_analysis_and_settled_calls_keep_their_status(
-    world: tuple[str, Any, Any],
-) -> None:
+def test_test_calls_are_not_queued_for_analysis(world: tuple[str, Any, Any]) -> None:
     url = world[0]
     test = new_call(world, status="in_progress", is_test=True)
     recorder(url, test, lambda r: r.finished("caller_hung_up", None))
     assert fetch(url, test)["analysis_status"] is None and fetch(url, test)["status"] == "completed"
-    settled = new_call(world, status="busy")
-    recorder(url, settled, lambda r: r.finished("caller_hung_up", "recordings/y.wav"))
-    got = fetch(url, settled)
+
+
+def test_the_carriers_callback_settling_the_call_first_does_not_lose_the_transcript(
+    world: tuple[str, Any, Any],
+) -> None:
+    """Vobiz calls back as soon as the caller hangs up, usually before the engine has uploaded the
+    recording and written the record. The callback's status stands; the engine's data is added."""
+    url = world[0]
+    call = new_call(world, status="in_progress")
+
+    async def work(db: Any) -> None:
+        from sqlalchemy import text
+
+        r = CallRecorder(db, call)
+        r.tap({"type": "user_transcript", "text": "Please call me tomorrow"})
+        async with db.begin() as conn:  # the callback settles the call first
+            await conn.execute(
+                text(
+                    "UPDATE calls SET status = 'completed', ended_at = now(), duration_s = 77"
+                    " WHERE id = :c"
+                ),
+                {"c": call},
+            )
+        await r.finished("caller_hung_up", "recordings/late.wav")
+
+    with_db(url, work)
+    got = fetch(url, call)
     assert (
-        got["status"] == "busy" and got["recording_key"] is None and event_types(url, settled) == []
+        got["status"] == "completed" and got["duration_s"] == 77
+    )  # the callback's values are kept
+    assert got["recording_key"] == "recordings/late.wav" and got["analysis_status"] == "pending"
+    assert [t["text"] for t in got["transcript"]] == ["Please call me tomorrow"]
+    assert event_types(url, call)[-1] == "ended"
+
+
+def test_a_busy_or_failed_call_that_never_had_a_session_is_still_just_a_record(
+    world: tuple[str, Any, Any],
+) -> None:
+    url = world[0]
+    call = new_call(world, status="busy")
+    recorder(url, call, lambda r: r.finished("caller_hung_up", None))
+    got = fetch(url, call)
+    assert got["status"] == "busy" and got["transcript"] == [] and got["recording_key"] is None
+
+
+def test_a_call_already_analysed_is_not_sent_back_to_the_queue(world: tuple[str, Any, Any]) -> None:
+    url = world[0]
+    call = new_call(world, status="completed", analysis_status="done")
+    recorder(url, call, lambda r: r.finished("caller_hung_up", "recordings/z.wav"))
+    assert fetch(url, call)["analysis_status"] == "done"
+
+
+def test_pickup_is_recorded_when_the_stream_names_the_call_by_its_own_id(
+    world: tuple[str, Any, Any],
+) -> None:
+    """The dialer stores the dial request's id; the stream and the callback carry the call's id."""
+    url = world[0]
+    call = new_call(world)
+    sql(
+        url,
+        "UPDATE calls SET carrier_call_id = 'req-1', carrier_leg_id = 'leg-1' WHERE id = :c",
+        {"c": call},
     )
+    recorder(url, call, lambda r: r.started("leg-1"))
+    got = fetch(url, call)
+    assert got["status"] == "in_progress" and got["answered_at"] is not None
+    stranger = new_call(world)
+    sql(
+        url,
+        "UPDATE calls SET carrier_call_id = 'req-2', carrier_leg_id = 'leg-2' WHERE id = :c",
+        {"c": stranger},
+    )
+    recorder(url, stranger, lambda r: r.started("leg-1"))
+    assert fetch(url, stranger)["status"] == "ringing"
+    # And it remembers the call's id for the callback when the dialer had only the request id.
+    fresh = new_call(world)
+    recorder(url, fresh, lambda r: r.started("leg-5"))
+    assert fetch(url, fresh)["carrier_leg_id"] == "leg-5"
 
 
 def test_the_event_list_is_capped(world: tuple[str, Any, Any]) -> None:

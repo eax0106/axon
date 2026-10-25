@@ -72,8 +72,34 @@ def _norm(text: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", decomposed).split())
 
 
-def quoted(quote: object, haystack: str) -> bool:
-    return isinstance(quote, str) and len(_norm(quote)) >= 2 and _norm(quote) in _norm(haystack)
+MIN_QUOTE_CHARS = 6  # "yes", "no" and "ok" are in almost every call and prove nothing
+MIN_QUOTE_WORDS = 2
+
+
+def _long_enough(quote: str) -> bool:
+    return len(quote) >= MIN_QUOTE_CHARS or len(quote.split()) >= MIN_QUOTE_WORDS
+
+
+def caller_quoted(quote: object, turns: Turns) -> str | None:
+    """The normalised quote, if it is a real quote: long enough and inside ONE turn the caller
+    spoke. Agent lines, labels, and words spread over several turns do not count."""
+    if not isinstance(quote, str):
+        return None
+    wanted = _norm(quote)
+    if not wanted or not _long_enough(wanted):
+        return None
+    for turn in turns:
+        if turn.get("role") == "user" and wanted in _norm(str(turn.get("text", ""))):
+            return wanted
+    return None
+
+
+def value_in_quote(value: str, quote: str) -> bool:
+    """Every word of the value is a word of the quote: the value is what the caller said, not a
+    rewrite of it."""
+    words = set(quote.split())
+    tokens = _norm(value).split()
+    return bool(tokens) and all(token in words for token in tokens)
 
 
 SYSTEM = (
@@ -91,8 +117,10 @@ SYSTEM = (
     ' "do_not_call": {"requested": true or false, "quote": "their exact words, or null"},'
     ' "memory": "at most three short sentences of lasting facts about this person worth '
     'remembering for the next call, or null"}\n'
-    "A quote must be copied word for word from the transcript. Only the Caller can ask for a "
-    "callback or ask not to be called again."
+    "A quote must be copied word for word from ONE thing the Caller said, never from the Agent. "
+    "A captured value must use only words that are in its quote: copy the caller's own words, do "
+    "not convert or rewrite them. Only the Caller can ask for a callback or ask not to be called "
+    "again."
 ).replace("OUTCOME_LIST", ", ".join(OUTCOMES))
 
 
@@ -132,7 +160,6 @@ def parse(
         data = parse_json(reply)
     except AiOutputError as exc:
         raise AnalysisError(str(exc.detail)) from exc
-    everything, caller = transcript_text(turns), caller_text(turns)
     result = Analysis(
         summary=_clean(data.get("summary"), MAX_SUMMARY),
         sentiment=data.get("sentiment") if data.get("sentiment") in SENTIMENTS else None,
@@ -142,15 +169,17 @@ def parse(
     for wanted in capture:  # only declared fields; a field the model skipped is simply null
         entry = _entry(given.get(wanted.name))
         value = _clean(entry.get("value"), MAX_VALUE)
-        result.captured[wanted.name] = (
-            value if value and quoted(entry.get("quote"), everything) else None
-        )
+        quote = caller_quoted(entry.get("quote"), turns)
+        keep = value is not None and quote is not None and value_in_quote(value, quote)
+        result.captured[wanted.name] = value if keep else None
     callback = _entry(data.get("callback"))
     when = _future_time(callback.get("at"), now)
-    if when and quoted(callback.get("quote"), caller):
+    if when and caller_quoted(callback.get("quote"), turns):
         result.callback_at = when
     dnc = _entry(data.get("do_not_call"))
-    result.do_not_call = dnc.get("requested") is True and quoted(dnc.get("quote"), caller)
+    result.do_not_call = (
+        dnc.get("requested") is True and caller_quoted(dnc.get("quote"), turns) is not None
+    )
     if result.outcome == "do_not_call" and not result.do_not_call:
         result.outcome = None  # the model said so but nothing the caller said backs it
     if result.do_not_call:

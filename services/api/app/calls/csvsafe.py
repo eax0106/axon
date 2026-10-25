@@ -12,7 +12,7 @@ RISKY = ("=", "+", "-", "@", "\t", "\r")
 
 def cell(value: Any) -> str:
     text = "" if value is None else str(value)
-    return "'" + text if text.startswith(RISKY) else text
+    return "'" + text if text.lstrip().startswith(RISKY) else text
 
 
 def to_csv(header: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:

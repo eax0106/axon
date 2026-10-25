@@ -357,11 +357,13 @@ class Call(Base):
     recording_key: Mapped[str | None] = mapped_column(String(500))
     # Test calls (phone, browser) are free and excluded from stats and billing.
     is_test: Mapped[bool] = mapped_column(server_default="false")
-    # Dialer queue: a queued call with scheduled_for NULL is held until someone redials it.
-    # The post-call job: NULL = not applicable yet, then pending -> done | skipped | failed.
+    # The post-call job: NULL = not applicable yet, then
+    # pending -> analysing -> done | skipped | failed.
     analysis_status: Mapped[str | None] = mapped_column(String(20))
     analysis_error: Mapped[str | None] = mapped_column(String(200))
+    analysis_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_callback: Mapped[bool] = mapped_column(server_default="false")  # the caller asked for it
+    # Dialer queue: a queued call with scheduled_for NULL is held until someone redials it.
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempt: Mapped[int] = mapped_column(server_default="1")
     # The carrier's id for the dial request, and for the call itself once it reports one (the

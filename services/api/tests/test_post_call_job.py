@@ -400,3 +400,82 @@ def test_unused_and_stuck_test_calls_are_reaped(
         str(fresh): "queued",
         str(running): "in_progress",
     }
+
+
+def test_one_crashing_call_does_not_take_the_batch_with_it(
+    api: tuple[TestClient, Gemini], migrated_url: str
+) -> None:
+    client, _fake = api
+    employee, _ = setup(client, migrated_url)
+    good1 = make_call(migrated_url, employee, phone="+919876543211")
+    poison = make_call(migrated_url, employee, ["not a turn"], phone="+919876543212")  # type: ignore[list-item]
+    good2 = make_call(migrated_url, employee, phone="+919876543213")
+    assert process(migrated_url) == 3
+    assert [row(migrated_url, c, "analysis_status") for c in (good1, poison, good2)] == [
+        "done",
+        "failed",
+        "done",
+    ]
+    assert row(migrated_url, poison, "analysis_error") == "AttributeError"
+    assert process(migrated_url) == 0  # nothing is picked up again and again
+
+
+def test_no_lock_is_held_while_the_model_thinks(
+    api: tuple[TestClient, Gemini], migrated_url: str
+) -> None:
+    """The claim is committed before the LLM call, so the call row can still be read and written."""
+    import threading
+
+    client, fake = api
+    employee, _ = setup(client, migrated_url)
+    call = make_call(migrated_url, employee)
+    seen: dict[str, Any] = {}
+
+    def spy(request: httpx.Request) -> httpx.Response:
+        def probe() -> None:
+            seen["status"] = row(migrated_url, call, "analysis_status")
+            sql(migrated_url, "UPDATE calls SET duration_s = 99 WHERE id = :c", {"c": call})
+            seen["wrote"] = True
+
+        thread = threading.Thread(target=probe)
+        thread.start()
+        thread.join(timeout=5)  # a held row lock would make the update wait past this
+        seen["blocked"] = thread.is_alive()
+        return Gemini.handler(fake, request)
+
+    transport = httpx.MockTransport(spy)
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            common.VendorHealth,
+            "client",
+            lambda self, timeout=60.0: httpx.AsyncClient(transport=transport),
+        )
+        process(migrated_url)
+    assert seen == {"status": "analysing", "wrote": True, "blocked": False}
+    assert (
+        row(migrated_url, call, "analysis_status") == "done"
+        and row(migrated_url, call, "duration_s") == 99
+    )
+
+
+def test_a_claim_nobody_finished_is_taken_again_after_ten_minutes_but_not_before(
+    api: tuple[TestClient, Gemini], migrated_url: str
+) -> None:
+    client, fake = api
+    employee, _ = setup(client, migrated_url)
+    call = make_call(migrated_url, employee, status="analysing")
+    sql(
+        migrated_url,
+        "UPDATE calls SET analysis_started_at = :t WHERE id = :c",
+        {"t": NOW - timedelta(minutes=3), "c": call},
+    )
+    assert process(migrated_url) == 0 and fake.requests == []  # another worker is on it
+    sql(
+        migrated_url,
+        "UPDATE calls SET analysis_started_at = :t WHERE id = :c",
+        {"t": NOW - timedelta(minutes=11), "c": call},
+    )
+    assert process(migrated_url) == 1
+    assert row(migrated_url, call, "analysis_status") == "done"

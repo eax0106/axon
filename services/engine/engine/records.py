@@ -69,6 +69,7 @@ class CallRecorder:
         self.transcript = TranscriptBuilder()
         self._events: list[tuple[datetime, dict[str, Any]]] = []
         self._started = time.monotonic()
+        self._carrier_id: str | None = None
 
     def tap(self, event: dict[str, Any]) -> None:
         """Called with every live event of the call."""
@@ -76,41 +77,68 @@ class CallRecorder:
         if event.get("type") in KEPT_EVENTS and len(self._events) < MAX_EVENTS:
             self._events.append((datetime.now(UTC), event))
 
+    def _ours(self) -> list[Any]:
+        """Conditions that make a row this recorder's: its id, and, for a carrier call, that the row
+        waits for this very carrier call (either of its ids) or has no carrier id yet."""
+        where: list[Any] = [Call.id == self.call_id]
+        if self._carrier_id is not None:
+            where.append(
+                (Call.carrier_call_id == self._carrier_id)
+                | (Call.carrier_leg_id == self._carrier_id)
+                | Call.carrier_call_id.is_(None)
+            )
+        return where
+
     async def started(self, carrier_call_id: str | None = None) -> None:
-        """The call was picked up. For a carrier call, only the row that is still waiting for this
-        very carrier call (or has no carrier id yet) is touched."""
+        """The call was picked up."""
         self._started = time.monotonic()
-        where = [Call.id == self.call_id, Call.status.in_(OPEN)]
-        if carrier_call_id is not None:
-            where.append((Call.carrier_call_id == carrier_call_id) | Call.carrier_call_id.is_(None))
+        self._carrier_id = carrier_call_id
         async with self._factory() as session:
             await session.execute(
                 update(Call)
-                .where(*where)
+                .where(*self._ours(), Call.status.in_(OPEN))
                 .values(
                     status=CallStatus.IN_PROGRESS,
                     answered_at=func.coalesce(Call.answered_at, func.now()),
                     started_at=func.coalesce(Call.started_at, func.now()),
+                    # The stream carries the call's own id; the callback will name the call by it.
+                    carrier_leg_id=func.coalesce(Call.carrier_leg_id, carrier_call_id),
                 )
             )
             await session.commit()
 
     async def finished(self, reason: str, recording_key: str | None) -> None:
-        """Write the end of the call. A call that already has its final status keeps it."""
+        """Write the end of the call.
+
+        The status, end time and duration only change while the call is open (the carrier's callback
+        often settles it first). What the engine alone knows (transcript, recording, events, and
+        the go-ahead for analysis) is written whatever the status, or it would be lost whenever the
+        callback wins the race."""
         status = CallStatus.COMPLETED if reason in COMPLETED_REASONS else CallStatus.FAILED
         turns = self.transcript.turns()
         async with self._factory() as session:
-            result = await session.execute(
+            await session.execute(
                 update(Call)
-                .where(Call.id == self.call_id, Call.status.in_(OPEN))
+                .where(*self._ours(), Call.status.in_(OPEN))
                 .values(
                     status=status,
                     ended_at=func.now(),
                     duration_s=round(time.monotonic() - self._started),
+                )
+            )
+            result = await session.execute(
+                update(Call)
+                .where(*self._ours())
+                .values(
                     transcript=turns,
                     recording_key=recording_key,
-                    # Test calls are free and not analysed; real ones wait for the post-call job.
-                    analysis_status=case((Call.is_test.is_(True), None), else_="pending"),
+                    # Test calls are free and not analysed; real ones wait for the post-call job,
+                    # and one already analysed is not sent back to the queue.
+                    analysis_status=case(
+                        (Call.is_test.is_(True), None),
+                        (Call.analysis_status.is_(None), "pending"),
+                        else_=Call.analysis_status,
+                    ),
                 )
             )
             if result.rowcount:  # type: ignore[attr-defined]

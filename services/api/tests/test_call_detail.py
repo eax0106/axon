@@ -170,3 +170,16 @@ def test_everything_about_a_call_is_scoped_to_the_account(
     assert api.post(f"/calls/{call}/notes", json={"body": "hi"}, headers=other).status_code == 404
     note = api.post(f"/calls/{call}/notes", json={"body": "mine"}, headers=owner).json()["id"]
     assert api.delete(f"/notes/{note}", headers=other).status_code == 404
+
+
+def test_reanalysis_draws_on_the_same_hourly_budget_as_the_other_ai_calls(
+    api: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.employees import limits
+
+    monkeypatch.setattr(limits, "AI_PER_HOUR", 1)
+    owner, call, _ = one_call(api, migrated_url)
+    sql(migrated_url, "UPDATE calls SET analysis_status = 'failed'")
+    assert api.post(f"/calls/{call}/reanalyze", headers=owner).status_code == 202
+    sql(migrated_url, "UPDATE calls SET analysis_status = 'failed'")
+    assert api.post(f"/calls/{call}/reanalyze", headers=owner).status_code == 429

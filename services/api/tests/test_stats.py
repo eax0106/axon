@@ -69,16 +69,20 @@ def seeded(api: TestClient, url: str) -> dict[str, Any]:
     call(asha, ist(20, 10, 0), "completed", "interested")
     # Instant speed: four accepted leads, three of them called; two within a minute (10 s, 59 s).
     for index, (delay, source) in enumerate(((10, "website"), (59, "website"), (61, "meta"))):
+        arrived = sql(url, "SELECT created_at FROM calls WHERE id = :c", {"c": a[index]})
         sql(
             url,
             "UPDATE calls SET started_at = :s WHERE id = :c",
-            {"s": ist(2, 9, 0) + timedelta(seconds=delay), "c": a[index]},
+            {
+                "s": arrived + timedelta(seconds=delay),
+                "c": a[index],
+            },  # dialed `delay` s after it arrived
         )
         sql(
             url,
             "INSERT INTO lead_intake_log (account_id, employee_id, source, status, phone, call_id,"
             " created_at) VALUES (:a, :e, :src, 'accepted', '+919876543210', :c, :t)",
-            {"a": account, "e": asha, "src": source, "c": a[index], "t": ist(2, 9, 0)},
+            {"a": account, "e": asha, "src": source, "c": a[index], "t": arrived},
         )
     for source, status, call_id in (
         ("website", "accepted", None),
@@ -207,3 +211,18 @@ def test_stats_are_scoped_to_the_account(api: TestClient, migrated_url: str) -> 
     assert api.get(f"/stats/overview?{RANGE}", headers=other).json()["totals"]["calls"] == 0
     assert api.get(f"/stats/overview?{RANGE}").status_code == 401
     assert w
+
+
+def test_best_hour_is_when_the_call_was_dialed_not_when_it_was_queued(
+    api: TestClient, migrated_url: str
+) -> None:
+    owner = signup(api)
+    employee = live_employee(api, migrated_url, owner)
+    account = sql(migrated_url, "SELECT account_id FROM employees")
+    for minute in range(5):  # queued at 23:00 IST the night before, dialed at 09:xx IST
+        add_call(
+            migrated_url, account, employee, None, created_at=ist(2, 23, minute),
+            started_at=ist(3, 9, minute), status="completed",
+        )  # fmt: skip
+    body = api.get(f"/stats/overview?{RANGE}", headers=owner).json()
+    assert [h["hour"] for h in body["by_hour"]] == [9] and body["best_hour"] == 9

@@ -238,3 +238,13 @@ def test_csv_cells_cannot_become_spreadsheet_formulas(api: TestClient, migrated_
         and rows[1][7] == "'@sum"
     )
     assert all(not cell.startswith(("=", "+", "@")) for row in rows for cell in row)
+
+
+def test_csv_cells_with_leading_spaces_before_a_formula_are_neutralised_too() -> None:
+    from app.calls.csvsafe import cell
+
+    for risky in ("=1+1", "  =1+1", "\t+cmd", " @SUM(A1)", "\n-2"):
+        assert cell(risky).startswith("'"), risky
+    for fine in ("hello", "  hello", "a=b", "100", None):
+        assert not cell(fine).startswith("'"), fine
+    assert cell(None) == ""

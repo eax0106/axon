@@ -13,6 +13,7 @@ from app.auth import CurrentUser
 from app.calls import postcall
 from app.calls.csvsafe import to_csv
 from app.db import Session
+from app.employees.limits import AiBudget
 from app.models import Call, Employee, Lead, Note, Role, User
 from app.providers.base import ObjectStorageProvider, ProviderKind
 from app.providers.registry import require
@@ -338,7 +339,9 @@ async def share_text(call_id: uuid.UUID, user: CurrentUser, session: Session) ->
     return Response("\n".join(lines) + "\n", media_type="text/plain; charset=utf-8")
 
 
-@router.post("/calls/{call_id}/reanalyze", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/calls/{call_id}/reanalyze", status_code=status.HTTP_202_ACCEPTED, dependencies=[AiBudget]
+)
 async def reanalyze(call_id: uuid.UUID, user: CurrentUser, session: Session) -> dict[str, str]:
     call = await own_call(session, user, call_id)
     if not await postcall.reanalyze(session, call):

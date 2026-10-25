@@ -96,7 +96,9 @@ async def overview(
     channels = (
         await session.execute(scoped(select(Call.channel, func.count()).group_by(Call.channel)))
     ).all()
-    ist_hour = func.extract("hour", Call.created_at.op("AT TIME ZONE")("Asia/Kolkata"))
+    # The hour the call was placed (a retry or callback is created long before it is dialed).
+    dialed_at = func.coalesce(Call.started_at, Call.created_at)
+    ist_hour = func.extract("hour", dialed_at.op("AT TIME ZONE")("Asia/Kolkata"))
     hours = (
         await session.execute(
             scoped(select(ist_hour, count_if(outbound), count_if(and_(connected, outbound))))
