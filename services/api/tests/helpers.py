@@ -1,6 +1,7 @@
 """Test helpers for the account-scoped API: sign up, add a member, seed the voice catalog."""
 
 import asyncio
+import json
 import uuid
 from typing import Any
 
@@ -96,3 +97,42 @@ def run_db(url: str, work: Any) -> Any:
             await engine.dispose()
 
     return asyncio.run(go())
+
+
+CALL_COLUMNS = {
+    "status", "direction", "channel", "outcome", "sentiment", "summary", "duration_s",
+    "credits_charged", "created_at", "started_at", "answered_at", "ended_at", "is_test",
+    "transcript", "captured", "recording_key", "analysis_status", "campaign_id", "attempt",
+}  # fmt: skip
+
+
+def add_lead(url: str, account: Any, phone: str, name: str | None = None, **fields: Any) -> Any:
+    return sql(
+        url,
+        "INSERT INTO leads (account_id, phone, name, fields) VALUES (:a, :p, :n, CAST(:f AS jsonb))"
+        " RETURNING id",
+        {"a": account, "p": phone, "n": name, "f": json.dumps(fields)},
+    )
+
+
+def add_call(url: str, account: Any, employee: Any = None, lead: Any = None, **cols: Any) -> Any:
+    """Insert a call row with the columns given (defaults: a completed outbound instant call)."""
+    unknown = set(cols) - CALL_COLUMNS
+    assert not unknown, unknown
+    values: dict[str, Any] = {"status": "completed", "direction": "outbound", "channel": "instant"}
+    values.update(cols)
+    for key in ("transcript", "captured"):
+        if key in values:
+            values[key] = json.dumps(values[key])
+    names = ["account_id", "employee_id", "lead_id", *values]
+    marks = [
+        ":account_id",
+        ":employee_id",
+        ":lead_id",
+        *[f"CAST(:{k} AS jsonb)" if k in ("transcript", "captured") else f":{k}" for k in values],
+    ]
+    return sql(
+        url,
+        f"INSERT INTO calls ({', '.join(names)}) VALUES ({', '.join(marks)}) RETURNING id",  # noqa: S608
+        {"account_id": account, "employee_id": employee, "lead_id": lead, **values},
+    )

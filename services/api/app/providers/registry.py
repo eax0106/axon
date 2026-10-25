@@ -20,6 +20,7 @@ from app.providers.speech.cartesia import CartesiaTTS
 from app.providers.speech.gemini import GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
 from app.providers.speech.smallest import SmallestSTT, SmallestTTS
+from app.providers.storage.r2 import R2Storage
 from app.providers.telephony.vobiz import VobizTelephony
 
 _VOBIZ = ("VOBIZ_AUTH_ID", "VOBIZ_AUTH_TOKEN")
@@ -55,6 +56,7 @@ ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
     (ProviderKind.TELEPHONY, "vobiz"): VobizTelephony,
     (ProviderKind.LEADS, "meta_lead_ads"): MetaLeadAds,
     (ProviderKind.SHEETS, "google"): GoogleSheets,
+    (ProviderKind.STORAGE, "r2"): R2Storage,
     (ProviderKind.STT, "sarvam"): SarvamSTT,
     (ProviderKind.STT, "smallest"): SmallestSTT,
     (ProviderKind.LLM, "gemini"): GeminiLLM,

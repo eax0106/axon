@@ -177,6 +177,8 @@ class Account(Base):
     id: Mapped[uuid.UUID] = _pk()
     name: Mapped[str] = mapped_column(String(200))
     business_name: Mapped[str | None] = mapped_column(String(200))
+    # Callers are remembered across calls (a short note on the lead) unless the owner turns it off.
+    caller_memory: Mapped[bool] = mapped_column(server_default="true")
     created_at: Mapped[datetime] = _created()
 
 
@@ -187,6 +189,9 @@ class User(Base):
     account_id: Mapped[uuid.UUID] = _account_fk()
     email: Mapped[str] = mapped_column(String(320))
     password_hash: Mapped[str] = mapped_column(String(255))
+    ui_prefs: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default="{}"
+    )  # remembered filters
     role: Mapped[Role] = mapped_column(_enum(Role, "user_role"), default=Role.OWNER)
     # ALTERX staff: admin console, provider health, impersonation. Never set through the API.
     is_platform_admin: Mapped[bool] = mapped_column(server_default=text("false"))
@@ -279,6 +284,7 @@ class Lead(Base):
     phone: Mapped[str] = mapped_column(String(20))
     name: Mapped[str | None] = mapped_column(String(200))
     fields: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    memory: Mapped[str | None] = mapped_column(Text)  # what earlier calls taught us, if remembered
     created_at: Mapped[datetime] = _created()
 
 
@@ -314,7 +320,11 @@ class CampaignContact(Base):
 
 class Call(Base):
     __tablename__ = "calls"
-    __table_args__ = (Index("ix_calls_queue", "status", "scheduled_for"),)
+    __table_args__ = (
+        Index("ix_calls_queue", "status", "scheduled_for"),
+        Index("ix_calls_account_created", "account_id", "created_at"),
+        Index("ix_calls_analysis", "analysis_status"),
+    )
     id: Mapped[uuid.UUID] = _pk()
     account_id: Mapped[uuid.UUID] = _account_fk()
     employee_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -348,6 +358,10 @@ class Call(Base):
     # Test calls (phone, browser) are free and excluded from stats and billing.
     is_test: Mapped[bool] = mapped_column(server_default="false")
     # Dialer queue: a queued call with scheduled_for NULL is held until someone redials it.
+    # The post-call job: NULL = not applicable yet, then pending -> done | skipped | failed.
+    analysis_status: Mapped[str | None] = mapped_column(String(20))
+    analysis_error: Mapped[str | None] = mapped_column(String(200))
+    is_callback: Mapped[bool] = mapped_column(server_default="false")  # the caller asked for it
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempt: Mapped[int] = mapped_column(server_default="1")
     # The carrier's id for the dial request, and for the call itself once it reports one (the
@@ -397,6 +411,23 @@ class LeadIntakeEntry(Base):
     phone: Mapped[str | None] = mapped_column(String(20))
     lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"))
     call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("calls.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created()
+
+
+class Note(Base):
+    """A note on a call or a lead (or both: a call note also shows on its lead)."""
+
+    __tablename__ = "notes"
+    id: Mapped[uuid.UUID] = _pk()
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("leads.id", ondelete="CASCADE"), index=True
+    )
+    call_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("calls.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = _created()
 
 

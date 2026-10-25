@@ -90,6 +90,10 @@ class ObjectStorageProvider(Provider):
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         """Store `data` at `key`, replacing anything there."""
 
+    @abstractmethod
+    def presigned_url(self, key: str, ttl_s: int = 900) -> str:
+        """A time-limited link that reads the object at `key` without credentials."""
+
 
 class SpeechToTextProvider(Provider):
     kind = ProviderKind.STT

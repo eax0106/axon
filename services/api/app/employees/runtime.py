@@ -34,6 +34,7 @@ async def prompt_for(
     employee: Employee,
     bundle: ScriptBundle,
     variables: dict[str, str] | None = None,
+    memory: str | None = None,
 ) -> str:
     return compile_prompt(
         name=employee.name,
@@ -44,6 +45,7 @@ async def prompt_for(
         bundle=bundle,
         settings=service.settings_of(employee),
         variables=variables,
+        memory=memory,
     )
 
 
@@ -54,6 +56,7 @@ async def plan_for(
     version: EmployeeVersion | None = None,
     use_draft: bool = False,
     variables: dict[str, str] | None = None,
+    memory: str | None = None,
 ) -> CallPlan | None:
     """The plan for a call: the newest published version, or the draft for test calls.
     None when there is nothing published and no draft was asked for."""
@@ -69,7 +72,7 @@ async def plan_for(
         employee_id=employee.id,
         account_id=employee.account_id,
         language=employee.language,
-        system_prompt=await prompt_for(session, employee, bundle, variables),
+        system_prompt=await prompt_for(session, employee, bundle, variables, memory),
         voice=await session.get(Voice, employee.voice_id) if employee.voice_id else None,
         tts_speed=settings.tts_speed,
         ambience=settings.ambience,

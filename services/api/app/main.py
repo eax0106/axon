@@ -13,6 +13,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
+from app.calls.conversations import router as conversations_router
+from app.calls.leads import router as leads_router
+from app.calls.memory import router as memory_router
+from app.calls.notifications import router as notifications_router
+from app.calls.stats import router as stats_router
 from app.employees.ai import router as ai_router
 from app.employees.calls import router as calls_router
 from app.employees.router import router as employees_router
@@ -51,6 +56,11 @@ app.include_router(ai_router)
 app.include_router(calls_router)
 app.include_router(instant_router)
 app.include_router(instant_public_router)
+app.include_router(conversations_router)
+app.include_router(leads_router)
+app.include_router(memory_router)
+app.include_router(notifications_router)
+app.include_router(stats_router)
 app.include_router(voices_router)
 
 
