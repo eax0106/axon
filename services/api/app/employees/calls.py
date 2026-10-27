@@ -15,6 +15,7 @@ from app.employees.limits import TEST_CALLS_PER_HOUR, take
 from app.employees.router import load
 from app.instant.policy import check_dial
 from app.models import Account, Call, CallStatus, Direction, DncEntry, Employee, PhoneNumber, User
+from app.numbers import channels
 from app.providers.base import ProviderKind, TelephonyProvider
 from app.providers.registry import require
 from app.settings import engine_public_url
@@ -32,14 +33,20 @@ class TestCallRequest(BaseModel):
 
 
 async def _new_test_call(
-    session: Session, user: User, employee: Employee, direction: Direction
+    session: Session,
+    user: User,
+    employee: Employee,
+    direction: Direction,
+    number: PhoneNumber | None = None,
 ) -> Call:
     """Count the use against the account, then create the free call row (committed, so the
-    account lock is released before any vendor call)."""
+    account lock is released before any vendor call). A call on a phone line carries the number,
+    so once answered it holds one of the number's channels like any other call."""
     await take(session, user, "test_call", TEST_CALLS_PER_HOUR)
     call = Call(
         account_id=employee.account_id,
         employee_id=employee.id,
+        number_id=number.id if number else None,
         direction=direction,
         channel=employee.channel,
         status=CallStatus.QUEUED,
@@ -79,10 +86,15 @@ async def test_call(
     verdict = await check_dial(session, employee, number, "outbound")
     if not verdict.allowed:
         raise HTTPException(status.HTTP_409_CONFLICT, verdict.reason)
+    if not await channels.has_free_channel(session, number):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "every channel of the number is on a call: try again in a moment",
+        )
     telephony = require(ProviderKind.TELEPHONY)
     assert isinstance(telephony, TelephonyProvider)
     base = engine_public_url()
-    call = await _new_test_call(session, user, employee, Direction.OUTBOUND)
+    call = await _new_test_call(session, user, employee, Direction.OUTBOUND, number)
     answer_url = f"{base}/vobiz/answer?employee={employee.id}&call={call.id}"
     try:
         carrier_id = await telephony.originate(number.e164, phone, answer_url)

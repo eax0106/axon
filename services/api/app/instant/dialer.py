@@ -17,6 +17,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.billing import policy as credit_policy
+from app.campaigns import contacts as campaign_contacts
 from app.instant import policy, rules
 from app.instant.rules import DialerSettings
 from app.models import (
@@ -87,6 +88,9 @@ async def settle(
     call.status = status
     call.ended_at = now
     call.duration_s = duration_s
+    if call.campaign_id is not None:  # a campaign call: its contact has the retries, not the lead
+        await campaign_contacts.settle(session, call, status, now, hold_next=hold_next)
+        return None
     if status is CallStatus.COMPLETED or call.lead_id is None or call.employee_id is None:
         return None
     employee = await session.get(Employee, call.employee_id)
@@ -123,6 +127,19 @@ async def dial_due(
     the carrier needs are not set; the caller gets the telephony adapter from the registry."""
     engine_url, api_url = engine_public_url(), api_public_url()
     claimed = await _claim(factory, now, limit)
+    return await place(factory, telephony, claimed, now, engine_url, api_url)
+
+
+async def place(
+    factory: async_sessionmaker[AsyncSession],
+    telephony: TelephonyProvider,
+    claimed: list["Claim"],
+    now: datetime,
+    engine_url: str,
+    api_url: str,
+) -> list[Dialed]:
+    """Hand the calls a claim marked `dial` to the carrier; the other claims are only reported.
+    Shared by the Instant dialer and the campaign scheduler."""
     results = [Dialed(c.call_id, c.outcome) for c in claimed if c.outcome != "dial"]
     for item in (c for c in claimed if c.outcome == "dial"):
         answer = f"{engine_url}/vobiz/answer?employee={item.employee_id}&call={item.call_id}"
@@ -156,7 +173,7 @@ async def dial_due(
 
 
 @dataclass(frozen=True)
-class _Claim:
+class Claim:
     call_id: object
     outcome: str
     employee_id: object = None
@@ -166,10 +183,10 @@ class _Claim:
 
 async def _claim(
     factory: async_sessionmaker[AsyncSession], now: datetime, limit: int
-) -> list[_Claim]:
+) -> list[Claim]:
     """Decide every due call in one transaction, locking the rows so two workers never take the
     same one, and mark the ones to dial as ringing before any slow carrier call."""
-    out: list[_Claim] = []
+    out: list[Claim] = []
     async with factory() as session:
         due = await session.scalars(
             select(Call)
@@ -190,13 +207,13 @@ async def _claim(
     return out
 
 
-async def _decide(session: AsyncSession, call: Call, now: datetime) -> _Claim:
+async def _decide(session: AsyncSession, call: Call, now: datetime) -> Claim:
     employee = await session.get(Employee, call.employee_id) if call.employee_id else None
     lead = await session.get(Lead, call.lead_id) if call.lead_id else None
     if employee is None or lead is None:
         call.status = CallStatus.CANCELED
         await _event(session, call, "cancelled", reason="employee or lead no longer exists")
-        return _Claim(call.id, "cancelled")
+        return Claim(call.id, "cancelled")
     on_dnc = await session.scalar(
         select(DncEntry.id).where(
             DncEntry.account_id == call.account_id, DncEntry.phone == lead.phone
@@ -205,33 +222,33 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> _Claim:
     if on_dnc:  # checked before every dial, not only at intake
         call.status = CallStatus.CANCELED
         await _event(session, call, "cancelled", reason="number is on the do-not-call list")
-        return _Claim(call.id, "cancelled")
+        return Claim(call.id, "cancelled")
     number = await session.get(PhoneNumber, employee.number_id) if employee.number_id else None
     if employee.status is not EmployeeStatus.LIVE or number is None:
         call.scheduled_for = now + NOT_READY_RETRY
-        return _Claim(call.id, "rescheduled")
+        return Claim(call.id, "rescheduled")
     settings = DialerSettings.model_validate(employee.dialer or {})
     if not rules.in_window(now, settings, rules.IST):
         call.scheduled_for = rules.adjust(now, settings, rules.IST)
         await _event(session, call, "outside_window", next=str(call.scheduled_for))
-        return _Claim(call.id, "held" if call.scheduled_for is None else "rescheduled")
+        return Claim(call.id, "held" if call.scheduled_for is None else "rescheduled")
     held = await credit_policy.blocked_reason(session, call.account_id, now)
     if held is not None:  # not an error: the call waits until credits or the hour allow it
         call.scheduled_for = now + NOT_READY_RETRY
         await _event(session, call, "blocked_credits", reason=held)
-        return _Claim(call.id, "rescheduled")
+        return Claim(call.id, "rescheduled")
     verdict = await policy.check_dial(session, employee, number, "instant")
     if not verdict.allowed:
         call.status = CallStatus.CANCELED
         await _event(session, call, "cancelled", reason=verdict.reason)
-        return _Claim(call.id, "cancelled")
+        return Claim(call.id, "cancelled")
     if not await channels.has_free_channel(session, number):  # every channel is on a call
         call.scheduled_for = now + CHANNEL_BUSY_RETRY
-        return _Claim(call.id, "rescheduled")
+        return Claim(call.id, "rescheduled")
     call.status = CallStatus.RINGING
     call.started_at = now
     call.number_id = number.id
-    return _Claim(call.id, "dial", employee.id, number.e164, lead.phone)
+    return Claim(call.id, "dial", employee.id, number.e164, lead.phone)
 
 
 async def call_detail(telephony: TelephonyProvider, call: Call) -> CallDetail | None:

@@ -9,7 +9,7 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] AI drafts name, role, welcome line, multi-section call flow, capture fields
 - [x] Script editor: welcome message, sections (reorder, edit, delete), end-of-call rules, permanent FAQ section that can't be removed
 - [x] Script strictness dial 1–5
-- [ ] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — done so far: both declared and prompted (B4), lead values filled and fenced (B5), captured values extracted after each call (B6); rest: CSV values for Bulk (B8) and extraction during the call (B10)
+- [ ] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — done so far: both declared and prompted (B4), lead values filled and fenced (B5), captured values extracted after each call (B6); B8: CSV values for Bulk fill the script; rest: extraction during the call (B10)
 - [x] Precedence: script = content, rules = conduct, voice = delivery only
 - [ ] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4 part done: tiers, picker, preview, speed, placeholder avatar, ambience setting and mixer hook; rest: the five licensed ambience loops (WIRING_CHECKLIST #17)
 - [x] Free test call to the owner's phone, browser web call, text chat sandbox — B4: web call and chat sandbox; B7: the phone test call rings only the owner's phone, proved by a one-time code, and goes through the do-not-call list and the dial rule table
@@ -30,14 +30,14 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Lead sources: website POST, Meta Lead Ads, Google Sheets, Zapier / Pabbly / n8n guides
 
 ## Bulk [B8]
-- [ ] Contacts by CSV, paste or manual entry; column-to-variable mapping with no silent guessing; saved contact lists
-- [ ] Calling window (hard limit 9 AM–9 PM), weekdays, holiday dates
-- [ ] Concurrency 1–20; skip-DNC toggle (checked at upload and before every dial)
-- [ ] Retries 1–9, same run or next day
-- [ ] Schedule for later; daily or weekly recurrence
-- [ ] Cross-campaign dedupe window (N days); per-campaign exclusion list; consent attestation recorded
-- [ ] Live panel (calling now, callbacks, done, remaining); pause, resume, retry exhausted, cancel, cancel callbacks, restore not-called, per-contact call-now, cancel and retry; CSV export
-- [ ] Campaigns queue on a shared number, oldest first; capacity preview; campaign analytics
+- [x] Contacts by CSV, paste or manual entry; column-to-variable mapping with no silent guessing; saved contact lists
+- [x] Calling window (hard limit 9 AM–9 PM), weekdays, holiday dates
+- [x] Concurrency 1–20; skip-DNC toggle (checked at upload and before every dial) — a person who asked not to be called is skipped whatever the toggle says
+- [x] Retries 1–9, same run or next day (0 turns retries off)
+- [x] Schedule for later; daily or weekly recurrence
+- [x] Cross-campaign dedupe window (N days); per-campaign exclusion list; consent attestation recorded
+- [x] Live panel (calling now, callbacks, done, remaining); pause, resume, retry exhausted, cancel, cancel callbacks, restore not-called, per-contact call-now, cancel and retry; CSV export
+- [x] Campaigns queue on a shared number, oldest first; capacity preview; campaign analytics
 
 ## Inbound [B9]
 - [ ] Answer the attached number 24/7 or within opening hours (closed message, take a message)

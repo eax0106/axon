@@ -336,23 +336,76 @@ class Campaign(Base):
     status: Mapped[CampaignStatus] = mapped_column(
         _enum(CampaignStatus, "campaign_status"), default=CampaignStatus.DRAFT
     )
+    # Calling window, days, holidays, concurrency, retries, repeat: see app/campaigns/settings.py.
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    # When a scheduled campaign starts (UTC); the next start of a repeating one.
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Why the campaign is not dialing right now, in plain words (outside hours, no credits...).
+    note: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = _created()
 
 
 class CampaignContact(Base):
     __tablename__ = "campaign_contacts"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "phone"),
+        Index("ix_campaign_contacts_due", "campaign_id", "status", "next_attempt_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
+    )
+    phone: Mapped[str] = mapped_column(String(20))
+    name: Mapped[str | None] = mapped_column(String(200))
+    variables: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    status: Mapped[ContactStatus] = mapped_column(
+        _enum(ContactStatus, "contact_status"), default=ContactStatus.PENDING
+    )
+    attempts: Mapped[int] = mapped_column(server_default="0")
+    # "Call now": this contact goes before the others in the queue, once.
+    priority: Mapped[bool] = mapped_column(server_default="false")
+    # When the next attempt may be made (NULL = as soon as the campaign is running and in hours).
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Why the contact was skipped, given up on or cancelled, in plain words.
+    reason: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = _created()
+
+
+class CampaignExclusion(Base):
+    """A number this campaign must never call, whoever uploads it again."""
+
+    __tablename__ = "campaign_exclusions"
     __table_args__ = (UniqueConstraint("campaign_id", "phone"),)
     id: Mapped[uuid.UUID] = _pk()
     campaign_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
     )
     phone: Mapped[str] = mapped_column(String(20))
-    variables: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
-    status: Mapped[ContactStatus] = mapped_column(
-        _enum(ContactStatus, "contact_status"), default=ContactStatus.PENDING
+
+
+class ContactList(Base):
+    """A saved list of contacts that campaigns can start from."""
+
+    __tablename__ = "contact_lists"
+    __table_args__ = (UniqueConstraint("account_id", "name"),)
+    id: Mapped[uuid.UUID] = _pk()
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    name: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = _created()
+
+
+class ContactListItem(Base):
+    __tablename__ = "contact_list_items"
+    __table_args__ = (UniqueConstraint("list_id", "phone"),)
+    id: Mapped[uuid.UUID] = _pk()
+    list_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contact_lists.id", ondelete="CASCADE"), index=True
     )
-    attempts: Mapped[int] = mapped_column(server_default="0")
+    phone: Mapped[str] = mapped_column(String(20))
+    name: Mapped[str | None] = mapped_column(String(200))
+    variables: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
 
 
 class Call(Base):
@@ -372,6 +425,9 @@ class Call(Base):
     )
     campaign_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("campaigns.id", ondelete="SET NULL"), index=True
+    )
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("campaign_contacts.id", ondelete="SET NULL"), index=True
     )
     number_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("numbers.id", ondelete="SET NULL")

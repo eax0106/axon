@@ -20,6 +20,9 @@ from app.calls.leads import router as leads_router
 from app.calls.memory import router as memory_router
 from app.calls.notifications import router as notifications_router
 from app.calls.stats import router as stats_router
+from app.campaigns.lists import router as contact_lists_router
+from app.campaigns.panel import router as campaign_panel_router
+from app.campaigns.router import router as campaigns_router
 from app.employees.ai import router as ai_router
 from app.employees.calls import router as calls_router
 from app.employees.router import router as employees_router
@@ -60,6 +63,9 @@ app.include_router(employees_router)
 app.include_router(ai_router)
 app.include_router(calls_router)
 app.include_router(instant_router)
+app.include_router(campaigns_router)
+app.include_router(campaign_panel_router)
+app.include_router(contact_lists_router)
 app.include_router(instant_public_router)
 app.include_router(conversations_router)
 app.include_router(leads_router)

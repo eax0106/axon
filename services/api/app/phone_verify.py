@@ -23,6 +23,7 @@ from app.db import Session
 from app.employees.limits import take
 from app.employees.router import OwnerUser
 from app.models import Account, DncEntry, NumberStatus, PhoneNumber, PhoneOtp
+from app.numbers import channels
 from app.providers.base import ProviderKind, TelephonyProvider
 from app.providers.registry import require
 from app.settings import api_public_url
@@ -53,14 +54,25 @@ async def send_code(body: PhoneBody, user: OwnerUser, session: Session) -> dict[
     telephony = require(ProviderKind.TELEPHONY)
     assert isinstance(telephony, TelephonyProvider)
     base = api_public_url()
-    from_number = await session.scalar(
-        select(PhoneNumber.e164)
+    held = await session.scalars(
+        select(PhoneNumber)
         .where(PhoneNumber.account_id == user.account_id, PhoneNumber.status == NumberStatus.ACTIVE)
-        .limit(1)
+        .order_by(PhoneNumber.created_at)
     )
-    if from_number is None:
+    numbers = list(held)
+    if not numbers:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "buy a phone number first: the code is spoken from it"
+        )
+    from_number = None
+    for candidate in numbers:
+        if await channels.has_free_channel(session, candidate):
+            from_number = candidate.e164
+            break
+    if from_number is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "every channel of your numbers is on a call: try again in a moment",
         )
     on_dnc = await session.scalar(
         select(DncEntry.id).where(

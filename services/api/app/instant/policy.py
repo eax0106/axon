@@ -47,15 +47,20 @@ async def instant_mode(session: AsyncSession) -> str:
 
 
 async def check_dial(
-    session: AsyncSession, employee: Employee, number: PhoneNumber, context: Context = "outbound"
+    session: AsyncSession,
+    employee: Employee,
+    number: PhoneNumber,
+    context: Context = "outbound",
+    purpose: Purpose | None = None,
 ) -> Verdict:
     """The verdict for one dial. The reason is written for the person who sees why a call was
-    cancelled."""
+    cancelled. `purpose` overrides the employee's own (a campaign can declare another)."""
+    purpose = purpose or employee.purpose
     if context == "instant" and await instant_mode(session) == STRICT:
         context = "outbound"
     rule = await session.scalar(
         select(DialRule).where(
-            DialRule.purpose == employee.purpose.value,
+            DialRule.purpose == purpose.value,
             DialRule.number_type == number.number_type.value,
             DialRule.context == context,
         )
@@ -63,7 +68,7 @@ async def check_dial(
     if rule is None:
         return Verdict(
             False,
-            f"no rule allows {employee.purpose.value} calls from a {number.number_type.value} "
+            f"no rule allows {purpose.value} calls from a {number.number_type.value} "
             f"number ({context}); an admin has to add one",
         )
     if rule.allowed:

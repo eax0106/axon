@@ -175,3 +175,26 @@ def vobiz(monkeypatch: pytest.MonkeyPatch) -> Iterator[VobizAccount]:
     monkeypatch.setattr(VobizTelephony, "_client", lambda self: client(self))
     monkeypatch.setattr(VobizKyc, "_client", lambda self: client(self, "/kyc"))
     yield fake
+
+
+# --- Campaign tests: a started API with the public URLs set, and the carrier behind it ------------
+
+
+@pytest.fixture
+def api(db_client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    from .helpers import seed
+
+    seed(migrated_url)
+    monkeypatch.setenv("AXON_ENGINE_PUBLIC_URL", "https://engine.example.in")
+    monkeypatch.setenv("AXON_API_PUBLIC_URL", "https://api.example.in")
+    return db_client
+
+
+@pytest.fixture
+def carrier(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, VobizTelephony]]:
+    from .dialing import Carrier
+
+    monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
+    monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    fake = Carrier()
+    yield fake, VobizTelephony(transport=httpx.MockTransport(fake.handler))
