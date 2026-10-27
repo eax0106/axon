@@ -30,6 +30,7 @@ from .test_inbound_engine import form, stream_of
 from .test_vobiz import START
 
 PERSON = "+919811112222"
+STATUS = {"DialStatus": "completed"}
 SETTINGS = {"transfer_number": PERSON, "transfer_when": "The caller asks for the owner."}
 
 
@@ -147,7 +148,7 @@ def _stream(
                 time.sleep(0.05)
 
 
-def test_the_carrier_is_asked_to_move_the_call_and_our_end_does_not_hang_it_up(
+def test_the_call_stays_up_through_the_hand_over_and_the_carrier_then_rings_the_person(
     api: TestClient,
     migrated_url: str,
     providers: None,  # noqa: F811
@@ -165,7 +166,7 @@ def test_the_carrier_is_asked_to_move_the_call_and_our_end_does_not_hang_it_up(
         migrated_url,
         _AsksForAPerson(),
         monkeypatch,
-        lambda url: sql(migrated_url, "SELECT status FROM calls") == "completed",
+        lambda url: sql(migrated_url, "SELECT count(*) FROM call_events WHERE type = 'ended'") == 1,
     )
 
     ((uuid, link),) = moved
@@ -174,13 +175,28 @@ def test_the_carrier_is_asked_to_move_the_call_and_our_end_does_not_hang_it_up(
     assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == (
         "https://engine.example.in/vobiz/transfer"
     )
-    assert parse_qs(parsed.query)["ticket"]
     assert _Carrier.hangups == []  # the carrier now owns the call
     types = [e["type"] for e in events]
     assert "transferred" in types and events[-1] == {"type": "ended", "reason": "transferred"}
     (call,) = calls(migrated_url)
-    assert call["status"] == "completed"
+    # Our stream is over, but the caller is still on the line: the call is up and holds its channel.
+    assert call["status"] == "in_progress" and call["ended_at"] is None
+    assert call["transcript"] is not None and call["analysis_status"] == "pending"
     assert "transferred" in [t for t, _ in stored_events(migrated_url, call["id"])]
+    with TestClient(app) as client:
+        other = client.post("/vobiz/inbound", data=form(CallUUID="leg-other", From="+919000000009"))
+        assert "<Hangup" in other.text  # a one-channel number: the second caller finds it busy
+        # What the carrier fetches next, after the stream is gone, must still ring the person.
+        instructions = client.get(f"{parsed.path}?{parsed.query}")
+        dial = ET.fromstring(instructions.text.split("?>", 1)[1]).find("Dial")
+        assert dial is not None and dial.findtext("Number") == PERSON
+        report = urlparse(dial.get("action") or "")
+        done = client.post(
+            report.path, params={"ticket": parse_qs(report.query)["ticket"][0]}, data=STATUS
+        )
+        assert done.status_code == 200
+    (call,) = calls(migrated_url, f"carrier_leg_id = '{START['start']['callId']}'")
+    assert call["status"] == "completed" and call["ended_at"] is not None
 
 
 def test_a_transfer_the_carrier_refuses_keeps_the_call_and_tells_the_ai(
@@ -309,4 +325,6 @@ def test_the_result_is_recorded_and_an_unconnected_transfer_leaves_a_message(
     assert response.status_code == 200 and "<Hangup" in response.text
     found = [(t, d) for t, d in stored_events(migrated_url, call_id) if t == "transfer_result"]
     assert found == [("transfer_result", {"status": dial_status})]
+    (call,) = calls(migrated_url)  # the result is also the end of the call, and frees its channel
+    assert call["status"] == "completed" and call["ended_at"] is not None
     assert sql(migrated_url, "SELECT count(*) FROM inbound_messages") == messages

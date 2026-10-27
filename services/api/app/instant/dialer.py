@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.billing import policy as credit_policy
 from app.campaigns import contacts as campaign_contacts
+from app.inbound.transfer import DIAL_LIMIT_S
 from app.instant import policy, rules
 from app.instant.rules import DialerSettings
 from app.models import (
@@ -40,6 +41,7 @@ BATCH = 20
 CHANNEL_BUSY_RETRY = timedelta(seconds=15)  # every channel of the number is on a call
 NOT_READY_RETRY = timedelta(minutes=5)  # a live-employee check that failed: look again later
 RINGING_TIMEOUT = timedelta(minutes=3)  # no end callback by then: ask the carrier what happened
+HANDED_OVER_MAX = timedelta(seconds=DIAL_LIMIT_S + 600)  # a bridged call has ended by then
 GIVE_UP_AFTER = timedelta(minutes=15)  # the carrier never reported: count the attempt as failed
 
 
@@ -325,7 +327,38 @@ async def reap_stale(
                     await session.commit()
                     state = "settled"
         reaped += state == "settled"
-    return reaped
+    return reaped + await reap_transfers(factory, telephony, now)
+
+
+async def reap_transfers(
+    factory: async_sessionmaker[AsyncSession], telephony: TelephonyProvider, now: datetime
+) -> int:
+    """A call handed to a person stays up until the carrier reports its end. If neither the
+    transfer result nor the hang-up callback came, once the bridged call can no longer be running
+    the carrier is asked, and the call is closed either way so its channel is free again."""
+    async with factory() as session:
+        stuck = list(
+            await session.scalars(
+                select(Call.id)
+                .distinct()
+                .join(CallEvent, CallEvent.call_id == Call.id)
+                .where(
+                    Call.status == CallStatus.IN_PROGRESS,
+                    Call.direction == Direction.INBOUND,
+                    CallEvent.type == "transferred",
+                    CallEvent.at < now - HANDED_OVER_MAX,
+                )
+            )
+        )
+    for call_id in stuck:
+        if await settle_from_carrier(factory, telephony, call_id, now) != "settled":
+            async with factory() as session:
+                row = await session.get(Call, call_id, with_for_update=True)
+                if row is not None and row.status is CallStatus.IN_PROGRESS:
+                    await _event(session, row, "transfer_unreported")
+                    row.status, row.ended_at = CallStatus.COMPLETED, now
+                    await session.commit()
+    return len(stuck)
 
 
 async def _still_live(telephony: TelephonyProvider, call: Call) -> bool:

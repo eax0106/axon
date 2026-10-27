@@ -1,11 +1,17 @@
 """A call arrives on a number: answered or missed, and recorded either way."""
 
+import asyncio
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app.inbound import routing
+
 from .conftest import sql
 from .dialing import Carrier
-from .inbound_support import NOW, NUMBER, calls, events, inbound_employee, ring
+from .helpers import run_db
+from .inbound_support import CALLER, NOW, NUMBER, adapter, calls, events, inbound_employee, ring
 
 
 def test_a_live_employee_answers_and_the_call_is_recorded(
@@ -161,3 +167,27 @@ def test_a_call_from_a_withheld_number_is_still_answered_without_a_lead(
     (call,) = calls(migrated_url)
     assert call["lead_id"] is None and call["caller_phone"] is None
     assert NUMBER  # the number itself is unchanged
+
+
+def test_two_fetches_of_the_answer_url_for_one_carrier_call_are_one_call(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, None]
+) -> None:
+    """A carrier retry arriving while the first fetch is still being decided must not be turned
+    away as busy by the first one's own channel (and then called back, and rejected)."""
+    fake, _ = carrier
+    inbound_employee(api, migrated_url)
+    fake.live.add("leg-1")
+
+    async def both(factory: Any) -> list[routing.Routed]:
+        asked = [
+            routing.route(
+                factory, adapter(fake), to=NUMBER, caller=CALLER, carrier_id="leg-1", now=NOW
+            )
+            for _ in range(4)
+        ]
+        return list(await asyncio.gather(*asked))
+
+    results = run_db(migrated_url, both)
+    assert {r.kind for r in results} == {"answer"} and len({r.call_id for r in results}) == 1
+    (call,) = calls(migrated_url)
+    assert call["status"] == "ringing" and call["miss_reason"] is None

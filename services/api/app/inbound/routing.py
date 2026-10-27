@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -85,6 +85,10 @@ async def route(
     if not carrier_id or not await telephony.is_live(carrier_id):
         return Routed("unknown")  # a request for a call the carrier does not have is not believed
     async with factory() as session:
+        # One decision per carrier call: a retry of the fetch waits here and then finds the row.
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"inbound:{carrier_id}"}
+        )
         found = await session.scalar(select(Call).where(Call.carrier_leg_id == carrier_id))
         if found is not None:
             return await _again(session, found)

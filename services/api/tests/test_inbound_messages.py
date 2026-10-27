@@ -226,3 +226,19 @@ def test_nobody_sees_or_ticks_another_accounts_messages(
     assert client.post(f"/inbound/messages/{message}/reopen", headers=stranger).status_code == 404
     assert sql(migrated_url, "SELECT done_at FROM inbound_messages") is None
     assert client.get("/inbound/messages").status_code == 401
+
+
+def test_a_callback_asked_for_on_a_bulk_employees_incoming_call_is_a_message_not_a_stuck_call(
+    api: tuple[TestClient, Gemini],  # noqa: F811
+    migrated_url: str,
+) -> None:
+    """Nothing dials a Bulk employee's own call-back, so a queued call would sit there for ever and
+    block the lead's later requests: the message task carries the request instead."""
+    client, _ = api
+    employee, _owner = inbound_employee(client, migrated_url, channel="bulk")
+    inbound_call(migrated_url, employee)
+    sql(migrated_url, "UPDATE calls SET channel = 'bulk'")
+    process(migrated_url)
+    assert sql(migrated_url, "SELECT count(*) FROM calls WHERE status = 'queued'") == 0
+    (message,) = stored(migrated_url)
+    assert message["callback_at"] is not None

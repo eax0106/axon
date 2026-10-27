@@ -21,7 +21,6 @@ COMPLETED_REASONS = {
     "max_length",
     "silence",
     "pipeline_finished",
-    "transferred",
 }
 KEPT_EVENTS = {
     "started",
@@ -32,6 +31,7 @@ KEPT_EVENTS = {
     "transferred",
 }
 MAX_EVENTS = 500
+HANDED_OVER = "transferred"  # how a call ends that the AI passed to a person
 OPEN = (CallStatus.QUEUED, CallStatus.RINGING, CallStatus.IN_PROGRESS)
 
 
@@ -130,19 +130,22 @@ class CallRecorder:
         The status, end time and duration only change while the call is open (the carrier's callback
         often settles it first). What the engine alone knows (transcript, recording, events, and
         the go-ahead for analysis) is written whatever the status, or it would be lost whenever the
-        callback wins the race."""
+        callback wins the race. A call handed to a person is left open: the caller is still on our
+        number, and the carrier's transfer instructions only dial for a call that is up. The
+        transfer result or the carrier's hang-up callback settles it."""
         status = CallStatus.COMPLETED if reason in COMPLETED_REASONS else CallStatus.FAILED
         turns = self.transcript.turns()
         async with self._factory() as session:
-            await session.execute(
-                update(Call)
-                .where(*self._ours(), Call.status.in_(OPEN))
-                .values(
-                    status=status,
-                    ended_at=func.now(),
-                    duration_s=round(time.monotonic() - self._started),
+            if reason != HANDED_OVER:  # a handed-over call is still up: the carrier settles it
+                await session.execute(
+                    update(Call)
+                    .where(*self._ours(), Call.status.in_(OPEN))
+                    .values(
+                        status=status,
+                        ended_at=func.now(),
+                        duration_s=round(time.monotonic() - self._started),
+                    )
                 )
-            )
             result = await session.execute(
                 update(Call)
                 .where(*self._ours())

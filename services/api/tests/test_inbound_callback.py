@@ -213,3 +213,63 @@ def test_a_call_back_an_inbound_employee_was_asked_for_is_dialed_like_any_other(
         {"a": account, "e": employee, "l": lead, "at": NOW},
     )
     assert len(tick(migrated_url, dialing, NOW)) == 1 and len(fake.placed) == 1
+
+
+def hand_over(url: str, at: Any, *, status: str = "in_progress") -> Any:
+    """An incoming call the AI handed to a person at `at` (its stream is over, the call is up)."""
+    sql(url, "UPDATE calls SET status = :s, answered_at = :a", {"s": status, "a": at})
+    call = sql(url, "SELECT id FROM calls")
+    sql(
+        url,
+        "INSERT INTO call_events (call_id, type, data, at) VALUES (:c, 'transferred', '{}', :a)",
+        {"c": call, "a": at},
+    )
+    return call
+
+
+def reap(url: str, adapter: VobizTelephony, now: Any) -> int:
+    count: int = run_db(url, lambda factory: dialer.reap_stale(factory, adapter, now))
+    return count
+
+
+def test_a_call_handed_to_a_person_holds_its_channel_until_the_carrier_reports_its_end(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, dialing = carrier
+    inbound_employee(api, migrated_url)
+    ring(migrated_url, fake, carrier_id="leg-1")
+    call = hand_over(migrated_url, NOW)
+    assert ring(migrated_url, fake, carrier_id="leg-2", caller="+919876543299").code == "busy"
+    assert (
+        reap(migrated_url, dialing, NOW + timedelta(minutes=30)) == 0
+    )  # the bridge may run an hour
+    assert sql(migrated_url, "SELECT status FROM calls WHERE id = :c", {"c": call}) == "in_progress"
+
+
+def test_a_hand_over_nobody_reported_is_closed_once_it_cannot_still_be_running(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, dialing = carrier
+    inbound_employee(api, migrated_url)
+    ring(migrated_url, fake, carrier_id="leg-1")
+    call = hand_over(migrated_url, NOW)
+    fake.cdr["leg-1"] = None  # the carrier has no record either
+    assert reap(migrated_url, dialing, NOW + timedelta(hours=2)) == 1
+    row = calls(migrated_url, f"id = '{call}'")[0]
+    assert row["status"] == "completed" and row["ended_at"] is not None
+    assert "transfer_unreported" in [t for t, _ in events(migrated_url, call)]
+    assert reap(migrated_url, dialing, NOW + timedelta(hours=3)) == 0
+
+
+def test_a_hand_over_the_carrier_knows_about_is_settled_from_its_record(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, dialing = carrier
+    inbound_employee(api, migrated_url)
+    ring(migrated_url, fake, carrier_id="leg-1")
+    call = hand_over(migrated_url, NOW)
+    fake.cdr["leg-1"] = {"billsec": 600, "duration": 610, "hangup_cause": "NORMAL_CLEARING"}
+    assert reap(migrated_url, dialing, NOW + timedelta(hours=2)) == 1
+    row = calls(migrated_url, f"id = '{call}'")[0]
+    assert row["status"] == "completed" and row["duration_s"] == 610
+    assert "transfer_unreported" not in [t for t, _ in events(migrated_url, call)]
