@@ -6,6 +6,7 @@ from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.employees.runtime import CallPlan, plan_for
+from app.inbound.plan import extras
 from app.models import Account, Call, CallStatus, CampaignContact, Employee, Lead
 
 
@@ -52,8 +53,19 @@ async def load_plan(db: AsyncEngine, employee: str, call: str = "") -> CallPlan 
         )
         account = await session.get(Account, row.account_id)
         remembered = lead.memory if lead and account and account.caller_memory else None
+        added = await extras(session, row, record, lead) if own and record else None
+        if added is not None and lead is not None:
+            variables = {**(variables or {}), **added.variables}
         return await plan_for(
-            session, row, use_draft=is_test, variables=variables, memory=remembered
+            session,
+            row,
+            use_draft=is_test,
+            variables=variables,
+            memory=remembered,
+            context=added.context if added else None,
+            opening=added.opening if added else "",
+            transfer_to=added.transfer_to if added else None,
+            caller_id=added.caller_id if added else None,
         )
 
 

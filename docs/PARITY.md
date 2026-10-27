@@ -40,14 +40,14 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Campaigns queue on a shared number, oldest first; capacity preview; campaign analytics
 
 ## Inbound [B9]
-- [ ] Answer the attached number 24/7 or within opening hours (closed message, take a message)
-- [ ] Greetings for new callers and returning leads; recording disclosure before the greeting; business name from settings
-- [ ] Messages and callback tasks with a done tick; callback at the requested time within hours
-- [ ] Missed callers with plain-language reasons; one auto call-back within hours, never to DNC
-- [ ] Daily email summary of yesterday's calls
-- [ ] Transfer to a human (transfer number + condition)
-- [ ] Instant and Bulk employees answer their own leads' call-backs with context (toggle)
-- [ ] Concurrent callers limited by the number's channels
+- [x] Answer the attached number 24/7 or within opening hours (closed message, take a message)
+- [x] Greetings for new callers and returning leads; recording disclosure before the greeting; business name from settings
+- [x] Messages and callback tasks with a done tick; callback at the requested time within hours
+- [x] Missed callers with plain-language reasons; one auto call-back within hours, never to DNC
+- [x] Daily email summary of yesterday's calls
+- [x] Transfer to a human (transfer number + condition)
+- [x] Instant and Bulk employees answer their own leads' call-backs with context (toggle)
+- [x] Concurrent callers limited by the number's channels
 
 ## Post-call and data [B6]
 - [x] Recording, transcript, summary, sentiment, outcome, captured fields; nothing invented when a field is missing

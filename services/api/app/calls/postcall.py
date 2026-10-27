@@ -18,6 +18,7 @@ from app.billing.fees import charge_ai_use
 from app.calls import analysis
 from app.campaigns import contacts as campaign_contacts
 from app.employees import service as employees
+from app.inbound import messages
 from app.instant import rules
 from app.instant.rules import DialerSettings
 from app.models import (
@@ -161,6 +162,20 @@ async def _apply(
         await _add_to_dnc(session, call, lead, result.do_not_call_quote)
     elif lead is not None and employee is not None and result.callback_at:
         await _schedule_callback(session, call, lead, employee, result.callback_at)
+    if call.direction is Direction.INBOUND and not result.do_not_call:
+        await _take_message(session, call, lead, result, now)
+
+
+async def _take_message(
+    session: AsyncSession, call: Call, lead: Lead | None, result: analysis.Analysis, now: datetime
+) -> None:
+    """A message or call-back request from an incoming call becomes a task for the owner."""
+    body = result.message
+    if body is None and result.callback_at is not None:
+        asked = result.callback_at.astimezone(analysis.IST).strftime("%d %b, %H:%M")
+        body = f"Asked to be called back: {asked} IST."
+    if body is not None:
+        await messages.add(session, call, body, result.callback_at, lead, now)
 
 
 async def _add_to_dnc(session: AsyncSession, call: Call, lead: Lead, quote: str | None) -> None:

@@ -28,6 +28,10 @@ class Carrier:
         self.timeout_next = False
         self.same_ids = False
         self.live: set[str] = set()
+        self.routed: dict[str, str] = {}  # number -> application it was attached to
+        self.applications: list[dict[str, Any]] = []
+        self.transfers: list[dict[str, Any]] = []
+        self.routing_status = 0  # answer application and routing requests with this status, if set
         self.default_cdr: dict[str, Any] | None = {
             "billsec": 0,
             "duration": 30,
@@ -35,6 +39,22 @@ class Carrier:
         }
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.raw_path.decode()
+        routing = path.endswith(("/Application/", "/application"))
+        if request.method == "POST" and routing and self.routing_status:
+            return httpx.Response(self.routing_status, json={"error": "carrier trouble"})
+        if request.method == "POST" and path.endswith("/Application/"):
+            self.applications.append(json.loads(request.content))
+            return httpx.Response(201, json={"app_id": f"app_{len(self.applications)}"})
+        if request.method == "POST" and path.endswith("/application"):
+            number = path.split("/numbers/")[1].removesuffix("/application").replace("%2B", "+")
+            self.routed[number] = json.loads(request.content)["application_id"]
+            return httpx.Response(200, json={"message": "Number attached to application"})
+        if request.method == "POST" and path.rstrip("/").split("/")[-2:-1] == ["Call"]:
+            self.transfers.append(
+                {"call": path.rstrip("/").split("/")[-1], **json.loads(request.content)}
+            )
+            return httpx.Response(202, json={"message": "call transferred"})
         if request.method == "POST":
             if self.timeout_next:
                 self.timeout_next = False

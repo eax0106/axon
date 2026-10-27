@@ -11,6 +11,7 @@ import asyncio
 import io
 import time
 import wave
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,6 +24,8 @@ from pipecat.frames.frames import (
     EndFrame,
     Frame,
     FunctionCallResultProperties,
+    LLMMessagesAppendFrame,
+    TTSSpeakFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
 )
@@ -39,6 +42,7 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.serializers.base_serializer import FrameSerializer
 from pipecat.services.llm_service import FunctionCallParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
+from pipecat.turns.user_mute import MuteUntilFirstBotCompleteUserMuteStrategy
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
 )
@@ -67,6 +71,8 @@ class CallSettings:
     ambience_volume: float = 0.3
     max_call_s: float = 600.0  # account setting, 10 s to 60 min
     silence_timeout_s: float = 20.0  # caller silent this long after the bot spoke -> end call
+    opening: str = ""  # spoken first, before the caller says a word (an incoming call)
+    transfer_to: str | None = None  # a person the AI may hand the call to (an incoming call)
 
     def __post_init__(self) -> None:
         if not MIN_CALL_S <= self.max_call_s <= MAX_CALL_S:
@@ -129,6 +135,20 @@ END_CALL = FunctionSchema(
 )
 
 
+TRANSFER_TO_HUMAN = FunctionSchema(
+    name="transfer_to_human",
+    description=(
+        "Connect the caller to a person. Say you are connecting them first, then call this."
+    ),
+    properties={},
+    required=[],
+)
+TRANSFER_FAILED = (
+    "The transfer did not go through. Apologise in one sentence, say you could not connect them, "
+    "and offer to take a message instead."
+)
+
+
 def register_end_call(llm: FrameProcessor, gate: GoodbyeGate) -> None:
     """Let the LLM end the call. (A leg without function calling cannot, and that is fine.)"""
     register = getattr(llm, "register_function", None)
@@ -152,6 +172,7 @@ async def run_call(
     publish: EventSink,
     call_record: CallRecorder | None = None,
     carrier_call_id: str | None = None,
+    transfer: Callable[[], Awaitable[None]] | None = None,
 ) -> Usage:
     """Run the call until it ends; return what it used. The caller has already accepted the
     WebSocket and read any handshake; `serializer` speaks the stream protocol."""
@@ -179,10 +200,17 @@ async def run_call(
 
     gate = GoodbyeGate(end)
     register_end_call(llm, gate)
+    tools = [END_CALL]
+    if transfer is not None:
+        tools.append(TRANSFER_TO_HUMAN)
     aggregators = LLMContextAggregatorPair(
-        LLMContext(messages=messages, tools=ToolsSchema(standard_tools=[END_CALL])),
+        LLMContext(messages=messages, tools=ToolsSchema(standard_tools=tools)),
         user_params=LLMUserAggregatorParams(
             vad_analyzer=SileroVADAnalyzer(),
+            # The caller hears the whole opening (the recording notice) before being listened to.
+            user_mute_strategies=(
+                [MuteUntilFirstBotCompleteUserMuteStrategy()] if settings.opening else []
+            ),
             user_turn_strategies=UserTurnStrategies(
                 stop=[TurnAnalyzerUserTurnStopStrategy(turn_analyzer=LocalSmartTurnAnalyzerV3())]
             ),
@@ -224,6 +252,41 @@ async def run_call(
         enable_rtvi=False,
     )
 
+    transferring: list[bool] = []
+
+    async def hand_over() -> None:
+        """Ask the carrier to move the caller to a person. The stream then closes by itself, and
+        our end of it must not hang the call up."""
+        assert transfer is not None
+        transferring.append(True)  # the carrier may close the stream before its answer reaches us
+        try:
+            await transfer()
+        except Exception:
+            logger.exception("transfer failed")
+            transferring.clear()
+            gate.reopen()
+            await task.queue_frame(
+                LLMMessagesAppendFrame(
+                    [{"role": "system", "content": TRANSFER_FAILED}], run_llm=True
+                )
+            )
+            return
+        keep_up = getattr(serializer, "keep_call_up", None)
+        if keep_up is not None:
+            keep_up()
+        await live.emit({"type": "transferred"})
+        await end("transferred")
+
+    if transfer is not None:
+        register = getattr(llm, "register_function", None)
+        if register is not None:
+
+            async def transfer_to_human(params: FunctionCallParams) -> None:
+                await gate.request_end(hand_over)  # after what was said has been heard
+                await params.result_callback({"status": "transferring"}, properties=NO_REPLY)
+
+            register("transfer_to_human", transfer_to_human)
+
     @aggregators.user().event_handler("on_user_turn_idle")
     async def _silence(_: Any) -> None:
         await end("silence")
@@ -231,7 +294,7 @@ async def run_call(
     @transport.event_handler("on_client_disconnected")
     async def _caller_gone(*_: Any) -> None:
         if not ended:
-            ended.append("caller_hung_up")
+            ended.append("transferred" if transferring else "caller_hung_up")
         await task.cancel()
 
     @recorder.event_handler("on_audio_data")
@@ -243,6 +306,11 @@ async def run_call(
         await call_record.started(carrier_call_id, settings.voice_tier)
     await publish({"type": "started", "call_id": call_id, "language": settings.language})
     await recorder.start_recording()
+    if settings.opening:
+        # Fixed words, and not to be talked over: the caller hears the recording notice first.
+        opening = TTSSpeakFrame(settings.opening)
+        opening.interruptible = False
+        await task.queue_frame(opening)
     cap = asyncio.get_running_loop().call_later(
         settings.max_call_s, lambda: asyncio.ensure_future(end("max_length"))
     )

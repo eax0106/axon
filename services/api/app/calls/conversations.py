@@ -118,6 +118,7 @@ class CallRow(BaseModel):
     summary: str | None
     is_test: bool
     analysis_status: str | None
+    miss_reason: str | None  # an incoming call nobody answered: why
 
 
 def _joined() -> Select[Any]:
@@ -142,7 +143,7 @@ def _row(
         employee_id=call.employee_id,
         employee_name=employee_name,
         lead_id=call.lead_id,
-        phone=phone,
+        phone=phone or call.caller_phone,  # a landline or withheld caller has no lead
         name=lead_name,
         direction=call.direction.value,
         channel=call.channel.value,
@@ -154,6 +155,7 @@ def _row(
         summary=call.summary,
         is_test=call.is_test,
         analysis_status=call.analysis_status,
+        miss_reason=call.miss_reason,
     )
 
 

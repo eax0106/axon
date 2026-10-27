@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.employees import service
-from app.employees.compiler import compile_prompt
+from app.employees.compiler import CallContext, compile_prompt
 from app.employees.script import ScriptBundle
 from app.models import Account, Employee, EmployeeVersion, Voice
 
@@ -21,6 +21,9 @@ class CallPlan:
     tts_speed: float
     ambience: str
     ambience_volume: float
+    opening: str = ""  # spoken before the caller says anything (incoming calls)
+    transfer_to: str | None = None  # a person the AI may hand the call to
+    caller_id: str | None = None  # the number the transfer leg shows: the employee's own
 
 
 async def business_name(session: AsyncSession, employee: Employee) -> str:
@@ -35,6 +38,7 @@ async def prompt_for(
     bundle: ScriptBundle,
     variables: dict[str, str] | None = None,
     memory: str | None = None,
+    context: CallContext | None = None,
 ) -> str:
     return compile_prompt(
         name=employee.name,
@@ -46,6 +50,7 @@ async def prompt_for(
         settings=service.settings_of(employee),
         variables=variables,
         memory=memory,
+        context=context,
     )
 
 
@@ -57,6 +62,10 @@ async def plan_for(
     use_draft: bool = False,
     variables: dict[str, str] | None = None,
     memory: str | None = None,
+    context: CallContext | None = None,
+    opening: str = "",
+    transfer_to: str | None = None,
+    caller_id: str | None = None,
 ) -> CallPlan | None:
     """The plan for a call: the newest published version, or the draft for test calls.
     None when there is nothing published and no draft was asked for."""
@@ -72,9 +81,12 @@ async def plan_for(
         employee_id=employee.id,
         account_id=employee.account_id,
         language=employee.language,
-        system_prompt=await prompt_for(session, employee, bundle, variables, memory),
+        system_prompt=await prompt_for(session, employee, bundle, variables, memory, context),
         voice=await session.get(Voice, employee.voice_id) if employee.voice_id else None,
         tts_speed=settings.tts_speed,
         ambience=settings.ambience,
         ambience_volume=settings.ambience_volume,
+        opening=opening,
+        transfer_to=transfer_to,
+        caller_id=caller_id,
     )

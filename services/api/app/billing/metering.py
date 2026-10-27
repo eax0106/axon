@@ -42,6 +42,17 @@ async def _tier(session: AsyncSession, call: Call) -> str:
     return voice.tier.value if voice else VoiceTier.VALUE.value
 
 
+async def _ai_seconds(session: AsyncSession, call: Call, talk_s: int) -> int:
+    """Talk time the AI was on the line. A call handed to a person goes on at the carrier after the
+    hand-over, but what the person and the caller say is not the employee's work: it stops there."""
+    handed = await session.scalar(
+        select(CallEvent.at).where(CallEvent.call_id == call.id, CallEvent.type == "transferred")
+    )
+    if handed is None or call.answered_at is None:
+        return talk_s
+    return min(talk_s, max(0, round((handed - call.answered_at).total_seconds())))
+
+
 async def bill_pending(
     factory: async_sessionmaker[AsyncSession],
     telephony: TelephonyProvider,
@@ -107,7 +118,8 @@ async def _bill_one(
             call.billing_status = "free"
             await session.commit()
             return "free"
-        charge = call_charge(await _tier(session, call), detail.talk_s)
+        talk_s = await _ai_seconds(session, call, detail.talk_s)
+        charge = call_charge(await _tier(session, call), talk_s)
         posted = await ledger.post(
             session,
             call.account_id,
@@ -115,12 +127,12 @@ async def _bill_one(
             -charge,
             ref_type="call",
             ref_id=str(call.id),
-            note=f"{detail.talk_s} s talk time",
+            note=f"{talk_s} s talk time",
             allow_overdraw=True,  # the call already happened
             now=now,
         )
         call.credits_charged = -posted.entry.amount
-        call.billed_seconds = detail.talk_s
+        call.billed_seconds = talk_s
         call.billing_status = "billed"
         await session.commit()
     return "billed"

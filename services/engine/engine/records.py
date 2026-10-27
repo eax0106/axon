@@ -15,8 +15,22 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from app.models import Call, CallEvent, CallStatus
 
 # How a call ended, as run_call names it. Anything else (an exception name) is a failed call.
-COMPLETED_REASONS = {"caller_hung_up", "agent_ended", "max_length", "silence", "pipeline_finished"}
-KEPT_EVENTS = {"started", "interruption", "recording_stored", "recording_not_stored", "usage"}
+COMPLETED_REASONS = {
+    "caller_hung_up",
+    "agent_ended",
+    "max_length",
+    "silence",
+    "pipeline_finished",
+    "transferred",
+}
+KEPT_EVENTS = {
+    "started",
+    "interruption",
+    "recording_stored",
+    "recording_not_stored",
+    "usage",
+    "transferred",
+}
 MAX_EVENTS = 500
 OPEN = (CallStatus.QUEUED, CallStatus.RINGING, CallStatus.IN_PROGRESS)
 

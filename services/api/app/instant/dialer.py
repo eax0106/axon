@@ -25,6 +25,7 @@ from app.models import (
     CallEvent,
     CallStatus,
     Channel,
+    Direction,
     DncEntry,
     Employee,
     EmployeeStatus,
@@ -88,6 +89,8 @@ async def settle(
     call.status = status
     call.ended_at = now
     call.duration_s = duration_s
+    if call.direction is Direction.INBOUND or call.callback_of_id is not None:
+        return None  # a caller we rang back is tried once, and one who rang us is never redialed
     if call.campaign_id is not None:  # a campaign call: its contact has the retries, not the lead
         await campaign_contacts.settle(session, call, status, now, hold_next=hold_next)
         return None
@@ -192,7 +195,7 @@ async def _claim(
             select(Call)
             .where(
                 Call.status == CallStatus.QUEUED,
-                Call.channel == Channel.INSTANT,
+                Call.channel.in_((Channel.INSTANT, Channel.INBOUND)),
                 Call.is_test.is_(False),
                 Call.scheduled_for.is_not(None),
                 Call.scheduled_for <= now,
@@ -237,7 +240,9 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> Claim:
         call.scheduled_for = now + NOT_READY_RETRY
         await _event(session, call, "blocked_credits", reason=held)
         return Claim(call.id, "rescheduled")
-    verdict = await policy.check_dial(session, employee, number, "instant")
+    # A call back (the caller asked for it, or we missed them) is read under the call-back rule.
+    context: policy.Context = "callback" if call.is_callback else "instant"
+    verdict = await policy.check_dial(session, employee, number, context)
     if not verdict.allowed:
         call.status = CallStatus.CANCELED
         await _event(session, call, "cancelled", reason=verdict.reason)

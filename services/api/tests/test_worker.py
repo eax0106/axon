@@ -44,7 +44,11 @@ def test_the_cron_schedule_and_hooks() -> None:
         "cron:reap_tick",
         "cron:renewal_tick",
         "cron:sheets_tick",
+        "cron:summary_tick",
     }
+    assert names["cron:summary_tick"].minute == set(
+        range(5, 60, 10)
+    )  # from 8 AM IST, within 10 min
     assert names["cron:dial_tick"].second == set(
         range(0, 60, 3)
     )  # a lead waits seconds, not minutes
@@ -57,9 +61,14 @@ def test_ticks_do_nothing_and_say_so_without_carrier_keys(
 ) -> None:
     seed(migrated_url)
     results = run_ticks(
-        migrated_url, monkeypatch, worker.dial_tick, worker.reap_tick, worker.sheets_tick
+        migrated_url,
+        monkeypatch,
+        worker.dial_tick,
+        worker.reap_tick,
+        worker.sheets_tick,
+        worker.summary_tick,
     )
-    assert results == [0, 0, 0]
+    assert results == [0, 0, 0, 0]
 
 
 def test_a_dial_tick_places_a_due_call_through_the_real_adapter(

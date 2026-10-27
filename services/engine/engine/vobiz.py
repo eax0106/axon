@@ -55,6 +55,23 @@ def answer_xml(stream_url: str, status_callback_url: str | None = None) -> str:
     )
 
 
+def transfer_xml(number: str, caller_id: str, result_url: str, *, timeout: int, limit: int) -> str:
+    """VobizXML that rings `number` and bridges the caller to it. `result_url` hears how it ended.
+    The caller id is our own number: the carrier only lets a number the account holds be shown."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<Response><Dial callerId={quoteattr(caller_id)} timeout="{timeout}" '
+        f'timeLimit="{limit}" action={quoteattr(result_url)} method="POST">'
+        f"<Number>{escape(number)}</Number></Dial></Response>"
+    )
+
+
+REJECT_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n<Response><Hangup reason="rejected"/></Response>'
+)
+HANGUP_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<Response><Hangup/></Response>'
+
+
 @dataclass(frozen=True)
 class StreamStart:
     stream_id: str
@@ -95,6 +112,10 @@ class VobizFrameSerializer(FrameSerializer):
         self._pipeline_rate = 0
         self._in_resampler = create_stream_resampler()
         self._out_resampler = create_stream_resampler()
+
+    def keep_call_up(self) -> None:
+        """The carrier has moved the call elsewhere: ending our stream must not hang it up."""
+        self._hung_up = True
 
     async def setup(self, setup: FrameProcessorSetup) -> None:  # type: ignore[override]  # as Pipecat
         self._pipeline_rate = setup.audio_in_sample_rate

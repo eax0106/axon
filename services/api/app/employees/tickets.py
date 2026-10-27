@@ -86,3 +86,29 @@ def read_oauth_state(token: str) -> tuple[uuid.UUID, uuid.UUID] | None:
         return uuid.UUID(claims["user"]), uuid.UUID(claims["employee"])
     except (jwt.InvalidTokenError, KeyError, ValueError):
         return None
+
+
+CALL_TYPE = "call_ticket"
+
+
+def issue_call_ticket(
+    kind: str, call_id: uuid.UUID, ttl: timedelta, now: datetime | None = None
+) -> str:
+    """A signed, short-lived pass that names one call and one purpose (`kind`), for a URL the
+    carrier will fetch: it carries no login, so it can open nothing else."""
+    now = now or datetime.now(UTC)
+    claims = {"typ": CALL_TYPE, "kind": kind, "call": str(call_id), "iat": now, "exp": now + ttl}
+    return jwt.encode(claims, jwt_secret(), algorithm="HS256")
+
+
+def read_call_ticket(token: str, kind: str) -> uuid.UUID | None:
+    """The call the ticket names, or None if it is forged, expired, or for another purpose."""
+    try:
+        claims = jwt.decode(
+            token, jwt_secret(), algorithms=["HS256"], options={"require": ["typ", "exp", "iat"]}
+        )
+        if claims["typ"] != CALL_TYPE or claims["kind"] != kind:
+            return None
+        return uuid.UUID(claims["call"])
+    except (jwt.InvalidTokenError, KeyError, ValueError):
+        return None

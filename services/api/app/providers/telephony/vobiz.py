@@ -99,6 +99,38 @@ class VobizTelephony(TelephonyProvider, NumberStore):
             if response.status_code != 404:
                 response.raise_for_status()
 
+    async def ensure_application(self, name: str, answer_url: str, hangup_url: str) -> str:
+        """A voice application: Vobiz fetches its answer URL for every call on a number attached to
+        it, and tells its hangup URL when the call ends (docs: /applications/create-application)."""
+        body = {
+            "app_name": name,
+            "answer_url": answer_url,
+            "answer_method": "POST",
+            "hangup_url": hangup_url,
+            "hangup_method": "POST",
+        }
+        async with self._client() as client:
+            response = await client.post("/Application/", json=body)
+            response.raise_for_status()
+            return str(response.json()["app_id"])
+
+    async def route_number(self, e164: str, application_id: str) -> None:
+        """Attach the number to the application; attaching again overwrites (docs:
+        /applications/attach-number)."""
+        async with self._client() as client:
+            response = await client.post(
+                f"/numbers/{e164.replace('+', '%2B')}/application",
+                json={"application_id": application_id},
+            )
+            response.raise_for_status()
+
+    async def transfer(self, call_uuid: str, instructions_url: str) -> None:
+        """Run new instructions on the caller's leg of a live call: 202 when accepted, 404 if the
+        call is not in progress (docs: /call/transfer-call)."""
+        body = {"legs": "aleg", "aleg_url": instructions_url, "aleg_method": "POST"}
+        async with self._client() as client:
+            (await client.post(f"/Call/{call_uuid}/", json=body)).raise_for_status()
+
     # --- Number store (docs: https://www.skills.sh/vobiz-ai/agent-skills/vobiz-phone-numbers) ----
     # Inventory: GET /inventory/numbers?country&search&page&per_page (max 100). Buying debits the
     # carrier balance by setup + monthly fee: POST /numbers/purchase-from-inventory. Releasing is
