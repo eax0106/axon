@@ -130,6 +130,11 @@ class LLMProvider(Provider):
         """One chat completion; with `json_output` the reply is a JSON document."""
 
 
+class FileUnreadError(Exception):
+    """The model did not give back everything in the file (the reply was cut off or blocked), so
+    what it did return must not be used: a price cut in the middle is a wrong price."""
+
+
 class FileReader(ABC):
     """What a model offers beyond chat: reading a photo or a PDF. A mixin for the LLM adapter of
     a vendor whose model takes files."""
@@ -138,7 +143,8 @@ class FileReader(ABC):
 
     @abstractmethod
     async def read_file(self, data: bytes, mime: str, instruction: str) -> str:
-        """Follow `instruction` about the image or PDF in `data`; returns the model's text."""
+        """Follow `instruction` about the image or PDF in `data`; returns the model's whole text,
+        or raises FileUnreadError."""
 
 
 class EmbeddingProvider(Provider):

@@ -84,6 +84,32 @@ def test_markdown_csv_pdf_and_photos_are_read(api: TestClient, teaching: Vendor)
     assert len(api.get(f"/employees/{employee}/training", headers=owner).json()["documents"]) == 4
 
 
+def test_a_csv_under_the_character_limit_is_not_refused_for_too_many_passages(
+    api: TestClient, teaching: Vendor, migrated_url: str
+) -> None:
+    owner = signup(api)
+    employee = hire(api, owner)
+    rows = "\n".join(f"{n},{'x' * 350}" for n in range(160))  # about 58,000 characters
+    assert 55_000 < len(rows) < 60_000
+    assert upload(api, owner, employee, rows.encode(), "text/csv").status_code == 201
+    assert sql(migrated_url, "SELECT count(*) FROM knowledge_chunks") > 120
+
+
+def test_a_pdf_or_photo_read_only_in_part_stores_nothing(
+    api: TestClient, teaching: Vendor, migrated_url: str
+) -> None:
+    owner = signup(api)
+    employee = hire(api, owner)
+    teaching.file_text = "Tea 20\nCoffee 3"  # "Coffee 30" was cut off
+    teaching.finish = "MAX_TOKENS"
+    for mime, raw in (("application/pdf", b"%PDF-1.7 x"), ("image/jpeg", b"\xff\xd8\xff")):
+        response = upload(api, owner, employee, raw, mime)
+        assert response.status_code == 422, mime
+        assert "whole file" in response.json()["detail"]
+    assert sql(migrated_url, "SELECT count(*) FROM knowledge_docs") == 0
+    assert sql(migrated_url, "SELECT count(*) FROM knowledge_chunks") == 0
+
+
 def test_what_cannot_be_used_is_refused_and_stores_nothing(
     api: TestClient, teaching: Vendor, migrated_url: str
 ) -> None:

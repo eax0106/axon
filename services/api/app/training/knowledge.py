@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.employees.compiler import Knowledge
+from app.employees.compiler import Knowledge, printable
 from app.models import Employee, KnowledgeDoc, KnowledgeItem, KnowledgeKind
 from app.providers.base import EmbeddingProvider, ProviderKind
 from app.providers.registry import require
@@ -26,8 +26,7 @@ LIMITS = {KnowledgeKind.FACT: MAX_FACTS, KnowledgeKind.RULE: MAX_RULES}
 
 def clean_text(value: str) -> str:
     """One line of printable text: a taught item is never a heading, a list or hidden text."""
-    printable = "".join(c if unicodedata.category(c)[0] != "C" else " " for c in value)
-    return " ".join(printable.split())
+    return " ".join(printable(value).split())
 
 
 def _key(kind: KnowledgeKind, value: str) -> tuple[KnowledgeKind, str]:

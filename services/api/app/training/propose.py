@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 from app.employees.ai import ROLE, ask, llm
-from app.providers.base import FileReader, ProviderKind, ProviderNotConfiguredError
+from app.providers.base import FileReader, FileUnreadError, ProviderKind, ProviderNotConfiguredError
 from app.training.knowledge import MAX_ITEM, NewItem, clean_text
 
 MAX_PROPOSED = 30
@@ -58,7 +58,13 @@ def file_reader() -> FileReader:
 
 async def text_of(data: bytes, mime: str) -> str:
     """The text in a photo or PDF, read by the model."""
-    text = clean_text_keep_lines(await file_reader().read_file(data, mime, READ_FILE))
+    try:
+        read = await file_reader().read_file(data, mime, READ_FILE)
+    except FileUnreadError as exc:
+        raise HTTPException(
+            422, "the whole file could not be read: send a shorter file or split it"
+        ) from exc
+    text = clean_text_keep_lines(read)
     if not text or text.upper() == "NONE":
         raise HTTPException(422, "no readable text found in that file")
     return text

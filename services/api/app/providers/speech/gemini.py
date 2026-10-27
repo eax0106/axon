@@ -5,7 +5,13 @@ import math
 import os
 from typing import Any, ClassVar
 
-from app.providers.base import ChatMessage, EmbeddingProvider, FileReader, LLMProvider
+from app.providers.base import (
+    ChatMessage,
+    EmbeddingProvider,
+    FileReader,
+    FileUnreadError,
+    LLMProvider,
+)
 from app.providers.speech.common import VendorHealth
 
 BASE = "https://generativelanguage.googleapis.com/v1beta"
@@ -74,8 +80,10 @@ class GeminiLLM(VendorHealth, LLMProvider, FileReader):
                 f"{BASE}/models/{model()}:generateContent", headers=self.headers(), json=body
             )
             response.raise_for_status()
-            parts = response.json()["candidates"][0]["content"]["parts"]
-            return "".join(str(p.get("text", "")) for p in parts)
+            candidate = response.json()["candidates"][0]
+            if candidate.get("finishReason") != "STOP":  # MAX_TOKENS, SAFETY, ...: only part of it
+                raise FileUnreadError(f"reading stopped early: {candidate.get('finishReason')}")
+            return "".join(str(p.get("text", "")) for p in candidate["content"]["parts"])
 
 
 def embedding_model() -> str:

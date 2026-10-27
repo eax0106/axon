@@ -35,21 +35,21 @@ router = APIRouter()
 MAX_FILE_BYTES = 8_000_000  # a phone photo or a PDF
 MAX_TEXT_BYTES = 200_000
 MAX_TEACH_CHARS = 6000
-MAX_DOC_CHARS, MAX_CHUNKS = 60_000, 120
+MAX_DOC_CHARS, MAX_CHUNKS = 60_000, 200  # 60,000 characters in lines of 301+ is under 200
 TEXT_TYPES = {"text/plain", "text/markdown", "text/csv"}
 FILE_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
 PHOTO_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 
 async def body_of(request: Request, limit: int) -> bytes:
-    data = b""
+    data = bytearray()
     async for part in request.stream():
         data += part
         if len(data) > limit:
             raise HTTPException(413, f"send up to {limit} bytes")
     if not data:
         raise HTTPException(422, "nothing in the request body")
-    return data
+    return bytes(data)
 
 
 def content_type(request: Request) -> str:

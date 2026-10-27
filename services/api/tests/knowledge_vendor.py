@@ -35,6 +35,7 @@ class Vendor:
     def __init__(self) -> None:
         self.chat = '{"items": []}'
         self.file_text = "NONE"
+        self.finish = "STOP"  # "MAX_TOKENS" is a reply the model cut short
         self.heard = "  we close at six  "
         self.status = 200
         self.embed_status = 200
@@ -55,7 +56,8 @@ class Vendor:
         sent = json.loads(request.content)
         reading = any("inlineData" in p for p in sent["contents"][0]["parts"])
         text = self.file_text if reading else self.chat
-        payload = {"candidates": [{"content": {"role": "model", "parts": [{"text": text}]}}]}
+        content = {"role": "model", "parts": [{"text": text}]}
+        payload = {"candidates": [{"content": content, "finishReason": self.finish}]}
         return httpx.Response(self.status, json=payload)
 
     def sent(self, suffix: str) -> list[dict[str, Any]]:

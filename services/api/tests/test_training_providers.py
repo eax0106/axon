@@ -8,7 +8,7 @@ import math
 import httpx
 import pytest
 
-from app.providers.base import EmbeddingProvider, FileReader, ProviderKind
+from app.providers.base import EmbeddingProvider, FileReader, FileUnreadError, ProviderKind
 from app.providers.registry import ADAPTERS, VENDOR_KEYS, report_all, require
 from app.providers.speech.gemini import EMBEDDING_DIMENSIONS, GeminiEmbedding, GeminiLLM, unit
 
@@ -108,7 +108,8 @@ def test_a_file_is_sent_inline_with_the_instruction(monkeypatch: pytest.MonkeyPa
     def answer(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         parts = [{"text": "Tea 20"}, {"text": "\nCoffee 30"}]
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": parts}}]})
+        candidate = {"content": {"parts": parts}, "finishReason": "STOP"}
+        return httpx.Response(200, json={"candidates": [candidate]})
 
     reader = GeminiLLM(httpx.MockTransport(answer))
     raw = b"%PDF-1.7"
@@ -125,6 +126,23 @@ def test_a_file_is_sent_inline_with_the_instruction(monkeypatch: pytest.MonkeyPa
         },
         {"text": "Write it out."},
     ]
+
+
+def test_a_reply_that_stopped_early_is_not_returned_as_the_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "k-1")
+
+    def cut_short(request: httpx.Request) -> httpx.Response:
+        candidate = {
+            "content": {"parts": [{"text": "Tea 20\nCoffee 3"}]},
+            "finishReason": "MAX_TOKENS",
+        }
+        return httpx.Response(200, json={"candidates": [candidate]})
+
+    reader = GeminiLLM(httpx.MockTransport(cut_short))
+    with pytest.raises(FileUnreadError, match="MAX_TOKENS"):
+        asyncio.run(reader.read_file(b"%PDF-1.7", "application/pdf", "Write it out."))
 
 
 def test_the_registry_knows_the_embedding_provider(monkeypatch: pytest.MonkeyPatch) -> None:

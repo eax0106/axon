@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from .conftest import sql
 from .helpers import seed, signup
 from .knowledge_vendor import Vendor, hire
 
@@ -160,6 +161,36 @@ def test_teaching_by_photo(api: TestClient, teaching: Vendor) -> None:
     assert api.post(path, content=bytes(8_000_001), headers=png).status_code == 413
     teaching.file_text = "NONE"
     assert api.post(path, content=b"\x89PNG", headers=png).status_code == 422
+
+
+def test_a_photo_read_only_in_part_is_not_taught(
+    api: TestClient, teaching: Vendor, migrated_url: str
+) -> None:
+    owner = signup(api)
+    employee = hire(api, owner)
+    teaching.file_text = "Tea 20\nCoffee 3"  # the model stopped before "Coffee 30" was done
+    teaching.finish = "MAX_TOKENS"
+    response = api.post(
+        f"/employees/{employee}/training/propose-photo",
+        content=b"\x89PNGdata",
+        headers={**owner, "Content-Type": "image/png"},
+    )
+    assert response.status_code == 422
+    assert "whole file" in response.json()["detail"]
+    assert teaching.sent(":generateContent")[-1]["contents"][0]["parts"][0].get("inlineData")
+    assert sql(migrated_url, "SELECT count(*) FROM knowledge_items") == 0
+
+
+def test_telugu_and_hindi_words_keep_their_joiners(api: TestClient) -> None:
+    owner = signup(api)
+    employee = hire(api, owner)
+    telugu, hindi = "సైన్\u200cబోర్డు ధర 500", "क्\u200dष मंत्र"
+    items = [{"kind": "fact", "text": telugu}, {"kind": "rule", "text": hindi}]
+    saved = api.post(f"/employees/{employee}/training/items", json={"items": items}, headers=owner)
+    assert saved.status_code == 201, saved.text
+    taught = training(api, owner, employee)
+    assert [f["text"] for f in taught["facts"]] == [telugu]
+    assert [r["text"] for r in taught["rules"]] == [hindi]
 
 
 def test_a_photo_needs_a_model_that_can_read_images(

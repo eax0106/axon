@@ -95,11 +95,19 @@ class CallContext:
     notes: tuple[str, ...] = ()
 
 
+JOINERS = "\u200c\u200d"  # zero-width (non-)joiners sit inside Telugu and Hindi words
+
+
+def printable(value: str) -> str:
+    """The text with every control and format character turned into a space, except the joiners
+    that Indic scripts need inside a word (they cannot add a heading or hide anything)."""
+    return "".join(c if unicodedata.category(c)[0] != "C" or c in JOINERS else " " for c in value)
+
+
 def clean_value(value: object) -> str:
     """One line of printable text, bounded. Values come from lead sources (webhooks, sheets, ads
     forms), which anyone can write to, so they are never trusted as instructions."""
-    text = "".join(c if unicodedata.category(c)[0] != "C" else " " for c in str(value))
-    return " ".join(text.split())[:MAX_VALUE_LEN]
+    return " ".join(printable(str(value)).split())[:MAX_VALUE_LEN]
 
 
 def render(text: str, values: dict[str, str], declared: list[str]) -> str:
