@@ -16,7 +16,7 @@ Legend: `todo` · `building` · `in review` · `changes` · `merged` · `blocked
 | B5 | Instant channel | Sonnet | merged | [#7](https://github.com/eax0106/axon/pull/7) b9ca988 | 2 review rounds; carry-overs in docs/phases/b5.md |
 | B6 | Post-call + data views | Sonnet | merged | [#8](https://github.com/eax0106/axon/pull/8) f44a952 | 3 review rounds (Indic quote normalisation); carry-overs in docs/phases/b6.md |
 | B7 | Billing + numbers (incl. number types and dialer rule table) | Sonnet | merged | [#9](https://github.com/eax0106/axon/pull/9) 654604b | 2 review rounds (billing stall, unknown purchase result, channels, alert on every spend); carry-overs in docs/phases/b7.md |
-| B8 | Bulk campaigns | Sonnet | todo | | Dialer must also check a free channel (`numbers/channels.py`) |
+| B8 | Bulk campaigns | Sonnet | merged | [#10](https://github.com/eax0106/axon/pull/10) d542e77 | 3 review rounds (callback on a campaign's last call, naive start time, resume of a scheduled campaign); B7 free-channel carry-over done. Waiting on the owner: defaults of 2 calls at once, 2 retries an hour apart, 7-day dedupe, and the consent re-confirm rule (contacts added after consent pause the campaign until it is confirmed again). Details in docs/phases/b8.md |
 | B9 | Inbound | Sonnet | todo | | |
 | B10 | In-call actions | Sonnet | todo | | |
 | B11 | Training + knowledge | Sonnet | todo | | |
