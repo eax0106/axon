@@ -236,7 +236,13 @@ async def callback(session: AsyncSession, call: Call, lead: Lead, asked_for: dat
         return
     if campaign.status is CampaignStatus.CANCELED:
         return
+    if campaign.status is CampaignStatus.SCHEDULED and campaign.scheduled_at is not None:
+        asked_for = max(asked_for, campaign.scheduled_at)  # a repeating campaign serves it then
     at = campaign_settings.next_open(asked_for, campaign_settings.of(campaign.settings))
+    if campaign.status is CampaignStatus.COMPLETED:
+        # The last call ended before its analysis did; the caller asked for this call, so the
+        # campaign is open again until it is made.
+        campaign.status, campaign.completed_at = CampaignStatus.RUNNING, None
     contact.status, contact.attempts, contact.reason = ContactStatus.CALLBACK, 0, None
     contact.next_attempt_at = at
     session.add(

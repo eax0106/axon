@@ -53,6 +53,8 @@ def test_the_call_is_a_bulk_call_of_the_campaign_with_its_lead_and_number(
         json=[{"phone": "9876543299", "name": "Ravi"}],
         headers=owner,
     )
+    api.post(f"/campaigns/{campaign}/consent", json={"confirm": True}, headers=owner)
+    api.post(f"/campaigns/{campaign}/resume", headers=owner)  # added contacts held it until now
     tick(migrated_url, adapter, NOW)
     row = sql(
         migrated_url,
@@ -402,6 +404,30 @@ def test_a_refused_dial_is_a_failed_attempt_and_an_unknown_one_is_never_retried(
         migrated_url, adapter, NOW + timedelta(days=2)
     )  # the first contact's retry, not the second
     assert contact_rows(migrated_url)[1][1] == "exhausted"  # never called again on a guess
+
+
+def test_a_repeating_campaign_keeps_holding_a_contact_whose_call_nobody_can_account_for(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    make_campaign(api, owner, employee, LOCAL[:2], repeat="daily", retries=0, concurrency=1)
+    sql(migrated_url, "UPDATE campaigns SET started_at = :t", {"t": NOW})
+    fake.timeout_next = True  # the first dial may or may not have been placed
+    assert [p.outcome for p in tick(migrated_url, adapter, NOW)] == ["held"]
+    tick(migrated_url, adapter, NOW + timedelta(seconds=3))
+    end_call(
+        migrated_url,
+        fake,
+        adapter,
+        open_calls(migrated_url)[0],
+        NOW + timedelta(seconds=40),
+        answered=True,
+    )
+    tick(migrated_url, adapter, NOW + timedelta(seconds=50))  # the run is over; it is set up again
+    held, redone = contact_rows(migrated_url)[0][1], contact_rows(migrated_url)[1][1]
+    assert held == "exhausted" and redone == "pending"
+    assert "nobody knows" in str(contact_rows(migrated_url)[0][4])
 
 
 def test_a_scheduled_campaign_starts_when_its_time_comes(

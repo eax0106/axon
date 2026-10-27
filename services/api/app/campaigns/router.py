@@ -3,11 +3,12 @@ adding contacts (CSV, paste, manual, saved list), the exclusion list, and start,
 cancel. The live panel, export, analytics and capacity are in `app.campaigns.panel`."""
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,15 +91,24 @@ class CampaignOut(BaseModel):
     consent_given: bool
 
 
-async def out(session: AsyncSession, campaign: Campaign) -> CampaignOut:
+async def consent_current(session: AsyncSession, campaign_id: uuid.UUID) -> bool:
+    """The owner has confirmed the list as it stands: no contact was added after the last
+    confirmation, so nobody is called under consent given before they were on the list."""
     given = await session.scalar(
-        select(ConsentAttestation.id)
-        .where(
+        select(func.max(ConsentAttestation.created_at)).where(
             ConsentAttestation.scope == ConsentScope.CAMPAIGN,
-            ConsentAttestation.subject_id == campaign.id,
+            ConsentAttestation.subject_id == campaign_id,
         )
-        .limit(1)
     )
+    newest = await session.scalar(
+        select(func.max(CampaignContact.created_at)).where(
+            CampaignContact.campaign_id == campaign_id
+        )
+    )
+    return given is not None and (newest is None or newest <= given)
+
+
+async def out(session: AsyncSession, campaign: Campaign) -> CampaignOut:
     return CampaignOut(
         id=campaign.id,
         employee_id=campaign.employee_id,
@@ -112,7 +122,7 @@ async def out(session: AsyncSession, campaign: Campaign) -> CampaignOut:
         note=campaign.note,
         created_at=campaign.created_at,
         contacts=await counts(session, campaign.id),
-        consent_given=given is not None,
+        consent_given=await consent_current(session, campaign.id),
     )
 
 
@@ -238,7 +248,9 @@ async def get_consent(
 
 
 class StartBody(BaseModel):
-    start_at: datetime | None = Field(default=None, description="Start later; omit to start now")
+    start_at: AwareDatetime | None = Field(
+        default=None, description="Start later, with a time zone; omit to start now"
+    )
 
 
 @router.post("/{campaign_id}/start")
@@ -321,6 +333,10 @@ async def resume(campaign_id: uuid.UUID, user: CurrentUser, session: Session) ->
     campaign = await _transition(
         session, user, campaign_id, (CampaignStatus.PAUSED,), CampaignStatus.RUNNING, "resumed"
     )
+    if not await consent_current(session, campaign.id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "contacts were added: the owner has to confirm consent again"
+        )
     campaign.note = None
     campaign.started_at = campaign.started_at or datetime.now(UTC)
     await session.commit()
@@ -354,6 +370,17 @@ async def cancel(campaign_id: uuid.UUID, user: CurrentUser, session: Session) ->
 
 def declared_variables(employee: Employee) -> list[str]:
     return list(employees.bundle_of(employee).pre_call_variables)
+
+
+async def hold_for_consent(
+    session: AsyncSession, campaign: Campaign, added: contacts.Added
+) -> contacts.Added:
+    """Contacts added to a campaign that already has its go-ahead are not covered by it: the
+    campaign pauses until the owner confirms the list again."""
+    if added.added and campaign.status in (CampaignStatus.RUNNING, CampaignStatus.SCHEDULED):
+        campaign.status = CampaignStatus.PAUSED
+        campaign.note = "contacts were added: confirm consent again to resume"
+    return added
 
 
 async def open_campaign(
@@ -402,8 +429,11 @@ class ImportBody(BaseModel):
     save_as_list: str | None = Field(default=None, min_length=1, max_length=200)
 
 
-def report_of(added: contacts.Added, parsed: importer.Parsed) -> dict[str, Any]:
+def report_of(
+    added: contacts.Added, parsed: importer.Parsed, empty_variables: Sequence[str] = ()
+) -> dict[str, Any]:
     return {
+        "variables_left_empty": list(empty_variables),
         "added": added.added,
         "already_in_campaign": added.already_in_campaign,
         "skipped_do_not_call": added.skipped_dnc,
@@ -431,12 +461,15 @@ async def import_contacts(
     except importer.MappingError as exc:
         raise HTTPException(422, str(exc)) from exc
     now = datetime.now(UTC)
-    added = await contacts.add_rows(session, campaign, parsed.rows, now)
+    added = await hold_for_consent(
+        session, campaign, await contacts.add_rows(session, campaign, parsed.rows, now)
+    )
     saved = None
     if body.save_as_list:
         saved = await save_list(session, user, body.save_as_list, parsed.rows)
     await session.commit()
-    return {**report_of(added, parsed), "list_id": saved.id if saved else None}
+    empty = declared_variables(employee) if body.format == "paste" else []
+    return {**report_of(added, parsed, empty), "list_id": saved.id if saved else None}
 
 
 class ContactIn(BaseModel):
@@ -460,7 +493,9 @@ async def add_manual(
     except importer.MappingError as exc:
         raise HTTPException(422, str(exc)) from exc
     unique = list({r.phone: r for r in rows}.values())
-    added = await contacts.add_rows(session, campaign, unique, datetime.now(UTC))
+    added = await hold_for_consent(
+        session, campaign, await contacts.add_rows(session, campaign, unique, datetime.now(UTC))
+    )
     await session.commit()
     return report_of(added, importer.Parsed(rows=unique, duplicates=len(rows) - len(unique)))
 
@@ -486,7 +521,9 @@ async def add_from_list(
         importer.Row(i.phone, i.name, {k: v for k, v in i.variables.items() if k in declared})
         for i in items
     ]
-    added = await contacts.add_rows(session, campaign, rows, datetime.now(UTC))
+    added = await hold_for_consent(
+        session, campaign, await contacts.add_rows(session, campaign, rows, datetime.now(UTC))
+    )
     await session.commit()
     return report_of(added, importer.Parsed(rows=rows))
 

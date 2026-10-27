@@ -98,6 +98,49 @@ def test_a_callback_the_contact_asked_for_is_called_at_that_time_inside_the_hour
     assert contact_rows(migrated_url)[0][1:3] == ("calling", 1)
 
 
+def test_a_callback_asked_for_on_the_last_call_reopens_the_finished_campaign(
+    api: TestClient,
+    migrated_url: str,
+    carrier: tuple[Carrier, VobizTelephony],
+    gemini: Gemini,
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = answered_call(api, migrated_url, adapter, fake, employee, owner)
+    # The worker ticks every few seconds; the analysis runs later. Nothing is left to call, so the
+    # campaign is complete before the caller's request is read.
+    tick(migrated_url, adapter, NOW + timedelta(minutes=1))
+    assert api.get(f"/campaigns/{campaign}", headers=owner).json()["status"] == "completed"
+    analyse(migrated_url)
+    found = api.get(f"/campaigns/{campaign}", headers=owner).json()
+    assert found["status"] == "running" and found["completed_at"] is None
+    when = contact_rows(migrated_url)[0][3]
+    assert when == datetime(2026, 11, 3, 12, 30, tzinfo=UTC)
+    assert [p.outcome for p in tick(migrated_url, adapter, when)] == ["dialed"]
+    assert contact_rows(migrated_url)[0][1:3] == ("calling", 1)
+
+
+def test_a_callback_asked_for_in_a_repeating_campaign_waits_for_its_next_run(
+    api: TestClient,
+    migrated_url: str,
+    carrier: tuple[Carrier, VobizTelephony],
+    gemini: Gemini,
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = answered_call(api, migrated_url, adapter, fake, employee, owner, repeat="daily")
+    sql(migrated_url, "UPDATE campaigns SET started_at = :t", {"t": NOW})
+    tick(migrated_url, adapter, NOW + timedelta(minutes=1))  # the run is over: next one tomorrow
+    next_run = datetime.fromisoformat(
+        api.get(f"/campaigns/{campaign}", headers=owner).json()["scheduled_at"]
+    )
+    analyse(migrated_url)
+    when = contact_rows(migrated_url)[0][3]
+    assert when is not None and when >= next_run  # the owner is told the time it will really happen
+    notes = api.get("/notifications", headers=owner).json()["items"]
+    assert any(n["kind"] == "callback_scheduled" for n in notes)
+
+
 def test_a_callback_asked_for_at_night_waits_for_the_morning(
     api: TestClient,
     migrated_url: str,

@@ -319,6 +319,8 @@ async def _rearm(
         .where(
             CampaignContact.campaign_id == campaign.id,
             CampaignContact.status.in_((ContactStatus.DONE, ContactStatus.EXHAUSTED)),
+            # A call nobody knows the result of stays held until a person has checked it.
+            CampaignContact.reason.is_distinct_from(contacts.UNKNOWN_OUTCOME),
         )
         .values(
             status=ContactStatus.PENDING,

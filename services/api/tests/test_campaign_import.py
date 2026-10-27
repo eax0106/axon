@@ -112,6 +112,19 @@ def test_bad_numbers_and_repeats_are_reported_not_hidden(
     ]
 
 
+def test_a_paste_says_which_script_variables_it_left_empty(
+    api: TestClient, migrated_url: str
+) -> None:
+    employee, owner = setup_bulk(api, migrated_url, variables=("city",))
+    campaign = make_campaign(api, owner, employee, start=False, consent=False)
+    pasted = api.post(
+        f"/campaigns/{campaign}/contacts/import",
+        json={"format": "paste", "text": "9876543210"},
+        headers=owner,
+    ).json()
+    assert pasted["added"] == 1 and pasted["variables_left_empty"] == ["city"]
+
+
 def test_values_are_one_clean_line_each(api: TestClient, migrated_url: str) -> None:
     employee, owner = setup_bulk(api, migrated_url, variables=("city",))
     campaign = make_campaign(api, owner, employee, start=False, consent=False)

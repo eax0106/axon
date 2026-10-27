@@ -211,3 +211,53 @@ def test_settings_outside_the_limits_are_refused_with_a_422(
         )
         assert made.status_code == 422, bad
     assert api.get("/campaigns", headers=owner).json() == []
+
+
+def test_a_start_time_without_a_time_zone_is_refused_not_a_server_error(
+    api: TestClient, migrated_url: str
+) -> None:
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, ["9876543210"], start=False)
+    naive = api.post(
+        f"/campaigns/{campaign}/start", json={"start_at": "2030-01-01T10:00:00"}, headers=owner
+    )
+    assert naive.status_code == 422
+    assert get(api, owner, campaign)["status"] == "draft"
+    aware = api.post(
+        f"/campaigns/{campaign}/start",
+        json={"start_at": "2030-01-01T10:00:00+05:30"},
+        headers=owner,
+    )
+    assert aware.status_code == 200 and aware.json()["status"] == "scheduled"
+
+
+def test_contacts_added_after_the_consent_need_the_consent_again(
+    api: TestClient, migrated_url: str
+) -> None:
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, ["9876543210"], start=False, consent=False)
+    api.post(f"/campaigns/{campaign}/consent", json={"confirm": True}, headers=owner)
+    api.post(
+        f"/campaigns/{campaign}/contacts", json=[{"phone": "9876543211"}], headers=owner
+    )  # added after the owner agreed
+    assert get(api, owner, campaign)["consent_given"] is False
+    refused = api.post(f"/campaigns/{campaign}/start", headers=owner)
+    assert refused.status_code == 409 and "consent" in refused.json()["detail"]
+    api.post(f"/campaigns/{campaign}/consent", json={"confirm": True}, headers=owner)
+    assert api.post(f"/campaigns/{campaign}/start", headers=owner).status_code == 200
+    # The same for a campaign that is already calling: it pauses until the owner agrees again.
+    added = api.post(
+        f"/campaigns/{campaign}/contacts", json=[{"phone": "9876543212"}], headers=owner
+    )
+    assert added.json()["added"] == 1
+    held = get(api, owner, campaign)
+    assert held["status"] == "paused" and "consent" in str(held["note"])
+    assert api.post(f"/campaigns/{campaign}/resume", headers=owner).status_code == 409
+    assert get(api, owner, campaign)["status"] == "paused"
+    api.post(f"/campaigns/{campaign}/consent", json={"confirm": True}, headers=owner)
+    assert api.post(f"/campaigns/{campaign}/resume", headers=owner).json()["status"] == "running"
+    # Nothing new was added, so nothing is held.
+    again = api.post(
+        f"/campaigns/{campaign}/contacts", json=[{"phone": "9876543212"}], headers=owner
+    )
+    assert again.json()["added"] == 0 and get(api, owner, campaign)["status"] == "running"
