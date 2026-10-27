@@ -42,10 +42,18 @@ def url_problem(url: str) -> str | None:
     return None
 
 
+# Forms that carry an IPv4 address inside an IPv6 one; a NAT64 gateway forwards the first.
+NAT64 = ipaddress.ip_network("64:ff9b::/96")
+IPV4_COMPATIBLE = ipaddress.ip_network("::/96")
+
+
 def _safe(address: str) -> bool:
     ip = ipaddress.ip_address(address)
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-        ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        elif ip in NAT64 or ip in IPV4_COMPATIBLE:
+            ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
     return ip.is_global and not ip.is_multicast
 
 

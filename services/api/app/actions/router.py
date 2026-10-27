@@ -118,7 +118,7 @@ async def put_actions(
     """Replace the draft actions. They reach live calls only after publish, like the script."""
     employee = await load(session, user, employee_id)
     kept = await service.accept(
-        session, user.account_id, list(body.actions), employees.bundle_of(employee).actions
+        session, user, list(body.actions), employees.bundle_of(employee).actions
     )
     try:
         bundle = employees.bundle_of(employee).model_copy(update={"actions": kept})

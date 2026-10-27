@@ -304,3 +304,29 @@ def test_the_ai_endpoints_share_a_per_account_hourly_budget(
     assert len(vendor.requests) == sent
     vendor.text = '{"questions": ["Which cities?"]}'
     assert api.post("/ai/brief-questions", json=BRIEF, headers=other).status_code == 200
+
+
+def test_edit_flow_keeps_the_actions_and_never_sends_their_secrets_to_the_model(
+    api: TestClient, vendor: Vendor
+) -> None:
+    from app.actions.schema import MASK
+
+    from .actions_support import http_action, put_actions
+
+    secret = "tok-very-secret-123"  # noqa: S105 - a test value
+    owner = signup(api)
+    employee = hire(api, owner)
+    action = http_action(auth={"kind": "bearer", "secret": secret})
+    assert put_actions(api, owner, employee, action).status_code == 200
+    vendor.text = json.dumps({"welcome_message": "new", "sections": []})
+    proposal = api.post(
+        f"/employees/{employee}/ai/edit-flow", json={"instruction": "x"}, headers=owner
+    )
+    assert secret not in vendor.requests[-1].content.decode()
+    body = proposal.json()
+    assert [a["name"] for a in body["actions"]] == ["order_status"]
+    assert body["actions"][0]["auth"]["secret"] == MASK
+    # Saving the proposal as the client does keeps the action and its stored secret.
+    assert api.put(f"/employees/{employee}/script", json=body, headers=owner).status_code == 200
+    kept = api.get(f"/employees/{employee}/actions", headers=owner).json()["actions"]
+    assert [a["name"] for a in kept] == ["order_status"]

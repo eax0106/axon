@@ -72,11 +72,12 @@ def run(
     client: TestClient,
     owner: dict[str, str],
     calls: list[tuple[str, dict[str, Any]]],
+    call_id: str | None = CALL,
     **changes: Any,
 ) -> list[dict[str, Any]]:
     return use(
         url, client, owner, [calendar_action(**changes)], calls,
-        call_id=CALL, party_phone="+919876543210", now=lambda: MONDAY_9AM,
+        call_id=call_id, party_phone="+919876543210", now=lambda: MONDAY_9AM,
     )  # fmt: skip
 
 
@@ -118,6 +119,18 @@ def test_the_same_booking_made_twice_on_one_call_is_one_event(
     first, second = run(migrated_url, client, owner, calls)
     assert first["ok"] and "already" not in first
     assert second["ok"] and second["already"] is True and len(google.events) == 1
+
+
+def test_calls_without_an_id_never_share_event_ids(
+    actions_api: tuple[TestClient, Google], migrated_url: str
+) -> None:
+    client, google, owner = connected(actions_api)
+    args = {"start": "2026-11-03 11:30", "name": "Asha"}
+    [first] = run(migrated_url, client, owner, [("visit_book", args)], call_id=None)
+    used = set(google.events)
+    google.events.clear()  # the visit was cancelled; Google still refuses its id
+    [second] = run(migrated_url, client, owner, [("visit_book", args)], call_id=None)
+    assert first["ok"] and second["ok"] and used.isdisjoint(google.events)
 
 
 def test_a_time_that_was_free_but_is_taken_by_the_time_of_booking_is_refused(

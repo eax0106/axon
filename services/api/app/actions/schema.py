@@ -8,6 +8,7 @@ sending MASK back keeps the stored secret.
 
 import re
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -244,7 +245,8 @@ def mask(actions: list[Action]) -> list[Action]:
 
 def keep_secrets(incoming: list[Action], stored: list[Action]) -> list[Action]:
     """Put back the stored secret wherever the caller sent MASK. A mask with nothing stored under
-    that name is refused: it would save the word MASK as a password."""
+    that name is refused: it would save the word MASK as a password. So is a mask on an action
+    that now points at another host: the secret was given for the old one."""
     old = {a.name: a for a in stored if isinstance(a, HttpApi)}
     kept: list[Action] = []
     for action in incoming:
@@ -252,6 +254,8 @@ def keep_secrets(incoming: list[Action], stored: list[Action]) -> list[Action]:
             before = old.get(action.name)
             if before is None or not before.auth.secret:
                 raise ValueError(f"send the secret for {action.name} again")
+            if urlsplit(action.url).netloc.lower() != urlsplit(before.url).netloc.lower():
+                raise ValueError(f"send the secret for {action.name} again: its host changed")
             action = action.model_copy(
                 update={"auth": action.auth.model_copy(update={"secret": before.auth.secret})}
             )

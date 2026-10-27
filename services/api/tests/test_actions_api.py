@@ -22,6 +22,7 @@ from .actions_support import (
 from .conftest import sql
 from .helpers import account_id, add_member, signup
 
+MASKED = {"kind": "bearer", "secret": MASK}
 SECRET = "tok-very-secret-123"  # noqa: S105 - a test value
 
 
@@ -264,3 +265,44 @@ def test_a_vendor_that_refuses_the_test_is_a_502_with_no_secret_in_it(
         headers=owner,
     )
     assert response.status_code in (500, 502)
+
+
+def test_a_masked_secret_does_not_follow_the_action_to_another_host(
+    api: TestClient, shop: str, migrated_url: str
+) -> None:
+    owner = signup(api)
+    employee = new_employee(api, owner)
+    assert put_actions(api, owner, employee, secret_http()).status_code == 200
+    member = add_member(api, migrated_url, owner)
+    moved = http_action(url="https://attacker.example.in/{order_id}", auth=MASKED)
+    refused = put_actions(api, member, employee, moved)
+    assert refused.status_code == 422 and "host changed" in refused.json()["detail"]
+    # The same host, another path: the secret stays with the action.
+    same_host = secret_http(url=shop + "/other/{order_id}")
+    assert put_actions(api, owner, employee, same_host).status_code == 200
+    again = http_action(url=shop + "/third/{order_id}", auth=MASKED)
+    assert put_actions(api, member, employee, again).status_code == 200
+    api.post(
+        f"/employees/{employee}/actions/order_status/test",
+        json={"args": {"order_id": "1"}},
+        headers=member,
+    )
+    assert Shop.seen[-1]["headers"]["Authorization"] == f"Bearer {SECRET}"
+
+
+def test_only_the_owner_can_change_which_spreadsheet_an_action_uses(
+    actions_api: tuple[TestClient, Google], migrated_url: str
+) -> None:
+    client, _google = actions_api
+    owner = signup(client)
+    connect_google(client, owner)
+    employee = new_employee(client, owner)
+    member = add_member(client, migrated_url, owner)
+    refused = put_actions(client, member, employee, sheet_write())
+    assert refused.status_code == 403 and "owner" in refused.json()["detail"]
+    assert put_actions(client, owner, employee, sheet_write()).status_code == 200
+    # A member can still edit the other actions and leave the sheet action as it is.
+    kept = put_actions(client, member, employee, sheet_write(), http_action())
+    assert kept.status_code == 200
+    dropped = put_actions(client, member, employee, http_action())
+    assert dropped.status_code == 403

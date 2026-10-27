@@ -18,6 +18,8 @@ PUBLIC = "93.184.216.34"
         "127.0.0.1", "10.1.2.3", "172.16.0.9", "192.168.1.1", "169.254.169.254", "100.64.0.1",
         "0.0.0.0",  # noqa: S104 - the address to refuse, not one we bind
         "::1", "fe80::1", "fd00::1", "::ffff:127.0.0.1", "224.0.0.1",
+        # IPv4 inside IPv6: a NAT64 gateway or an IPv4-compatible form reaches the inside address
+        "64:ff9b::a9fe:a9fe", "64:ff9b::a00:1", "64:ff9b::7f00:1", "::a9fe:a9fe", "::a00:1",
     ],
 )  # fmt: skip
 def test_an_address_inside_a_network_is_never_allowed(address: str) -> None:
@@ -27,6 +29,10 @@ def test_an_address_inside_a_network_is_never_allowed(address: str) -> None:
 
 def test_a_public_address_is_allowed_as_it_is() -> None:
     assert asyncio.run(net.resolve(PUBLIC, 443)) == PUBLIC
+
+
+def test_a_public_address_behind_nat64_is_still_public() -> None:
+    assert asyncio.run(net.resolve("64:ff9b::5db8:d822", 443)) == "64:ff9b::5db8:d822"
 
 
 @pytest.mark.parametrize(

@@ -100,17 +100,17 @@ Scope: In-call actions to Outpero parity, all opt-in per employee: a tool framew
   CWD: ../../..
   EVIDENCE: automatic-evidence=v1; definition-sha256=7d7232dc025b6baa08c1416c777fa0756d446cb07df1d364cfe425e89588209b; exit=0; EXPECT=matched; output-sha256=55358d0954c1439b2c00472756d3e5628fb525c49d336bc765e86f736985391f; output-bytes=194; shell=/bin/sh; cwd=/home/claude/axon; path=7f4fb4b02918/15 entries
 
-- [ ] G16: the CI compose job on the PR head passes (it starts the stack, migrates to the new head and prints COMPOSE HEALTHY); this sandbox has no Docker daemon, so CI is the authority
+- [x] G16: the CI compose job on the PR head passes (it starts the stack, migrates to the new head and prints COMPOSE HEALTHY); this sandbox has no Docker daemon, so CI is the authority
   CHECK: gh api repos/eax0106/axon/commits/phase/b10-in-call-actions/check-runs --jq "[.check_runs[] | select(.conclusion == \"success\" and (.name | test(\"compose\"))) | .name] | join(\",\")"
   EXPECT: compose
   CWD: ../../..
-  EVIDENCE: pending
+  EVIDENCE: automatic-evidence=v1; definition-sha256=aca38fd3406ad45c87c81c8c8d585069d8bfcc2c145ffd3ba4a79f048e9f1418; exit=0; EXPECT=matched; output-sha256=ef2f853e994eb62355038198e16dbbcf9298e508fab4885373d87cf891ddde7e; output-bytes=24; shell=/bin/sh; cwd=/home/claude/axon; path=7f4fb4b02918/15 entries
 
-- [ ] G17: CI on the PR head passes the test jobs on ubuntu, macos and windows
+- [x] G17: CI on the PR head passes the test jobs on ubuntu, macos and windows
   CHECK: gh api repos/eax0106/axon/commits/phase/b10-in-call-actions/check-runs --jq "[.check_runs[] | select(.conclusion == \"success\") | .name] | join(\",\")"
   EXPECT: /^(?=.*ubuntu)(?=.*macos)(?=.*windows)/
   CWD: ../../..
-  EVIDENCE: pending
+  EVIDENCE: automatic-evidence=v1; definition-sha256=ff62e433a9dcd2c009a387ec3e7679efe3d58fa2977d3fb3cbb7066d275cd5a2; exit=0; EXPECT=matched; output-sha256=3f55df88ef677b7366e791319af47a04a534c8d303fbd2248345a5e5e728c939; output-bytes=90; shell=/bin/sh; cwd=/home/claude/axon; path=7f4fb4b02918/15 entries
 
 - [x] G18: docs/phases/b10.md exists with a Gate results section
   CHECK: node -e "const fs=require('fs');const t=fs.readFileSync('docs/phases/b10.md','utf8');if(!t.includes('Gate results'))process.exit(1);console.log('B10-DOC-OK')"

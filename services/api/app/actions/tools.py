@@ -121,6 +121,8 @@ def _http(action: HttpApi) -> list[Tool]:
 
 
 def _calendar(action: CalendarBooking, ctx: ActionContext) -> list[Tool]:
+    # Without a call id each tool set gets its own key, so two calls never share event ids.
+    call_key = str(ctx.call_id or uuid.uuid4())
     booked: set[datetime] = set()  # the same time asked for twice in one call is one event
 
     async def parts() -> tuple[CalendarProvider, str] | dict[str, Any]:
@@ -168,7 +170,7 @@ def _calendar(action: CalendarBooking, ctx: ActionContext) -> list[Tool]:
         )
         result = await booking.book(
             action, *got, start, ctx.now(),
-            call_key=str(ctx.call_id or ""), description=note,
+            call_key=call_key, description=note,
         )  # fmt: skip
         if result["ok"]:
             booked.add(start)

@@ -38,5 +38,13 @@ class InteraktWhatsApp(WhatsAppProvider):
         headers = {"Authorization": f"Basic {os.environ['INTERAKT_API_KEY']}"}
         async with httpx.AsyncClient(timeout=TIMEOUT_S, transport=self._transport) as client:
             response = await client.post(URL, json=body, headers=headers)
-        if response.status_code >= 400 or response.json().get("result") is not True:
+        if response.status_code >= 400 or not _accepted(response):
             raise RuntimeError(f"Interakt refused the message ({response.status_code})")
+
+
+def _accepted(response: httpx.Response) -> bool:
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("result") is True

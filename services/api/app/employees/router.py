@@ -259,7 +259,7 @@ async def put_script(
     # does not know about them cannot wipe them.
     kept = stored
     if "actions" in body.model_fields_set:
-        kept = await actions.accept(session, user.account_id, list(body.actions), stored)
+        kept = await actions.accept(session, user, list(body.actions), stored)
     employee.draft = body.model_copy(update={"actions": kept}).model_dump()
     await session.commit()
     return await out(session, employee)

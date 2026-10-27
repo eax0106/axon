@@ -48,6 +48,15 @@ def test_aisensy_gets_the_documented_request(monkeypatch: pytest.MonkeyPatch) ->
     }
 
 
+def test_interakt_answering_without_json_is_a_refusal_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("INTERAKT_API_KEY", "k")
+    adapter = InteraktWhatsApp(httpx.MockTransport(lambda _r: httpx.Response(200, text="<html>")))
+    with pytest.raises(RuntimeError, match="refused"):
+        asyncio.run(adapter.send_template(PHONE, "t", "en", [], ""))
+
+
 @pytest.mark.parametrize("status", [400, 429, 500])
 def test_a_vendor_refusal_is_raised_not_swallowed(
     status: int, monkeypatch: pytest.MonkeyPatch

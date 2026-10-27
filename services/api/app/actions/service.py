@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.schema import Action, CalendarBooking, SheetRead, SheetWrite, keep_secrets
-from app.models import GoogleConnection
+from app.models import GoogleConnection, Role, User
 from app.providers.google import calendar, sheets
 
 CALENDAR_SCOPE = calendar.SCOPES[0]
@@ -38,11 +38,22 @@ async def missing(session: AsyncSession, account_id: uuid.UUID, actions: list[Ac
     return sorted(s for s in wanted if not have[s])
 
 
+def _sheets_changed(incoming: list[Action], stored: list[Action]) -> bool:
+    before = [a for a in stored if isinstance(a, SheetRead | SheetWrite)]
+    return [a for a in incoming if isinstance(a, SheetRead | SheetWrite)] != before
+
+
 async def accept(
-    session: AsyncSession, account_id: uuid.UUID, incoming: list[Action], stored: list[Action]
+    session: AsyncSession, user: User, incoming: list[Action], stored: list[Action]
 ) -> list[Action]:
     """An edited list of actions as it should be stored: secrets the caller left masked are put
-    back, and an action that needs Google the account has not allowed is refused."""
+    back, an action that needs Google the account has not allowed is refused, and only the owner
+    may point an action at a spreadsheet, since it is read with the owner's Google account."""
+    account_id = user.account_id
+    if user.role != Role.OWNER and _sheets_changed(incoming, stored):
+        raise HTTPException(
+            403, "only the account owner can change which spreadsheet an action uses"
+        )
     try:
         kept = keep_secrets(incoming, stored)
     except ValueError as exc:
