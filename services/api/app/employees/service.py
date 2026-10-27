@@ -8,7 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.employees.lifecycle import Action, next_status
 from app.employees.script import EmployeeSettings, ScriptBundle
-from app.models import Call, Employee, EmployeeStatus, EmployeeVersion
+from app.models import (
+    Call,
+    Employee,
+    EmployeeStatus,
+    EmployeeVersion,
+    KnowledgeDoc,
+    KnowledgeItem,
+    TrainingSuggestion,
+)
 
 KEEP_VERSIONS = 3
 
@@ -108,8 +116,11 @@ async def clear_history(session: AsyncSession, employee: Employee) -> None:
 
 
 async def reset(session: AsyncSession, employee: Employee) -> None:
-    """Start over: wipe the script, every version, the settings and the call history."""
+    """Start over: wipe the script, every version, the settings, what it was taught and the call
+    history."""
     await session.execute(delete(EmployeeVersion).where(EmployeeVersion.employee_id == employee.id))
+    for table in (KnowledgeItem, KnowledgeDoc, TrainingSuggestion):  # passages go with documents
+        await session.execute(delete(table).where(table.employee_id == employee.id))
     await clear_history(session, employee)
     employee.draft = ScriptBundle().model_dump()
     employee.settings = EmployeeSettings().model_dump()

@@ -21,7 +21,7 @@ from app.providers.kyc.vobiz import VobizKyc
 from app.providers.leads.meta_lead_ads import MetaLeadAds
 from app.providers.payments.razorpay import RazorpayPayments
 from app.providers.speech.cartesia import CartesiaTTS
-from app.providers.speech.gemini import GeminiLLM
+from app.providers.speech.gemini import GeminiEmbedding, GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
 from app.providers.speech.smallest import SmallestSTT, SmallestTTS
 from app.providers.storage.r2 import R2Storage
@@ -37,6 +37,7 @@ VENDOR_KEYS: dict[ProviderKind, dict[str, tuple[str, ...]]] = {
     ProviderKind.TELEPHONY: {"vobiz": _VOBIZ},
     ProviderKind.STT: {"sarvam": ("SARVAM_API_KEY",), "smallest": ("SMALLEST_API_KEY",)},
     ProviderKind.LLM: {"gemini": ("GEMINI_API_KEY",), "sarvam": ("SARVAM_API_KEY",)},
+    ProviderKind.EMBEDDING: {"gemini": ("GEMINI_API_KEY",)},
     ProviderKind.TTS: {
         "sarvam": ("SARVAM_API_KEY",),
         "smallest": ("SMALLEST_API_KEY",),
@@ -71,6 +72,7 @@ ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
     (ProviderKind.STT, "sarvam"): SarvamSTT,
     (ProviderKind.STT, "smallest"): SmallestSTT,
     (ProviderKind.LLM, "gemini"): GeminiLLM,
+    (ProviderKind.EMBEDDING, "gemini"): GeminiEmbedding,
     (ProviderKind.LLM, "sarvam"): SarvamLLM,
     (ProviderKind.TTS, "sarvam"): SarvamTTS,
     (ProviderKind.TTS, "smallest"): SmallestTTS,

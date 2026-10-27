@@ -9,7 +9,7 @@ Filled in after the code is built (Track 3). Keys go into `.env` locally or the 
 | 3 | Domain + Cloudflare (DNS, R2, Turnstile) | Public URLs for Vobiz, recordings, signup protection | B2, B6, hosting | Owner, then Claude | todo |
 | 4 | Vobiz: auth id + token, numbers, KYC sub-account access, 140-series availability | All calls, number store | B2, B5, B7–B9 | Owner | todo |
 | 5 | Sarvam API key | Speech-to-text (Saaras), Value voices (Bulbul), optional LLM | B2, B3 | Owner, then Claude | todo |
-| 6 | Gemini API key | LLM | B2–B4, B6, B11 | Owner, then Claude | todo |
+| 6 | Gemini API key | LLM, document embeddings (`gemini-embedding-001`, changeable with `AXON_GEMINI_EMBEDDING_MODEL`) and reading photos and PDFs | B2–B4, B6, B11 | Owner, then Claude | todo |
 | 7 | Smallest API key | Standard voices, backup speech-to-text | B3, B13 | Owner, then Claude | todo |
 | 8 | Cartesia API key | Premium voices | B3 | Owner, then Claude | todo |
 | 9 | Razorpay key id, secret, webhook secret | Credit top-ups | B7 | Owner | todo |
@@ -30,3 +30,4 @@ Filled in after the code is built (Track 3). Keys go into `.env` locally or the 
 | 24 | Resend domain verified and `EMAIL_FROM` on it | Low-balance, grace and release emails | B7 | Owner, then Claude | todo |
 | 25 | Business settings for prices and tax: confirm the launch prices (₹3.5 / ₹5 / ₹7 per minute, ₹0.2 AI fee, ₹649 a month, 50 free credits), the GST rate and service code, and the seller name, GSTIN, address and state in `.env` (`AXON_RATE_*`, `AXON_GST_*`, `AXON_SELLER_*`) | Billing, GST invoices | B7, launch | Owner | todo |
 | 26 | Confirm on a real call that Vobiz reads `<Speak>` XML in `en-IN` for the owner-phone code | Owner phone verification | B7 | Claude | todo |
+| 27 | Training on real accounts: teach a price list by photo and ask the question on a call; upload a real document and tune `MIN_SCORE` in `app/training/knowledge.py` (a first guess of 0.55) so unrelated questions find nothing and related ones do; confirm Gemini's batch embedding body (`taskType`, `outputDimensionality`) with the contract test | Photo teaching, documents, relevance | B11 | Claude | todo |

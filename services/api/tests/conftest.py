@@ -19,9 +19,11 @@ from app.db import Base
 from app.main import app
 from app.providers.kyc.vobiz import VobizKyc
 from app.providers.registry import VENDOR_KEYS
+from app.providers.speech import common
 from app.providers.telephony.vobiz import BASE_URL, VobizTelephony
 from app.settings import get_settings
 
+from .knowledge_vendor import Vendor
 from .vobiz_fake import VobizAccount
 
 ALL_KEYS = sorted(
@@ -242,3 +244,19 @@ def interakt(api: TestClient, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
     adapter = functools.partial(InteraktWhatsApp, httpx.MockTransport(vendor.handler))
     monkeypatch.setitem(ADAPTERS, (ProviderKind.WHATSAPP, "interakt"), adapter)
     yield vendor
+
+
+@pytest.fixture
+def teaching(monkeypatch: pytest.MonkeyPatch) -> Iterator[Vendor]:
+    """Gemini (chat, files, embeddings) and Sarvam speech-to-text with canned answers."""
+    for key in ("GEMINI_API_KEY", "SARVAM_API_KEY"):
+        monkeypatch.setenv(key, "test-key")
+    monkeypatch.setenv("AXON_STT_PROVIDER", "sarvam")
+    fake = Vendor()
+    transport = httpx.MockTransport(fake.handler)
+    monkeypatch.setattr(
+        common.VendorHealth,
+        "client",
+        lambda self, timeout=60.0: httpx.AsyncClient(transport=transport),
+    )
+    yield fake

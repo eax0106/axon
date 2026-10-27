@@ -14,7 +14,7 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [ ] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4 part done: tiers, picker, preview, speed, placeholder avatar, ambience setting and mixer hook; rest: the five licensed ambience loops (WIRING_CHECKLIST #17)
 - [x] Free test call to the owner's phone, browser web call, text chat sandbox — B4: web call and chat sandbox; B7: the phone test call rings only the owner's phone, proved by a one-time code, and goes through the do-not-call list and the dial rule table
 - [x] Lifecycle draft, training, live, paused; live needs a number + switched on + published
-- [ ] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits — B4 part done: script publish gate, voice and capture instant, discard; B10: actions go through the publish gate with the script; rest: training B11, webhooks B12
+- [ ] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits — B4 part done: script publish gate, voice and capture instant, discard; B10: actions go through the publish gate with the script; B11: training applies instantly; rest: webhooks B12
 - [x] Keep the last 3 published versions; restore any
 - [x] Switch channel (clears call history, offers a rewrite); start over (wipes script, training, history)
 - [x] Duplicate employee
@@ -77,9 +77,9 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Every action is opt-in per employee
 
 ## Training and knowledge [B11]
-- [ ] Teach by text, voice or photo; each item becomes a fact or a rule; reviewed before saving
-- [ ] Documents retrieved only when relevant
-- [ ] Struggle detector on real calls, turned into one-tap suggestions quoting the call
+- [x] Teach by text, voice or photo; each item becomes a fact or a rule; reviewed before saving
+- [x] Documents retrieved only when relevant
+- [x] Struggle detector on real calls, turned into one-tap suggestions quoting the call
 
 ## Developer platform [B12]
 - [ ] API keys (create, revoke); public REST API; OpenAPI spec; Postman collection; request log; API status

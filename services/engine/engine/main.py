@@ -28,6 +28,7 @@ from app.main import provider_not_configured
 from app.providers.base import ProviderKind, ProviderNotConfiguredError, TelephonyProvider
 from app.providers.registry import require
 from app.settings import engine_public_url, get_settings
+from app.training.tool import knowledge_tool
 from engine.call import CallSettings, run_call
 from engine.events import redis_sink
 from engine.legs import voice_legs
@@ -109,13 +110,13 @@ async def _setup(
     if plan is None:
         raise _NoPlanError
     legs = voice_legs(plan.language, voice=plan.voice, speed=plan.tts_speed)
+    factory = async_sessionmaker(app_.state.db, expire_on_commit=False)
     context = ActionContext(
-        async_sessionmaker(app_.state.db, expire_on_commit=False),
-        plan.account_id,
-        _call_id(call),
-        plan.party_phone,
-        plan.party_name,
+        factory, plan.account_id, _call_id(call), plan.party_phone, plan.party_name
     )
+    tools = build_tools(plan.actions, context)
+    if plan.has_documents:
+        tools.append(knowledge_tool(factory, plan.employee_id))
     return legs, CallSettings(
         language=plan.language,
         system_prompt=plan.system_prompt,
@@ -124,7 +125,7 @@ async def _setup(
         ambience_volume=plan.ambience_volume,
         opening=plan.opening,
         transfer_to=plan.transfer_to,
-        tools=tuple(build_tools(plan.actions, context)),
+        tools=tuple(tools),
     )
 
 
