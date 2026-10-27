@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.billing.fees import charge_ai_use
 from app.calls import analysis
+from app.campaigns import contacts as campaign_contacts
 from app.employees import service as employees
 from app.instant import rules
 from app.instant.rules import DialerSettings
@@ -202,6 +203,9 @@ async def _add_to_dnc(session: AsyncSession, call: Call, lead: Lead, quote: str 
 async def _schedule_callback(
     session: AsyncSession, call: Call, lead: Lead, employee: Employee, asked_for: datetime
 ) -> None:
+    if call.campaign_id is not None:  # a campaign's contact is called back by its campaign
+        await campaign_contacts.callback(session, call, lead, asked_for)
+        return
     waiting = await session.scalar(
         select(Call.id).where(
             Call.employee_id == employee.id,

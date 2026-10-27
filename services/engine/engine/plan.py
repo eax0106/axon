@@ -6,7 +6,7 @@ from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.employees.runtime import CallPlan, plan_for
-from app.models import Account, Call, CallStatus, Employee, Lead
+from app.models import Account, Call, CallStatus, CampaignContact, Employee, Lead
 
 
 def _uuid(value: str) -> uuid.UUID | None:
@@ -34,8 +34,22 @@ async def load_plan(db: AsyncEngine, employee: str, call: str = "") -> CallPlan 
         lead = (
             await session.get(Lead, record.lead_id) if own and record and record.lead_id else None
         )
-        # What the lead source gave us fills the script's variables (and is fenced as data there).
-        variables = {"name": lead.name or "", **lead.fields} if lead else None
+        contact = (
+            await session.get(CampaignContact, record.contact_id)
+            if own and record and record.contact_id
+            else None
+        )
+        # What the lead source gave us fills the script's variables (and is fenced as data there);
+        # a campaign call takes its contact's row of the uploaded list on top.
+        variables = (
+            {
+                "name": (contact.name if contact and contact.name else lead.name) or "",
+                **lead.fields,
+                **(contact.variables if contact else {}),
+            }
+            if lead
+            else None
+        )
         account = await session.get(Account, row.account_id)
         remembered = lead.memory if lead and account and account.caller_memory else None
         return await plan_for(

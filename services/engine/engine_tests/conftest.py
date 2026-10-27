@@ -1,5 +1,13 @@
 """Engine tests that read employees from a real database reuse the API test fixtures."""
 
-from tests.conftest import db_client, fresh_database, migrated_url, no_keys, server_url
+from tests.conftest import (
+    api,
+    carrier,
+    db_client,
+    fresh_database,
+    migrated_url,
+    no_keys,
+    server_url,
+)
 
-__all__ = ["db_client", "fresh_database", "migrated_url", "no_keys", "server_url"]
+__all__ = ["api", "carrier", "db_client", "fresh_database", "migrated_url", "no_keys", "server_url"]

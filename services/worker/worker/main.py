@@ -1,4 +1,5 @@
-"""Arq worker: the Instant dialer, the post-call analysis and the Sheets lead poller.
+"""Arq worker: the Instant dialer, the campaign scheduler, post-call analysis, billing and the
+Sheets lead poller.
 
 Run: `arq worker.main.WorkerSettings`. Health: `arq --check worker.main.WorkerSettings`.
 Every tick is a plain function of the database and `now` (app.instant), so the worker is only
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.billing import alerts, metering
 from app.calls import postcall
+from app.campaigns import runner as campaigns
 from app.instant import dialer
 from app.instant.sheets import poll_all
 from app.numbers import renewals
@@ -59,6 +61,18 @@ async def dial_tick(ctx: dict[str, Any]) -> int:
         placed = await dialer.dial_due(_factory(ctx), telephony, datetime.now(UTC))
     except ProviderNotConfiguredError as exc:
         log.warning(f"dialer idle: {exc.detail}")  # missing key or URL: nothing pretends to work
+        return 0
+    return len(placed)
+
+
+async def campaign_tick(ctx: dict[str, Any]) -> int:
+    """Every few seconds: start campaigns that are due, place their calls, close finished ones."""
+    try:
+        telephony = require(ProviderKind.TELEPHONY)
+        assert isinstance(telephony, TelephonyProvider)
+        placed = await campaigns.tick(_factory(ctx), telephony, datetime.now(UTC))
+    except ProviderNotConfiguredError as exc:
+        log.warning(f"campaigns idle: {exc.detail}")
         return 0
     return len(placed)
 
@@ -118,6 +132,7 @@ class WorkerSettings:
     functions = (ping,)
     cron_jobs = (
         cron(dial_tick, second=set(range(0, 60, 3)), run_at_startup=False, timeout=50),
+        cron(campaign_tick, second=set(range(1, 60, 3)), run_at_startup=False, timeout=50),
         cron(post_call_tick, second=set(range(5, 60, 10)), run_at_startup=False, timeout=240),
         cron(billing_tick, second={25, 55}, run_at_startup=False, timeout=120),
         cron(low_balance_tick, second={10, 40}, run_at_startup=False, timeout=120),
