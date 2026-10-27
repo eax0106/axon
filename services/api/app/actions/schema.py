@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.actions import net
 
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
-RESERVED = {"end_call", "transfer_to_human"}  # tools the engine already has
+RESERVED = {"end_call", "transfer_to_human", "look_up_knowledge"}  # tools the engine already has
 MASK = "********"
 MAX_ACTIONS = 10
 _HEADER = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,39}$")

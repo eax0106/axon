@@ -36,6 +36,7 @@ from app.models import (
 )
 from app.providers.base import LLMProvider, ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import require
+from app.training import struggle
 
 log = logging.getLogger("axon.postcall")
 BATCH = 3  # a batch must finish inside the worker's job timeout: 3 x 60 s of LLM
@@ -170,6 +171,8 @@ async def _apply(
         await _schedule_callback(session, call, lead, employee, result.callback_at)
     if call.direction is Direction.INBOUND and not result.do_not_call:
         await _take_message(session, call, lead, result, now)
+    if employee is not None:
+        await struggle.store(session, call, employee, result.struggles)
 
 
 def _rung_in(call: Call, employee: Employee) -> bool:

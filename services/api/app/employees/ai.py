@@ -6,6 +6,7 @@ selected LLM and speech adapters, so without keys every endpoint answers 503.
 import json
 import re
 import uuid
+from dataclasses import replace
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -26,6 +27,7 @@ from app.employees.script import (
 from app.models import Channel
 from app.providers.base import ChatMessage, LLMProvider, ProviderKind, SpeechToTextProvider
 from app.providers.registry import require
+from app.training.knowledge import load as load_knowledge
 
 router = APIRouter()
 
@@ -276,6 +278,9 @@ async def chat(
         bundle = ScriptBundle.model_validate(live.bundle)
     else:
         bundle = service.bundle_of(employee)
-    system = await runtime.prompt_for(session, employee, bundle) + CHAT_NOTE
+    # A text chat has no tools, so documents are left out; "Try a question" on the documents
+    # shows what the AI would find in them.
+    taught = replace(await load_knowledge(session, employee.id), documents=False)
+    system = await runtime.prompt_for(session, employee, bundle, knowledge=taught) + CHAT_NOTE
     turns: list[ChatMessage] = [{"role": t.role, "content": t.content} for t in body.messages]
     return ChatReply(reply=(await llm().complete(system, turns)).strip())

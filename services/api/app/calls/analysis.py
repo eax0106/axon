@@ -31,12 +31,25 @@ IST = timezone(timedelta(minutes=330))
 MIN_CALLER_CHARS = 3  # less than this of caller speech is not a conversation
 MAX_CALLBACK_AHEAD = timedelta(days=14)
 MAX_SUMMARY, MAX_MEMORY, MAX_VALUE = 600, 600, 300
+MAX_STRUGGLES, MAX_QUOTE, MAX_RULE = 3, 200, 300
 
 Turns = list[dict[str, Any]]  # [{"role": "user" | "assistant", "text": "..."}]
 
 
 class AnalysisError(Exception):
     """The model's answer could not be used; the call's analysis is marked failed."""
+
+
+@dataclass(frozen=True)
+class Struggle:
+    """A moment on the call where the employee fell short, with the words that show it.
+    `text` is what to teach: empty for a gap, because only the owner knows the answer."""
+
+    kind: str  # fact (a gap in what it knows) or rule (something it did that it should not)
+    reason: str  # unanswered or conduct
+    caller_quote: str
+    agent_quote: str | None
+    text: str
 
 
 @dataclass
@@ -50,6 +63,7 @@ class Analysis:
     do_not_call_quote: str | None = None  # the caller's words, so the owner can see why
     message: str | None = None  # what the caller asked us to pass on, if they said so
     memory: str | None = None
+    struggles: list[Struggle] = field(default_factory=list)
 
 
 def caller_text(turns: Turns) -> str:
@@ -85,18 +99,27 @@ def _long_enough(quote: str) -> bool:
     return len(quote) >= MIN_QUOTE_CHARS or len(quote.split()) >= MIN_QUOTE_WORDS
 
 
-def caller_quoted(quote: object, turns: Turns) -> str | None:
-    """The normalised quote, if it is a real quote: long enough and inside ONE turn the caller
-    spoke. Agent lines, labels, and words spread over several turns do not count."""
+def _quoted(quote: object, turns: Turns, role: str) -> str | None:
     if not isinstance(quote, str):
         return None
     wanted = _norm(quote)
     if not wanted or not _long_enough(wanted):
         return None
     for turn in turns:
-        if turn.get("role") == "user" and wanted in _norm(str(turn.get("text", ""))):
+        if turn.get("role") == role and wanted in _norm(str(turn.get("text", ""))):
             return wanted
     return None
+
+
+def caller_quoted(quote: object, turns: Turns) -> str | None:
+    """The normalised quote, if it is a real quote: long enough and inside ONE turn the caller
+    spoke. Agent lines, labels, and words spread over several turns do not count."""
+    return _quoted(quote, turns, "user")
+
+
+def agent_quoted(quote: object, turns: Turns) -> str | None:
+    """The same for the employee's own words: inside ONE turn the Agent spoke."""
+    return _quoted(quote, turns, "assistant")
 
 
 def value_in_quote(value: str, quote: str) -> bool:
@@ -123,7 +146,14 @@ SYSTEM = (
     ' sentences, or null", "quote": "their exact words, or null"},'
     ' "do_not_call": {"requested": true or false, "quote": "their exact words, or null"},'
     ' "memory": "at most three short sentences of lasting facts about this person worth '
-    'remembering for the next call, or null"}\n'
+    'remembering for the next call, or null",'
+    ' "struggles": [{"reason": "unanswered | conduct", "caller_quote": "the exact words of the'
+    ' Caller", "agent_quote": "the exact words of the Agent, or null", "rule": "for conduct only:'
+    ' one short rule that would have avoided it, or null"}]}\n'
+    "A struggle is a moment where the Agent could not or would not answer a question the Caller"
+    " asked (unanswered), or did something the business would not want, such as promising what"
+    " was never offered, ignoring a request or pressing after a no (conduct). List at most 3 and"
+    " leave the list empty if there were none. For conduct quote the Agent's own words too.\n"
     "A quote must be copied word for word from ONE thing the Caller said, never from the Agent. "
     "A captured value must use only words that are in its quote: copy the caller's own words, do "
     "not convert or rewrite them. Only the Caller can ask for a callback or ask not to be called "
@@ -198,7 +228,29 @@ def parse(
         result.outcome = "do_not_call"
     if remember:
         result.memory = _clean(data.get("memory"), MAX_MEMORY)
+    result.struggles = _struggles(data.get("struggles"), turns)
     return result
+
+
+def _struggles(raw: object, turns: Turns) -> list[Struggle]:
+    """Only what the transcript shows: the caller's words must be real, and a rule needs the
+    Agent's real words too. A gap carries no text, since only the owner knows the answer."""
+    found: list[Struggle] = []
+    for item in raw if isinstance(raw, list) else []:
+        entry = _entry(item)
+        caller = _clean(entry.get("caller_quote"), MAX_QUOTE)
+        if not caller or not caller_quoted(caller, turns):
+            continue
+        said = _clean(entry.get("agent_quote"), MAX_QUOTE)
+        agent = said if said and agent_quoted(said, turns) else None
+        rule = _clean(entry.get("rule"), MAX_RULE)
+        if entry.get("reason") == "unanswered":
+            found.append(Struggle("fact", "unanswered", caller, agent, ""))
+        elif entry.get("reason") == "conduct" and agent and rule:
+            found.append(Struggle("rule", "conduct", caller, agent, rule))
+        if len(found) == MAX_STRUGGLES:
+            break
+    return found
 
 
 def _future_time(raw: object, now: datetime) -> datetime | None:

@@ -18,6 +18,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -26,7 +27,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, REAL
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -789,4 +790,84 @@ class AuditEntry(Base):
     target_type: Mapped[str | None] = mapped_column(String(50))
     target_id: Mapped[str | None] = mapped_column(String(100))
     data: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    created_at: Mapped[datetime] = _created()
+
+
+class KnowledgeKind(StrEnum):
+    FACT = "fact"  # something true about the business a caller may ask
+    RULE = "rule"  # how the employee must behave
+
+
+class SuggestionStatus(StrEnum):
+    OPEN = "open"
+    ACCEPTED = "accepted"
+    DISMISSED = "dismissed"
+
+
+class KnowledgeItem(Base):
+    """One thing an employee was taught. Applies to its next call at once, no publish."""
+
+    __tablename__ = "knowledge_items"
+    id: Mapped[uuid.UUID] = _pk()
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[KnowledgeKind] = mapped_column(_enum(KnowledgeKind, "knowledge_kind"))
+    text: Mapped[str] = mapped_column(String(300))
+    source: Mapped[str] = mapped_column(String(16))  # text, voice, photo or suggestion
+    created_at: Mapped[datetime] = _created()
+
+
+class KnowledgeDoc(Base):
+    __tablename__ = "knowledge_docs"
+    id: Mapped[uuid.UUID] = _pk()
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    chars: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = _created()
+
+
+class KnowledgeChunk(Base):
+    """A passage of a document with its embedding (unit length, so a dot product is the cosine).
+
+    ponytail: a plain REAL[] ranked inside Postgres (see app.training.knowledge), because CI runs
+    on stock Postgres on three operating systems where the pgvector extension is not available.
+    """
+
+    __tablename__ = "knowledge_chunks"
+    id: Mapped[uuid.UUID] = _pk()
+    doc_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("knowledge_docs.id", ondelete="CASCADE"), index=True
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(ARRAY(REAL))
+
+
+class TrainingSuggestion(Base):
+    """A moment on a real call where the employee struggled, with the words that show it. Nothing
+    is taught until the owner accepts."""
+
+    __tablename__ = "training_suggestions"
+    id: Mapped[uuid.UUID] = _pk()
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), index=True
+    )
+    call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("calls.id", ondelete="SET NULL"))
+    kind: Mapped[KnowledgeKind] = mapped_column(_enum(KnowledgeKind, "suggestion_kind"))
+    reason: Mapped[str] = mapped_column(String(16))  # unanswered or conduct
+    caller_quote: Mapped[str] = mapped_column(String(200))
+    agent_quote: Mapped[str | None] = mapped_column(String(200))
+    text: Mapped[str] = mapped_column(String(300), server_default="")  # empty: the owner writes it
+    status: Mapped[SuggestionStatus] = mapped_column(
+        _enum(SuggestionStatus, "suggestion_status"), default=SuggestionStatus.OPEN
+    )
     created_at: Mapped[datetime] = _created()

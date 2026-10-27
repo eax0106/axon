@@ -37,6 +37,7 @@ from app.phone_verify import router as phone_verify_router
 from app.providers.base import ProviderNotConfiguredError
 from app.providers.registry import report_all
 from app.settings import get_settings
+from app.training.router import router as training_router
 from app.voices import router as voices_router
 
 READY_TIMEOUT_S = 2.0
@@ -64,6 +65,7 @@ app.include_router(live_router)
 app.include_router(employees_router)
 app.include_router(ai_router)
 app.include_router(actions_router)
+app.include_router(training_router)
 app.include_router(calls_router)
 app.include_router(instant_router)
 app.include_router(campaigns_router)

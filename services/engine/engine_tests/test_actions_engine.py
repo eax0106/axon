@@ -4,6 +4,7 @@ caller is on the line, and the call keeps going whatever the tool does."""
 import asyncio
 import json
 import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -106,11 +107,16 @@ def _call_with_action(
     url: str,
     llm: _UsesATool,
     monkeypatch: pytest.MonkeyPatch,
-    action: dict[str, Any],
+    action: dict[str, Any] | None = None,
+    prepare: Callable[[str, dict[str, str]], None] | None = None,
 ) -> None:
+    """Take a call as a new inbound employee; `prepare(employee, owner)` may teach it first."""
     monkeypatch.setitem(SERVICES, (ProviderKind.LLM, "testleg"), lambda *_: llm)
     employee, owner = inbound_employee(api, url, settings={})
-    assert api.put(f"/employees/{employee}/actions", json={"actions": [action]}, headers=owner)
+    if action is not None:
+        assert api.put(f"/employees/{employee}/actions", json={"actions": [action]}, headers=owner)
+    if prepare is not None:
+        prepare(employee, owner)
     assert api.post(f"/employees/{employee}/publish", headers=owner).status_code == 200
     sql(url, "UPDATE voices SET provider = 'testleg'")
     with TestClient(app) as client:

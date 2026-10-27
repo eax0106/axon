@@ -13,6 +13,7 @@ class ProviderKind(StrEnum):
     TELEPHONY = "telephony"
     STT = "stt"
     LLM = "llm"
+    EMBEDDING = "embedding"
     TTS = "tts"
     PAYMENTS = "payments"
     STORAGE = "storage"
@@ -127,6 +128,32 @@ class LLMProvider(Provider):
         self, system: str, messages: list[ChatMessage], *, json_output: bool = False
     ) -> str:
         """One chat completion; with `json_output` the reply is a JSON document."""
+
+
+class FileUnreadError(Exception):
+    """The model did not give back everything in the file (the reply was cut off or blocked), so
+    what it did return must not be used: a price cut in the middle is a wrong price."""
+
+
+class FileReader(ABC):
+    """What a model offers beyond chat: reading a photo or a PDF. A mixin for the LLM adapter of
+    a vendor whose model takes files."""
+
+    name: ClassVar[str]
+
+    @abstractmethod
+    async def read_file(self, data: bytes, mime: str, instruction: str) -> str:
+        """Follow `instruction` about the image or PDF in `data`; returns the model's whole text,
+        or raises FileUnreadError."""
+
+
+class EmbeddingProvider(Provider):
+    kind = ProviderKind.EMBEDDING
+
+    @abstractmethod
+    async def embed(self, texts: list[str], *, query: bool = False) -> list[list[float]]:
+        """One unit-length vector per text, in order. `query` marks a search question, whose
+        vector is made differently from a passage's."""
 
 
 class TextToSpeechProvider(Provider):

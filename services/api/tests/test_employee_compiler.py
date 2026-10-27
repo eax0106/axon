@@ -133,6 +133,9 @@ def test_values_are_capped_and_stripped_of_control_characters() -> None:
     assert clean_value("a\x00b\x07c\td") == "a b c d"
     assert len(clean_value("z" * 5000)) == MAX_VALUE_LEN
     assert clean_value("  spaced   out  ") == "spaced out"
+    # Joiners sit inside Telugu and Hindi words; other invisible characters are still spaces.
+    assert clean_value("క్\u200dష क्\u200cष") == "క్\u200dష क्\u200cष"
+    assert clean_value("a\u202eb\u200bc") == "a b c"
 
 
 def test_without_lead_values_there_is_no_details_block() -> None:

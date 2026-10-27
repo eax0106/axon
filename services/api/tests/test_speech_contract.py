@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from app.providers.speech.cartesia import CartesiaTTS
-from app.providers.speech.gemini import GeminiLLM
+from app.providers.speech.gemini import EMBEDDING_DIMENSIONS, GeminiEmbedding, GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
 from app.providers.speech.smallest import SmallestSTT, SmallestTTS
 
@@ -30,3 +30,18 @@ def test_cartesia_accepts_our_key() -> None:
 @pytest.mark.requires_keys("GEMINI_API_KEY")
 def test_gemini_accepts_our_key() -> None:
     asyncio.run(GeminiLLM().health())
+
+
+@pytest.mark.requires_keys("GEMINI_API_KEY")
+def test_gemini_embeddings_are_unit_vectors_and_rank_by_meaning() -> None:
+    texts = ["The premium plan costs 4999 rupees a month.", "We deliver only within Hyderabad."]
+    [plan, delivery], [question] = (
+        asyncio.run(GeminiEmbedding().embed(texts)),
+        asyncio.run(GeminiEmbedding().embed(["How much is the premium plan?"], query=True)),
+    )
+    assert len(plan) == EMBEDDING_DIMENSIONS
+
+    def dot(a: list[float], b: list[float]) -> float:
+        return sum(x * y for x, y in zip(a, b, strict=True))
+
+    assert dot(plan, plan) == pytest.approx(1.0) and dot(question, plan) > dot(question, delivery)

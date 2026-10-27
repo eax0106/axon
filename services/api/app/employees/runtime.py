@@ -7,9 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.schema import Action
 from app.employees import service
-from app.employees.compiler import CallContext, compile_prompt
+from app.employees.compiler import CallContext, Knowledge, compile_prompt
 from app.employees.script import ScriptBundle
 from app.models import Account, Employee, EmployeeVersion, Voice
+from app.training.knowledge import load as load_knowledge
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class CallPlan:
     actions: list[Action] = field(default_factory=list)  # what the AI may do during the call
     party_phone: str | None = None  # the other person's number: the only one a message goes to
     party_name: str | None = None
+    has_documents: bool = False  # the AI gets a tool to look things up in them
 
 
 async def business_name(session: AsyncSession, employee: Employee) -> str:
@@ -43,7 +45,10 @@ async def prompt_for(
     variables: dict[str, str] | None = None,
     memory: str | None = None,
     context: CallContext | None = None,
+    knowledge: Knowledge | None = None,
 ) -> str:
+    # What the owner taught applies at once: it is read now, not taken from a published version.
+    taught = knowledge or await load_knowledge(session, employee.id)
     return compile_prompt(
         name=employee.name,
         role_title=employee.role_title,
@@ -55,6 +60,7 @@ async def prompt_for(
         variables=variables,
         memory=memory,
         context=context,
+        knowledge=taught,
     )
 
 
@@ -83,11 +89,14 @@ async def plan_for(
             return None
         bundle = ScriptBundle.model_validate(live.bundle)
     settings = service.settings_of(employee)
+    taught = await load_knowledge(session, employee.id)
     return CallPlan(
         employee_id=employee.id,
         account_id=employee.account_id,
         language=employee.language,
-        system_prompt=await prompt_for(session, employee, bundle, variables, memory, context),
+        system_prompt=await prompt_for(
+            session, employee, bundle, variables, memory, context, taught
+        ),
         voice=await session.get(Voice, employee.voice_id) if employee.voice_id else None,
         tts_speed=settings.tts_speed,
         ambience=settings.ambience,
@@ -98,4 +107,5 @@ async def plan_for(
         actions=list(bundle.actions),
         party_phone=party_phone,
         party_name=party_name,
+        has_documents=taught.documents,
     )

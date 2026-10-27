@@ -97,7 +97,7 @@ async def _token(ctx: ActionContext) -> str | None:
         return connection.refresh_token if connection else None
 
 
-def _guarded(name: str, run: Run, timeout_s: float) -> Run:
+def guard(name: str, run: Run, timeout_s: float) -> Run:
     """Never raise, never run past the limit; say plainly that it failed."""
 
     async def safe(args: dict[str, Any]) -> dict[str, Any]:
@@ -297,7 +297,7 @@ def build_tools(actions: list[Action], ctx: ActionContext, *, guarded: bool = Tr
         tools += [
             Tool(
                 t.name, t.description, t.properties, t.required,
-                _guarded(t.name, t.run, t.timeout_s) if guarded else t.run, t.timeout_s,
+                guard(t.name, t.run, t.timeout_s) if guarded else t.run, t.timeout_s,
             )
             for t in made
         ]  # fmt: skip
