@@ -16,6 +16,7 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.billing import policy as credit_policy
 from app.instant import policy, rules
 from app.instant.rules import DialerSettings
 from app.models import (
@@ -135,6 +136,10 @@ async def dial_due(
                 assert call is not None
                 kind = "dial_failed" if refused else "dial_unconfirmed"
                 await _event(session, call, kind, error=type(exc).__name__)
+                if not refused:
+                    call.billing_status = (
+                        "reconcile"  # it may have been placed: never charged blind
+                    )
                 await settle(session, call, CallStatus.FAILED, now, hold_next=not refused)
                 await session.commit()
             results.append(Dialed(item.call_id, "failed" if refused else "held"))
@@ -208,6 +213,11 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> _Claim:
         call.scheduled_for = rules.adjust(now, settings, rules.IST)
         await _event(session, call, "outside_window", next=str(call.scheduled_for))
         return _Claim(call.id, "held" if call.scheduled_for is None else "rescheduled")
+    held = await credit_policy.blocked_reason(session, call.account_id, now)
+    if held is not None:  # not an error: the call waits until credits or the hour allow it
+        call.scheduled_for = now + NOT_READY_RETRY
+        await _event(session, call, "blocked_credits", reason=held)
+        return _Claim(call.id, "rescheduled")
     verdict = policy.check_dial(employee, number, lead.phone)
     if not verdict.allowed:
         call.status = CallStatus.CANCELED
@@ -281,6 +291,9 @@ async def reap_stale(
                 assert row is not None
                 if row.status is CallStatus.RINGING:
                     await _event(session, row, "no_carrier_report")
+                    row.billing_status = (
+                        "reconcile"  # no record: a person checks, nobody is charged
+                    )
                     await settle(session, row, CallStatus.FAILED, now, hold_next=True)
                     await session.commit()
                     state = "settled"

@@ -121,6 +121,14 @@ class TextToSpeechProvider(Provider):
         """Speak `text` with the vendor's voice `voice_id`; returns a WAV (16 kHz mono)."""
 
 
+class EmailProvider(Provider):
+    kind = ProviderKind.EMAIL
+
+    @abstractmethod
+    async def send(self, to: str, subject: str, text: str) -> None:
+        """Send a plain-text email from the platform's own address."""
+
+
 class LeadSourceProvider(Provider):
     kind = ProviderKind.LEADS
 

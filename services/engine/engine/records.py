@@ -89,7 +89,9 @@ class CallRecorder:
             )
         return where
 
-    async def started(self, carrier_call_id: str | None = None) -> None:
+    async def started(
+        self, carrier_call_id: str | None = None, voice_tier: str | None = None
+    ) -> None:
         """The call was picked up."""
         self._started = time.monotonic()
         self._carrier_id = carrier_call_id
@@ -103,6 +105,7 @@ class CallRecorder:
                     started_at=func.coalesce(Call.started_at, func.now()),
                     # The stream carries the call's own id; the callback will name the call by it.
                     carrier_leg_id=func.coalesce(Call.carrier_leg_id, carrier_call_id),
+                    voice_tier=func.coalesce(Call.voice_tier, voice_tier),
                 )
             )
             await session.commit()

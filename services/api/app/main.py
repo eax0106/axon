@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
+from app.billing.ledger import InsufficientCreditsError
 from app.calls.conversations import router as conversations_router
 from app.calls.leads import router as leads_router
 from app.calls.memory import router as memory_router
@@ -86,6 +87,19 @@ async def provider_not_configured(_: Request, exc: ProviderNotConfiguredError) -
             "provider": exc.name,
             "missing_keys": exc.missing_keys,
             "detail": exc.detail,
+        },
+    )
+
+
+@app.exception_handler(InsufficientCreditsError)
+async def insufficient_credits(_: Request, exc: InsufficientCreditsError) -> JSONResponse:
+    return JSONResponse(
+        status_code=402,
+        content={
+            "error": "insufficient_credits",
+            "balance": str(exc.balance),
+            "needed": str(exc.needed),
+            "detail": "not enough credits: top up to continue",
         },
     )
 

@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser
+from app.billing.fees import charge_ai_use
 from app.db import Session
 from app.models import Account, AuditEntry, User
 
@@ -42,7 +43,10 @@ async def take(session: AsyncSession, user: User, action: str, limit: int) -> No
 
 
 async def ai_budget(user: CurrentUser, session: Session) -> None:
+    """Each use of AI help: within the account's hourly allowance, then paid for in credits."""
     await take(session, user, "ai.request", AI_PER_HOUR)
+    await charge_ai_use(session, user.account_id, "request")
+    await session.commit()
 
 
 AiBudget = Depends(ai_budget)
