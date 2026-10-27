@@ -63,6 +63,7 @@ class CallSettings:
     language: str = "en"
     system_prompt: str = ""  # compiled from the employee's script (app.employees.compiler)
     ambience: str = "none"
+    voice_tier: str | None = None  # recorded on the call: it decides the price per minute
     ambience_volume: float = 0.3
     max_call_s: float = 600.0  # account setting, 10 s to 60 min
     silence_timeout_s: float = 20.0  # caller silent this long after the bot spoke -> end call
@@ -239,7 +240,7 @@ async def run_call(
             recording.append(_wav(audio, sample_rate, channels))
 
     if call_record is not None:
-        await call_record.started(carrier_call_id)
+        await call_record.started(carrier_call_id, settings.voice_tier)
     await publish({"type": "started", "call_id": call_id, "language": settings.language})
     await recorder.start_recording()
     cap = asyncio.get_running_loop().call_later(

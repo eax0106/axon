@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
+from app.billing.ledger import InsufficientCreditsError
+from app.billing.router import router as billing_router
 from app.calls.conversations import router as conversations_router
 from app.calls.leads import router as leads_router
 from app.calls.memory import router as memory_router
@@ -21,9 +23,12 @@ from app.calls.stats import router as stats_router
 from app.employees.ai import router as ai_router
 from app.employees.calls import router as calls_router
 from app.employees.router import router as employees_router
+from app.instant.policy import router as dial_rules_router
 from app.instant.public import router as instant_public_router
 from app.instant.router import router as instant_router
 from app.live import router as live_router
+from app.numbers.router import router as numbers_router
+from app.phone_verify import router as phone_verify_router
 from app.providers.base import ProviderNotConfiguredError
 from app.providers.registry import report_all
 from app.settings import get_settings
@@ -62,6 +67,10 @@ app.include_router(memory_router)
 app.include_router(notifications_router)
 app.include_router(stats_router)
 app.include_router(voices_router)
+app.include_router(billing_router)
+app.include_router(numbers_router)
+app.include_router(phone_verify_router)
+app.include_router(dial_rules_router)
 
 
 @app.exception_handler(AuthNotConfiguredError)
@@ -86,6 +95,19 @@ async def provider_not_configured(_: Request, exc: ProviderNotConfiguredError) -
             "provider": exc.name,
             "missing_keys": exc.missing_keys,
             "detail": exc.detail,
+        },
+    )
+
+
+@app.exception_handler(InsufficientCreditsError)
+async def insufficient_credits(_: Request, exc: InsufficientCreditsError) -> JSONResponse:
+    return JSONResponse(
+        status_code=402,
+        content={
+            "error": "insufficient_credits",
+            "balance": str(exc.balance),
+            "needed": str(exc.needed),
+            "detail": "not enough credits: top up to continue",
         },
     )
 

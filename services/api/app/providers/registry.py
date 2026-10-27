@@ -14,8 +14,11 @@ from typing import Literal
 
 from app.models import VoiceTier
 from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
+from app.providers.email.resend import ResendEmail
 from app.providers.google.sheets import GoogleSheets
+from app.providers.kyc.vobiz import VobizKyc
 from app.providers.leads.meta_lead_ads import MetaLeadAds
+from app.providers.payments.razorpay import RazorpayPayments
 from app.providers.speech.cartesia import CartesiaTTS
 from app.providers.speech.gemini import GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
@@ -42,8 +45,7 @@ VENDOR_KEYS: dict[ProviderKind, dict[str, tuple[str, ...]]] = {
     ProviderKind.STORAGE: {
         "r2": ("S3_ENDPOINT_URL", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_BUCKET")
     },
-    # ponytail: email vendor is chosen in B6; until then the kind has no vendor to report.
-    ProviderKind.EMAIL: {},
+    ProviderKind.EMAIL: {"resend": ("RESEND_API_KEY", "EMAIL_FROM")},
     ProviderKind.WHATSAPP: {"interakt": ("INTERAKT_API_KEY",), "aisensy": ("AISENSY_API_KEY",)},
     ProviderKind.CALENDAR: {"google": _GOOGLE},
     ProviderKind.SHEETS: {"google": _GOOGLE},
@@ -57,6 +59,9 @@ ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
     (ProviderKind.LEADS, "meta_lead_ads"): MetaLeadAds,
     (ProviderKind.SHEETS, "google"): GoogleSheets,
     (ProviderKind.STORAGE, "r2"): R2Storage,
+    (ProviderKind.EMAIL, "resend"): ResendEmail,
+    (ProviderKind.PAYMENTS, "razorpay"): RazorpayPayments,
+    (ProviderKind.NUMBER_KYC, "vobiz"): VobizKyc,
     (ProviderKind.STT, "sarvam"): SarvamSTT,
     (ProviderKind.STT, "smallest"): SmallestSTT,
     (ProviderKind.LLM, "gemini"): GeminiLLM,

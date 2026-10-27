@@ -72,6 +72,11 @@ def hire(api: TestClient, owner: dict[str, str], url: str, with_number: bool = T
             "UPDATE employees SET number_id = :n WHERE id = :e",
             {"n": number, "e": employee["id"]},
         )
+        sql(
+            url,
+            "UPDATE accounts SET owner_phone = :p, owner_phone_verified_at = now() WHERE id = :a",
+            {"p": PHONE, "a": account},
+        )
     return str(employee["id"])
 
 

@@ -16,6 +16,7 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.billing import policy as credit_policy
 from app.instant import policy, rules
 from app.instant.rules import DialerSettings
 from app.models import (
@@ -29,10 +30,12 @@ from app.models import (
     Lead,
     PhoneNumber,
 )
+from app.numbers import channels
 from app.providers.base import CallDetail, TelephonyProvider
 from app.settings import api_public_url, engine_public_url
 
 BATCH = 20
+CHANNEL_BUSY_RETRY = timedelta(seconds=15)  # every channel of the number is on a call
 NOT_READY_RETRY = timedelta(minutes=5)  # a live-employee check that failed: look again later
 RINGING_TIMEOUT = timedelta(minutes=3)  # no end callback by then: ask the carrier what happened
 GIVE_UP_AFTER = timedelta(minutes=15)  # the carrier never reported: count the attempt as failed
@@ -135,6 +138,10 @@ async def dial_due(
                 assert call is not None
                 kind = "dial_failed" if refused else "dial_unconfirmed"
                 await _event(session, call, kind, error=type(exc).__name__)
+                if not refused:
+                    call.billing_status = (
+                        "reconcile"  # it may have been placed: never charged blind
+                    )
                 await settle(session, call, CallStatus.FAILED, now, hold_next=not refused)
                 await session.commit()
             results.append(Dialed(item.call_id, "failed" if refused else "held"))
@@ -208,18 +215,26 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> _Claim:
         call.scheduled_for = rules.adjust(now, settings, rules.IST)
         await _event(session, call, "outside_window", next=str(call.scheduled_for))
         return _Claim(call.id, "held" if call.scheduled_for is None else "rescheduled")
-    verdict = policy.check_dial(employee, number, lead.phone)
+    held = await credit_policy.blocked_reason(session, call.account_id, now)
+    if held is not None:  # not an error: the call waits until credits or the hour allow it
+        call.scheduled_for = now + NOT_READY_RETRY
+        await _event(session, call, "blocked_credits", reason=held)
+        return _Claim(call.id, "rescheduled")
+    verdict = await policy.check_dial(session, employee, number, "instant")
     if not verdict.allowed:
         call.status = CallStatus.CANCELED
         await _event(session, call, "cancelled", reason=verdict.reason)
         return _Claim(call.id, "cancelled")
+    if not await channels.has_free_channel(session, number):  # every channel is on a call
+        call.scheduled_for = now + CHANNEL_BUSY_RETRY
+        return _Claim(call.id, "rescheduled")
     call.status = CallStatus.RINGING
     call.started_at = now
     call.number_id = number.id
     return _Claim(call.id, "dial", employee.id, number.e164, lead.phone)
 
 
-async def _detail(telephony: TelephonyProvider, call: Call) -> CallDetail | None:
+async def call_detail(telephony: TelephonyProvider, call: Call) -> CallDetail | None:
     """The carrier's record of a call. It is keyed by the call's own id, which the call-end
     callback gives us; the dial-request id is tried too (some carriers use one id for both)."""
     for carrier_id in dict.fromkeys(filter(None, (call.carrier_leg_id, call.carrier_call_id))):
@@ -246,7 +261,7 @@ async def settle_from_carrier(
             return "settled"  # already settled: callbacks arrive more than once
         if leg_id and not call.carrier_leg_id:
             call.carrier_leg_id = leg_id
-        detail = await _detail(telephony, call)
+        detail = await call_detail(telephony, call)
         if detail is None:
             await session.commit()  # keeps the leg id for the next try
             return "pending"
@@ -281,6 +296,9 @@ async def reap_stale(
                 assert row is not None
                 if row.status is CallStatus.RINGING:
                     await _event(session, row, "no_carrier_report")
+                    row.billing_status = (
+                        "reconcile"  # no record: a person checks, nobody is charged
+                    )
                     await settle(session, row, CallStatus.FAILED, now, hold_next=True)
                     await session.commit()
                     state = "settled"

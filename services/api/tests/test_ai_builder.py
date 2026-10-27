@@ -230,6 +230,9 @@ def test_transcribe_chunk_returns_trimmed_text_and_limits_size(
     wav = b"RIFF" + bytes(100)
     response = api.post("/ai/transcribe-chunk?language=en", content=wav, headers=owner)
     assert response.json() == {"text": "I sell solar panels"}
+    api.post("/ai/transcribe-chunk?language=en", content=wav, headers=owner)
+    # A spoken brief pays once, when it goes to the builder, not for each chunk of audio.
+    assert api.get("/wallet", headers=owner).json()["balance"] == "50.0000"
     assert (
         api.post("/ai/transcribe-chunk", content=bytes(2_000_001), headers=owner).status_code == 413
     )

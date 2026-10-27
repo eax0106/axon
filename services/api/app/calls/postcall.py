@@ -14,6 +14,7 @@ import httpx
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.billing.fees import charge_ai_use
 from app.calls import analysis
 from app.employees import service as employees
 from app.instant import rules
@@ -149,6 +150,9 @@ async def _apply(
     call.summary, call.sentiment, call.outcome = result.summary, result.sentiment, result.outcome
     call.captured = {k: v for k, v in result.captured.items() if v is not None}
     call.analysis_status, call.analysis_error = "done", None
+    # The work is done, so the fee is taken even if it leaves the account at zero. Once per call:
+    # only a skipped or failed analysis can be run again, and that never reached this line.
+    await charge_ai_use(session, call.account_id, "analysis", str(call.id), allow_overdraw=True)
     session.add(CallEvent(call_id=call.id, type="analysis_done", data={"outcome": result.outcome}))
     if lead is not None and remember and result.memory:
         lead.memory = result.memory

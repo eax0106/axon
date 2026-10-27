@@ -14,8 +14,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing import ledger
+from app.billing.config import free_signup_credits
 from app.db import Session
-from app.models import Account, Role, User
+from app.models import Account, LedgerKind, Role, User
 from app.settings import get_settings
 
 TOKEN_TTL = timedelta(hours=12)
@@ -32,7 +34,7 @@ class AuthNotConfiguredError(Exception):
     pass
 
 
-def _secret() -> str:
+def jwt_secret() -> str:
     secret = get_settings().jwt_secret
     if len(secret) < MIN_SECRET_LEN:
         raise AuthNotConfiguredError
@@ -42,7 +44,7 @@ def _secret() -> str:
 def issue_token(user: User, now: datetime | None = None) -> str:
     now = now or datetime.now(UTC)
     claims = {"sub": str(user.id), "iat": now, "exp": now + TOKEN_TTL}
-    return jwt.encode(claims, _secret(), algorithm="HS256")
+    return jwt.encode(claims, jwt_secret(), algorithm="HS256")
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -64,7 +66,7 @@ async def user_from_token(session: AsyncSession, token: str) -> User:
     try:
         claims = jwt.decode(
             token,
-            _secret(),
+            jwt_secret(),
             algorithms=["HS256"],
             options={"require": ["sub", "exp", "iat"]},
         )
@@ -112,10 +114,14 @@ class Token(BaseModel):
 
 @router.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 async def signup(body: Signup, session: Session) -> Token:
-    _secret()  # fail with 503 before creating anything if tokens can't be issued
+    jwt_secret()  # fail with 503 before creating anything if tokens can't be issued
     account = Account(name=body.account_name)
     session.add(account)
     await session.flush()
+    await ledger.post(
+        session, account.id, LedgerKind.BONUS, free_signup_credits(),
+        ref_type="signup", ref_id=str(account.id), note="free credits",
+    )  # fmt: skip
     user = User(
         account_id=account.id,
         email=body.email,
@@ -132,7 +138,7 @@ async def signup(body: Signup, session: Session) -> Token:
 
 @router.post("/auth/login")
 async def login(body: Credentials, session: Session) -> Token:
-    _secret()
+    jwt_secret()
     user = await session.scalar(select(User).where(func.lower(User.email) == body.email))
     try:
         _hasher.verify(user.password_hash if user else _DUMMY_HASH, body.password)

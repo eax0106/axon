@@ -104,6 +104,13 @@ def make_call(
     return str(call)
 
 
+def own_notes(client: TestClient, owner: dict[str, str]) -> list[dict[str, Any]]:
+    """The bell without the low-balance note: a new account starts at the threshold, so the AI fee
+    of the first analysis is always the spend that crosses it."""
+    items: list[dict[str, Any]] = client.get("/notifications", headers=owner).json()["items"]
+    return [n for n in items if n["kind"] != "low_balance"]
+
+
 def setup(api: TestClient, url: str) -> tuple[str, dict[str, str]]:
     owner = signup(api)
     employee = live_employee(api, url, owner)
@@ -179,9 +186,9 @@ def test_a_callback_becomes_a_queued_call_inside_the_calling_window(
     assert sql(migrated_url, "SELECT scheduled_for FROM calls WHERE is_callback") == datetime(
         2026, 11, 3, 12, 30, tzinfo=UTC
     )
-    notes = client.get("/notifications", headers=owner).json()
-    assert [n["kind"] for n in notes["items"]] == ["callback_scheduled"]
-    assert "Ravi" in notes["items"][0]["body"] and "03 Nov, 18:00" in notes["items"][0]["body"]
+    notes = own_notes(client, owner)
+    assert [n["kind"] for n in notes] == ["callback_scheduled"]
+    assert "Ravi" in notes[0]["body"] and "03 Nov, 18:00" in notes[0]["body"]
     # A second call from the same person asking again does not stack callbacks.
     make_call(migrated_url, employee)
     process(migrated_url)
@@ -241,7 +248,7 @@ def test_do_not_call_adds_the_number_cancels_waiting_calls_and_says_so(
     assert (
         sql(migrated_url, "SELECT count(*) FROM calls WHERE is_callback") == 0
     )  # asking not to be called wins
-    notes = client.get("/notifications", headers=owner).json()["items"]
+    notes = own_notes(client, owner)
     assert [n["kind"] for n in notes] == ["do_not_call_added"]
     # The owner can see the caller's own words, and so judge (and undo) the decision.
     assert 'said: "Do not call me again"' in notes[0]["body"]
@@ -250,7 +257,7 @@ def test_do_not_call_adds_the_number_cancels_waiting_calls_and_says_so(
     make_call(migrated_url, employee, turns)
     process(migrated_url)
     assert sql(migrated_url, "SELECT count(*) FROM dnc_entries") == 1
-    assert len(client.get("/notifications", headers=owner).json()["items"]) == 1
+    assert len(own_notes(client, owner)) == 1
 
 
 def test_caller_memory_is_written_when_on_and_left_alone_when_off(

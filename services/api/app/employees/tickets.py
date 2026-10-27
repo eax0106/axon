@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 
-from app.auth import _secret
+from app.auth import jwt_secret
 
 TTL = timedelta(seconds=120)
 TYPE = "web_call"
@@ -34,14 +34,14 @@ def issue(ticket: WebTicket, now: datetime | None = None) -> str:
         "iat": now,
         "exp": now + TTL,
     }
-    return jwt.encode(claims, _secret(), algorithm="HS256")
+    return jwt.encode(claims, jwt_secret(), algorithm="HS256")
 
 
 def read(token: str) -> WebTicket | None:
     """The ticket, or None if it is forged, expired, or not a web-call ticket."""
     try:
         claims = jwt.decode(
-            token, _secret(), algorithms=["HS256"], options={"require": ["typ", "exp", "iat"]}
+            token, jwt_secret(), algorithms=["HS256"], options={"require": ["typ", "exp", "iat"]}
         )
         if claims["typ"] != TYPE:
             return None
@@ -72,14 +72,14 @@ def issue_oauth_state(
         "iat": now,
         "exp": now + OAUTH_TTL,
     }
-    return jwt.encode(claims, _secret(), algorithm="HS256")
+    return jwt.encode(claims, jwt_secret(), algorithm="HS256")
 
 
 def read_oauth_state(token: str) -> tuple[uuid.UUID, uuid.UUID] | None:
     """(user id, employee id) the state was issued for, or None if it is forged or expired."""
     try:
         claims = jwt.decode(
-            token, _secret(), algorithms=["HS256"], options={"require": ["typ", "exp", "iat"]}
+            token, jwt_secret(), algorithms=["HS256"], options={"require": ["typ", "exp", "iat"]}
         )
         if claims["typ"] != OAUTH_TYPE:
             return None

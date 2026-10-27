@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import StrEnum
 from typing import ClassVar, TypedDict
 
@@ -119,6 +120,108 @@ class TextToSpeechProvider(Provider):
     @abstractmethod
     async def synthesize(self, text: str, voice_id: str, language: str, speed: float) -> bytes:
         """Speak `text` with the vendor's voice `voice_id`; returns a WAV (16 kHz mono)."""
+
+
+@dataclass(frozen=True)
+class Order:
+    id: str  # the vendor's id for the payment order
+
+
+@dataclass(frozen=True)
+class PaymentInfo:
+    order_id: str
+    amount_paise: int
+    captured: bool  # the money has been taken (authorized-only payments are not credited)
+
+
+class PaymentProvider(Provider):
+    kind = ProviderKind.PAYMENTS
+
+    @abstractmethod
+    async def fetch_payment(self, payment_id: str) -> PaymentInfo:
+        """What the vendor itself says about a payment: the browser's word is not enough."""
+
+    @abstractmethod
+    async def create_order(self, amount_paise: int, receipt: str) -> Order:
+        """Open an order for `amount_paise` (INR) that the customer then pays in the checkout."""
+
+    @abstractmethod
+    def public_key(self) -> str:
+        """The key id the browser checkout needs (never the secret)."""
+
+    @abstractmethod
+    def checkout_is_authentic(self, order_id: str, payment_id: str, signature: str) -> bool:
+        """Whether the browser's checkout result is signed by the vendor for this order."""
+
+    @abstractmethod
+    def webhook_is_authentic(self, body: bytes, headers: Mapping[str, str]) -> bool:
+        """Whether a webhook body is signed by the vendor (checked on the raw bytes)."""
+
+
+@dataclass(frozen=True)
+class InventoryNumber:
+    e164: str
+    number_type: str  # regular, 140 or 1600
+    setup_fee: Decimal
+    monthly_fee: Decimal  # the carrier's own price, not what we charge
+
+
+class NumberStore(ABC):
+    """What a carrier offers beyond calling: a stock of numbers to buy and give back. A mixin for
+    the telephony adapter of a carrier that sells numbers."""
+
+    name: ClassVar[str]
+
+    @abstractmethod
+    async def search_numbers(
+        self, search: str = "", page: int = 1, per_page: int = 20
+    ) -> list[InventoryNumber]:
+        """Numbers on sale whose digits contain `search`."""
+
+    @abstractmethod
+    async def buy_number(self, e164: str) -> str:
+        """Buy one number from the stock for the account; returns the carrier's reference."""
+
+    @abstractmethod
+    async def release_number(self, e164: str) -> None:
+        """Give a number back to the stock; one the carrier no longer holds is not an error."""
+
+
+@dataclass(frozen=True)
+class DigilockerStart:
+    url: str  # where the holder gives consent
+    ref: str
+
+
+@dataclass(frozen=True)
+class PanResult:
+    verified: bool
+    name: str  # the name the tax records hold
+    holder_ref: str  # the carrier's id for this holder
+
+
+class NumberKycProvider(Provider):
+    kind = ProviderKind.NUMBER_KYC
+
+    @abstractmethod
+    async def verify_pan(self, pan: str, name: str) -> PanResult:
+        """Check a PAN against the holder's name. The PAN is not kept by us."""
+
+    @abstractmethod
+    async def digilocker_start(self, holder_ref: str, redirect_url: str) -> DigilockerStart:
+        """Begin the Aadhaar check: the holder consents in DigiLocker."""
+
+    @abstractmethod
+    async def digilocker_verified(self, holder_ref: str, ref: str) -> bool:
+        """Whether the holder has finished the DigiLocker consent for `ref`."""
+
+
+class EmailProvider(Provider):
+    kind = ProviderKind.EMAIL
+
+    @abstractmethod
+    async def send(self, to: str, subject: str, text: str) -> None:
+        """Send a plain-text email from the platform's own address."""
 
 
 class LeadSourceProvider(Provider):

@@ -91,6 +91,7 @@ async def _setup(
     return legs, CallSettings(
         language=plan.language,
         system_prompt=plan.system_prompt,
+        voice_tier=plan.voice.tier.value if plan.voice else None,
         ambience=plan.ambience,
         ambience_volume=plan.ambience_volume,
     )

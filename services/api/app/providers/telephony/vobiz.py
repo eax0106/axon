@@ -5,16 +5,18 @@ import hashlib
 import hmac
 import os
 from collections.abc import Mapping
+from decimal import Decimal
+from typing import Any
 
 import httpx
 
-from app.providers.base import CallDetail, TelephonyProvider
+from app.providers.base import CallDetail, InventoryNumber, NumberStore, TelephonyProvider
 
 BASE_URL = "https://api.vobiz.ai/api/v1"
 TIMEOUT_S = 10.0
 
 
-class VobizTelephony(TelephonyProvider):
+class VobizTelephony(TelephonyProvider, NumberStore):
     name = "vobiz"
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
@@ -96,3 +98,63 @@ class VobizTelephony(TelephonyProvider):
             response = await client.delete(f"/Call/{call_uuid}")
             if response.status_code != 404:
                 response.raise_for_status()
+
+    # --- Number store (docs: https://www.skills.sh/vobiz-ai/agent-skills/vobiz-phone-numbers) ----
+    # Inventory: GET /inventory/numbers?country&search&page&per_page (max 100). Buying debits the
+    # carrier balance by setup + monthly fee: POST /numbers/purchase-from-inventory. Releasing is
+    # permanent and the number returns to stock: DELETE /numbers/{e164}, "+" sent as %2B. The
+    # docs do not show response bodies, so the reader accepts the usual shapes.
+
+    async def search_numbers(
+        self, search: str = "", page: int = 1, per_page: int = 20
+    ) -> list[InventoryNumber]:
+        params: dict[str, str | int] = {
+            "country": "IN",
+            "search": search,
+            "page": page,
+            "per_page": min(per_page, 100),
+        }
+        async with self._client() as client:
+            response = await client.get("/inventory/numbers", params=params)
+            response.raise_for_status()
+            body = response.json()
+        rows: list[dict[str, Any]] = body if isinstance(body, list) else (
+            body.get("items") or body.get("numbers") or []
+        )  # fmt: skip
+        return [_inventory_number(row) for row in rows if row.get("e164") or row.get("number")]
+
+    async def buy_number(self, e164: str) -> str:
+        async with self._client() as client:
+            response = await client.post(
+                "/numbers/purchase-from-inventory", json={"e164": e164, "currency": "INR"}
+            )
+            response.raise_for_status()
+            body = response.json() if response.content else {}
+        return str(body.get("id") or body.get("e164") or e164)
+
+    async def release_number(self, e164: str) -> None:
+        async with self._client() as client:
+            response = await client.delete(f"/numbers/{e164.replace('+', '%2B')}")
+            if response.status_code != 404:
+                response.raise_for_status()
+
+
+def _inventory_number(row: dict[str, Any]) -> InventoryNumber:
+    e164 = str(row.get("e164") or row.get("number"))
+    return InventoryNumber(
+        e164=e164,
+        number_type=number_type_of(e164),
+        setup_fee=Decimal(str(row.get("setup_fee") or 0)),
+        monthly_fee=Decimal(str(row.get("monthly_fee") or 0)),
+    )
+
+
+def number_type_of(e164: str) -> str:
+    """Regular, 140 or 1600 from the digits: +91 140… is the promotional series and +91 1600… the
+    service one."""
+    national = e164.removeprefix("+91")
+    if national.startswith("1600"):
+        return "1600"
+    if national.startswith("140"):
+        return "140"
+    return "regular"

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.auth import CurrentUser
 from app.db import Session
 from app.employees import runtime, service
-from app.employees.limits import AiBudget
+from app.employees.limits import AiBudget, AiRate
 from app.employees.router import load
 from app.employees.script import (
     CaptureField,
@@ -226,7 +226,7 @@ class Transcript(BaseModel):
     text: str
 
 
-@router.post("/ai/transcribe-chunk", dependencies=[AiBudget])
+@router.post("/ai/transcribe-chunk", dependencies=[AiRate])
 async def transcribe_chunk(
     request: Request,
     _: CurrentUser,

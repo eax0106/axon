@@ -1,4 +1,4 @@
-"""Test an employee: a free phone call to the owner's phone, and a call from the browser."""
+"""Test an employee: a free call to the owner's verified phone, and a call from the browser."""
 
 import re
 import uuid
@@ -6,26 +6,29 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, StringConstraints
+from sqlalchemy import select
 
 from app.auth import CurrentUser
 from app.db import Session
 from app.employees import tickets
 from app.employees.limits import TEST_CALLS_PER_HOUR, take
 from app.employees.router import load
-from app.models import Call, CallStatus, Direction, Employee, PhoneNumber, User
+from app.instant.policy import check_dial
+from app.models import Account, Call, CallStatus, Direction, DncEntry, Employee, PhoneNumber, User
 from app.providers.base import ProviderKind, TelephonyProvider
 from app.providers.registry import require
 from app.settings import engine_public_url
 
 router = APIRouter(prefix="/employees")
 
-# Test calls cost us vendor money but nothing is charged, so: Indian mobile numbers only, and
-# a per-account hourly cap (not per employee: employees are free to create).
+# Test calls cost us vendor money but nothing is charged, so: only the owner's own phone (proved
+# with a one-time code, app.phone_verify), through the do-not-call list and the dial rule table
+# like any call, and a per-account hourly cap (not per employee: employees are free to create).
 INDIAN_MOBILE = re.compile(r"^\+91[6-9]\d{9}$")
 
 
 class TestCallRequest(BaseModel):
-    phone: Annotated[str, StringConstraints(pattern=INDIAN_MOBILE.pattern)]
+    phone: Annotated[str, StringConstraints(pattern=INDIAN_MOBILE.pattern)] | None = None
 
 
 async def _new_test_call(
@@ -49,20 +52,40 @@ async def _new_test_call(
 
 @router.post("/{employee_id}/test-call", status_code=status.HTTP_202_ACCEPTED)
 async def test_call(
-    employee_id: uuid.UUID, body: TestCallRequest, user: CurrentUser, session: Session
+    employee_id: uuid.UUID, user: CurrentUser, session: Session, body: TestCallRequest | None = None
 ) -> dict[str, str]:
-    """Ring `phone` and let the employee talk on its draft script. Free; not in any stats."""
+    """Ring the owner's verified phone and let the employee talk on its draft script. Free; not in
+    any stats."""
     employee = await load(session, user, employee_id)
     number = await session.get(PhoneNumber, employee.number_id) if employee.number_id else None
     if number is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "attach a phone number to place test calls")
+    account = await session.get(Account, user.account_id)
+    assert account is not None  # FK guarantees it
+    if account.owner_phone is None or account.owner_phone_verified_at is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "verify your phone with a one-time code before test calls"
+        )
+    phone = (body.phone if body else None) or account.owner_phone
+    if phone != account.owner_phone:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "free test calls only ring your own verified phone"
+        )
+    on_dnc = await session.scalar(
+        select(DncEntry.id).where(DncEntry.account_id == user.account_id, DncEntry.phone == phone)
+    )
+    if on_dnc:
+        raise HTTPException(status.HTTP_409_CONFLICT, "that number is on the do-not-call list")
+    verdict = await check_dial(session, employee, number, "outbound")
+    if not verdict.allowed:
+        raise HTTPException(status.HTTP_409_CONFLICT, verdict.reason)
     telephony = require(ProviderKind.TELEPHONY)
     assert isinstance(telephony, TelephonyProvider)
     base = engine_public_url()
     call = await _new_test_call(session, user, employee, Direction.OUTBOUND)
     answer_url = f"{base}/vobiz/answer?employee={employee.id}&call={call.id}"
     try:
-        carrier_id = await telephony.originate(number.e164, body.phone, answer_url)
+        carrier_id = await telephony.originate(number.e164, phone, answer_url)
     except Exception:
         call.status = CallStatus.FAILED
         await session.commit()
