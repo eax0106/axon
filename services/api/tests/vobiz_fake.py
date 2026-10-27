@@ -21,6 +21,8 @@ class VobizAccount:
         self.requests: list[httpx.Request] = []
         self.owned: set[str] = set()
         self.fail_buy = False
+        self.buy_status = 0  # answer the purchase with this HTTP status instead, if set
+        self.buy_times_out = False  # the carrier sells the number but the answer never arrives
         self.fail_release = False
         self.consent_given = False  # the holder has finished DigiLocker
         self.pans_seen: list[str] = []
@@ -42,9 +44,13 @@ class VobizAccount:
             rows = [r for r in self.inventory if term in r["e164"] and r["e164"] not in self.owned]
             return httpx.Response(200, json={"items": rows})
         if path == "/numbers/purchase-from-inventory":
+            if self.buy_status:
+                return httpx.Response(self.buy_status)
             if self.fail_buy:
                 return httpx.Response(402, json={"error": "insufficient carrier balance"})
             self.owned.add(body["e164"])
+            if self.buy_times_out:
+                raise httpx.ReadTimeout("no answer", request=request)
             return httpx.Response(200, json={"id": "num_" + body["e164"][-4:]})
         if request.method == "DELETE" and path.startswith("/numbers/"):
             if self.fail_release:

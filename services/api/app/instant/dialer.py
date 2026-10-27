@@ -30,10 +30,12 @@ from app.models import (
     Lead,
     PhoneNumber,
 )
+from app.numbers import channels
 from app.providers.base import CallDetail, TelephonyProvider
 from app.settings import api_public_url, engine_public_url
 
 BATCH = 20
+CHANNEL_BUSY_RETRY = timedelta(seconds=15)  # every channel of the number is on a call
 NOT_READY_RETRY = timedelta(minutes=5)  # a live-employee check that failed: look again later
 RINGING_TIMEOUT = timedelta(minutes=3)  # no end callback by then: ask the carrier what happened
 GIVE_UP_AFTER = timedelta(minutes=15)  # the carrier never reported: count the attempt as failed
@@ -223,13 +225,16 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> _Claim:
         call.status = CallStatus.CANCELED
         await _event(session, call, "cancelled", reason=verdict.reason)
         return _Claim(call.id, "cancelled")
+    if not await channels.has_free_channel(session, number):  # every channel is on a call
+        call.scheduled_for = now + CHANNEL_BUSY_RETRY
+        return _Claim(call.id, "rescheduled")
     call.status = CallStatus.RINGING
     call.started_at = now
     call.number_id = number.id
     return _Claim(call.id, "dial", employee.id, number.e164, lead.phone)
 
 
-async def _detail(telephony: TelephonyProvider, call: Call) -> CallDetail | None:
+async def call_detail(telephony: TelephonyProvider, call: Call) -> CallDetail | None:
     """The carrier's record of a call. It is keyed by the call's own id, which the call-end
     callback gives us; the dial-request id is tried too (some carriers use one id for both)."""
     for carrier_id in dict.fromkeys(filter(None, (call.carrier_leg_id, call.carrier_call_id))):
@@ -256,7 +261,7 @@ async def settle_from_carrier(
             return "settled"  # already settled: callbacks arrive more than once
         if leg_id and not call.carrier_leg_id:
             call.carrier_leg_id = leg_id
-        detail = await _detail(telephony, call)
+        detail = await call_detail(telephony, call)
         if detail is None:
             await session.commit()  # keeps the leg id for the next try
             return "pending"

@@ -14,7 +14,7 @@ from arq import cron
 from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.billing import metering
+from app.billing import alerts, metering
 from app.calls import postcall
 from app.instant import dialer
 from app.instant.sheets import poll_all
@@ -87,6 +87,11 @@ async def billing_tick(ctx: dict[str, Any]) -> int:
     return counts["billed"] + counts["free"] + counts["reconcile"]
 
 
+async def low_balance_tick(ctx: dict[str, Any]) -> int:
+    """Every half minute: email the accounts whose balance just dropped under the threshold."""
+    return await alerts.send_pending(_factory(ctx))
+
+
 async def renewal_tick(ctx: dict[str, Any]) -> int:
     """Every ten minutes: rent for numbers that are due, grace for those that cannot pay, release
     for those whose grace is over."""
@@ -115,6 +120,7 @@ class WorkerSettings:
         cron(dial_tick, second=set(range(0, 60, 3)), run_at_startup=False, timeout=50),
         cron(post_call_tick, second=set(range(5, 60, 10)), run_at_startup=False, timeout=240),
         cron(billing_tick, second={25, 55}, run_at_startup=False, timeout=120),
+        cron(low_balance_tick, second={10, 40}, run_at_startup=False, timeout=120),
         cron(
             renewal_tick, minute=set(range(0, 60, 10)), second=35, run_at_startup=False, timeout=240
         ),

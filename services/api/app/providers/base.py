@@ -127,8 +127,19 @@ class Order:
     id: str  # the vendor's id for the payment order
 
 
+@dataclass(frozen=True)
+class PaymentInfo:
+    order_id: str
+    amount_paise: int
+    captured: bool  # the money has been taken (authorized-only payments are not credited)
+
+
 class PaymentProvider(Provider):
     kind = ProviderKind.PAYMENTS
+
+    @abstractmethod
+    async def fetch_payment(self, payment_id: str) -> PaymentInfo:
+        """What the vendor itself says about a payment: the browser's word is not enough."""
 
     @abstractmethod
     async def create_order(self, amount_paise: int, receipt: str) -> Order:

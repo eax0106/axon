@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func, select
 
@@ -123,7 +123,9 @@ class Checkout(BaseModel):
 
 
 @router.post("/wallet/topup/verify")
-async def topup_verify(body: Checkout, user: OwnerUser, session: Session) -> dict[str, Any]:
+async def topup_verify(
+    body: Checkout, user: OwnerUser, session: Session, response: Response
+) -> dict[str, Any]:
     """The browser says the customer paid: believed only if the vendor signed it."""
     provider = _payments()
     mine = await session.scalar(
@@ -138,9 +140,22 @@ async def topup_verify(body: Checkout, user: OwnerUser, session: Session) -> dic
         body.razorpay_order_id, body.razorpay_payment_id, body.razorpay_signature
     ):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the payment signature is not valid")
-    payment = await payments.settle(session, body.razorpay_order_id, body.razorpay_payment_id)
+    # The signature proves the checkout belongs to this order, not that the money was taken (with
+    # manual capture a payment can stay authorized and be refunded): ask the vendor.
+    info = await provider.fetch_payment(body.razorpay_payment_id)
+    if info.order_id != body.razorpay_order_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "that payment is for another order")
+    if not info.captured:
+        response.status_code = status.HTTP_202_ACCEPTED  # the webhook credits it once captured
+        return {"status": "pending", "balance": str(await ledger.balance(session, user.account_id))}
+    payment = await payments.settle(
+        session, body.razorpay_order_id, body.razorpay_payment_id, paid_paise=info.amount_paise
+    )
     await session.commit()
-    assert payment is not None  # the order was found above, no amount to compare
+    if payment is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "the amount paid is not the amount ordered"
+        )
     return {
         "status": payment.status.value,
         "balance": str(await ledger.balance(session, user.account_id)),
@@ -362,7 +377,10 @@ async def put_settings(body: BillingSettings, user: OwnerUser, session: Session)
     for key in ("legal_name", "gstin", "address", "state_code"):
         if key in sent:
             value = getattr(body, key)
-            details.pop(key, None) if not value else details.__setitem__(key, value)
+            if value:
+                details[key] = value
+            else:
+                details.pop(key, None)
     gstin = details.get("gstin")
     if gstin and not GSTIN.match(gstin):
         raise HTTPException(422, "that GSTIN is not valid")

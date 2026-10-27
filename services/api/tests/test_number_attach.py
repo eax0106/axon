@@ -1,5 +1,7 @@
 """One number per employee, one employee per number, and the channels a number carries."""
 
+from datetime import UTC, date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import pytest
@@ -7,9 +9,10 @@ from fastapi.testclient import TestClient
 
 from app.auth import issue_token
 from app.models import User
+from app.numbers.renewals import prev_month, today_ist
 
 from .conftest import sql
-from .helpers import account_id, live_employee, seed, signup
+from .helpers import account_id, give_credits, live_employee, seed, signup
 
 
 @pytest.fixture
@@ -149,3 +152,56 @@ def test_changing_numbers_is_for_the_owner_only(api: TestClient, migrated_url: s
         == 403
     )
     assert attach(api, {}, employee, number).status_code == 401
+
+
+def rented(url: str, account: str, e164: str, renews_on: str, channels: int = 1) -> str:
+    return str(
+        sql(
+            url,
+            "INSERT INTO numbers (account_id, provider, e164, number_type, status, renews_on,"
+            " channels, monthly_fee) VALUES (:a, 'vobiz', :n, 'regular', 'active', :r, :c, 649)"
+            " RETURNING id",
+            {"a": account, "n": e164, "r": date.fromisoformat(renews_on), "c": channels},
+        )
+    )
+
+
+def test_adding_channels_is_paid_now_for_the_days_left_and_lowering_is_not_refunded(
+    api: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AXON_EXTRA_CHANNEL_FEE", "300")
+    owner = signup(api)
+    mine = account_id(api, owner)
+    give_credits(migrated_url, mine, "1000")
+    today = today_ist(datetime.now(UTC))
+    renews = today + timedelta(days=10)
+    number = rented(migrated_url, mine, "+919100000008", str(renews))
+    period = (renews - prev_month(renews)).days
+    two_more = api.put(f"/numbers/{number}/channels", json={"channels": 3}, headers=owner)
+    assert two_more.status_code == 200 and two_more.json()["channels"] == 3
+    paid = Decimal(1050) - Decimal(api.get("/wallet", headers=owner).json()["balance"])
+    assert paid == (Decimal(300) * 2 * 10 / period).quantize(Decimal("0.0001"), ROUND_HALF_UP)
+    # Lowering is free but gives nothing back; raising again charges again.
+    assert (
+        api.put(f"/numbers/{number}/channels", json={"channels": 1}, headers=owner).status_code
+        == 200
+    )
+    assert Decimal(1050) - Decimal(api.get("/wallet", headers=owner).json()["balance"]) == paid
+    api.put(f"/numbers/{number}/channels", json={"channels": 3}, headers=owner)
+    assert Decimal(1050) - Decimal(api.get("/wallet", headers=owner).json()["balance"]) == 2 * paid
+
+
+def test_channels_cannot_be_added_without_credits_or_while_the_rent_is_overdue(
+    api: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AXON_EXTRA_CHANNEL_FEE", "300")
+    owner = signup(api)
+    mine = account_id(api, owner)
+    renews = today_ist(datetime.now(UTC)) + timedelta(days=20)
+    number = rented(migrated_url, mine, "+919100000009", str(renews))
+    poor = api.put(f"/numbers/{number}/channels", json={"channels": 5}, headers=owner)
+    assert poor.status_code == 402  # 50 free credits do not cover it
+    assert sql(migrated_url, "SELECT channels FROM numbers WHERE id = :n", {"n": number}) == 1
+    sql(migrated_url, "UPDATE numbers SET status = 'grace' WHERE id = :n", {"n": number})
+    late = api.put(f"/numbers/{number}/channels", json={"channels": 2}, headers=owner)
+    assert late.status_code == 409

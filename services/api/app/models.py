@@ -103,6 +103,9 @@ class NumberStatus(StrEnum):
     ACTIVE = "active"
     GRACE = "grace"
     RELEASED = "released"
+    # Bought, but the carrier never said whether it sold it: the credits stay taken until a person
+    # has checked. Not usable, not renewed.
+    RECONCILE = "reconcile"
 
 
 class Direction(StrEnum):
@@ -185,6 +188,9 @@ class Account(Base):
     credit_balance: Mapped[Decimal] = mapped_column(Credits, server_default="0")
     spend_cap_per_hour: Mapped[Decimal | None] = mapped_column(Credits)  # NULL = no cap
     low_balance_emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set by the ledger when a spend takes the balance under the threshold and an email is due; the
+    # worker sends it and clears the mark.
+    low_balance_email_pending: Mapped[bool] = mapped_column(server_default="false")
     # Invoice details: legal_name, gstin, address, state_code. Not validated beyond shape.
     billing: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     owner_phone: Mapped[str | None] = mapped_column(String(20))  # verified by a one-time code
@@ -406,6 +412,7 @@ class Call(Base):
     voice_tier: Mapped[str | None] = mapped_column(String(20))
     billing_status: Mapped[str | None] = mapped_column(String(20))
     billed_seconds: Mapped[int | None]
+    billing_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
 

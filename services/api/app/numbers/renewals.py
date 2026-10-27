@@ -43,6 +43,12 @@ def next_month(day: date) -> date:
     return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
 
 
+def prev_month(day: date) -> date:
+    """The same day last month, or that month's last day when it has none."""
+    year, month = (day.year - (day.month == 1), (day.month - 2) % 12 + 1)
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
 def fee(number: PhoneNumber) -> Decimal:
     """What one month costs: the number's own fee plus each extra channel."""
     return ledger.credits(number.monthly_fee + (number.channels - 1) * extra_channel_monthly_fee())

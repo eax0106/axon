@@ -25,11 +25,25 @@ class Razorpay:
 
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
+        self.orders: dict[str, int] = {}  # order id -> paise ordered
+        self.payment_status = "captured"  # what a payment lookup says; "authorized" = not taken
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        number = len(self.requests)
-        return httpx.Response(200, json={"id": f"order_{number}", "status": "created"})
+        if request.method == "GET" and request.url.path.startswith("/v1/payments/"):
+            order_id, amount = list(self.orders.items())[-1]  # the tests pay their latest order
+            return httpx.Response(
+                200,
+                json={
+                    "id": request.url.path.rsplit("/", 1)[-1],
+                    "order_id": order_id,
+                    "amount": amount,
+                    "status": self.payment_status,
+                },
+            )
+        order_id = f"order_{len(self.orders) + 1}"
+        self.orders[order_id] = json.loads(request.content)["amount"]
+        return httpx.Response(200, json={"id": order_id, "status": "created"})
 
 
 @pytest.fixture
@@ -253,3 +267,33 @@ def test_a_webhook_that_does_not_match_an_order_credits_nothing(
     assert deliver(api, b'{"event": "payment.captured"}').status_code == 400  # unreadable
     assert balance(api, owner) == 50
     assert sql(migrated_url, "SELECT status::text FROM payments") == "created"
+
+
+def test_a_payment_that_is_only_authorized_is_not_credited_until_it_is_captured(
+    api: TestClient, migrated_url: str, razorpay: Razorpay
+) -> None:
+    owner = signup(api)
+    order_id = order(api, owner)
+    razorpay.payment_status = "authorized"  # manual capture: the money has not been taken yet
+    got = api.post("/wallet/topup/verify", json=checkout(order_id, "pay_1"), headers=owner)
+    assert got.status_code == 202 and got.json()["status"] == "pending"
+    assert balance(api, owner) == 50 and sql(migrated_url, "SELECT status::text FROM payments") == (
+        "created"
+    )
+    razorpay.payment_status = "captured"  # captured later: the webhook (or a retry) credits it
+    assert deliver(api, event(order_id, "pay_1", 50000)).status_code == 200
+    assert balance(api, owner) == 550
+
+
+def test_a_payment_for_another_order_or_amount_is_not_credited(
+    api: TestClient, migrated_url: str, razorpay: Razorpay
+) -> None:
+    owner = signup(api)
+    first, second = order(api, owner), order(api, owner)
+    # A genuine checkout signature for the first order, but the vendor says the payment belongs to
+    # the latest order: nothing is credited to either.
+    got = api.post("/wallet/topup/verify", json=checkout(first, "pay_1"), headers=owner)
+    assert got.status_code == 400 and balance(api, owner) == 50
+    razorpay.orders[second] = 100  # and the amount paid is not the amount ordered
+    got = api.post("/wallet/topup/verify", json=checkout(second, "pay_1"), headers=owner)
+    assert got.status_code == 400 and balance(api, owner) == 50

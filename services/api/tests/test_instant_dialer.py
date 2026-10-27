@@ -110,6 +110,23 @@ def test_it_places_only_due_calls_from_the_employees_number(
     assert tick(migrated_url, adapter, NOW + timedelta(seconds=90)) == []  # never dialed twice
 
 
+def test_a_call_waits_while_every_channel_of_the_number_is_on_a_call(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, _ = setup(api, migrated_url, dial_delay_s=60)
+    lead_in(migrated_url, employee, "98765 43210", name="Ravi")
+    lead_in(migrated_url, employee, "98765 43211", name="Asha")
+    due = NOW + timedelta(seconds=60)
+    assert sorted(p.outcome for p in tick(migrated_url, adapter, due)) == ["dialed", "rescheduled"]
+    assert len(fake.placed) == 1  # one channel: the second call waits
+    later = tick(migrated_url, adapter, due + dialer.CHANNEL_BUSY_RETRY)
+    assert [p.outcome for p in later] == ["rescheduled"] and len(fake.placed) == 1
+    sql(migrated_url, "UPDATE numbers SET channels = 2")  # the owner added a channel
+    again = tick(migrated_url, adapter, due + 2 * dialer.CHANNEL_BUSY_RETRY)
+    assert [p.outcome for p in again] == ["dialed"] and len(fake.placed) == 2
+
+
 def test_a_lead_outside_the_window_waits_for_the_next_one(
     api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
 ) -> None:
@@ -412,6 +429,7 @@ def test_two_workers_never_place_the_same_call(
 ) -> None:
     fake, adapter = carrier
     employee, _ = setup(api, migrated_url, dedup_recent_days=0)
+    sql(migrated_url, "UPDATE numbers SET channels = 6")
     for n in range(6):
         lead_in(migrated_url, employee, f"98765432{n:02d}")
 

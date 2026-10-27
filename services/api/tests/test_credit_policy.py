@@ -5,7 +5,7 @@ import base64
 import json
 import uuid
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -14,8 +14,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.billing import alerts
+from app.billing import alerts, ledger
 from app.models import LedgerKind, Notification, WalletEntry
+from app.numbers import renewals
 from app.providers.speech import common
 from app.providers.telephony.vobiz import VobizTelephony
 
@@ -210,22 +211,36 @@ def test_the_low_balance_note_comes_on_each_crossing_and_the_email_once_a_day(
 ) -> None:
     owner = signup(api)
     mine = account_id(api, owner)
+    sql(migrated_url, "UPDATE accounts SET credit_balance = 55 WHERE id = :a", {"a": mine})
 
-    async def cross(factory: Any, balance_now: str, spent: str, at: Any) -> bool:
-        async with factory() as session:
-            due = await alerts.after_spend(
-                session, uuid.UUID(mine), Decimal(balance_now), Decimal(spent), at
-            )
-            await session.commit()
-            return due
+    def post(amount: str, at: Any) -> None:
+        async def work(factory: Any) -> None:
+            async with factory() as session:
+                kind = LedgerKind.TOPUP if Decimal(amount) > 0 else LedgerKind.ADJUSTMENT
+                await ledger.post(session, uuid.UUID(mine), kind, amount, now=at)
+                await session.commit()
 
-    def go(balance_now: str, spent: str, at: Any) -> bool:
-        return bool(run_db(migrated_url, lambda f: cross(f, balance_now, spent, at)))
+        run_db(migrated_url, work)
 
-    assert go("45", "10", NOW) is True  # 55 -> 45: under 50 for the first time, email due
-    assert go("30", "15", NOW) is False  # already under 50: nothing new to say
-    assert go("40", "20", NOW + timedelta(hours=2)) is False  # crossed again, email sent today
-    assert go("40", "20", NOW + timedelta(hours=25)) is True  # a day later it may email again
+    def pending() -> bool:
+        flag = sql(
+            migrated_url,
+            "SELECT low_balance_email_pending FROM accounts WHERE id = :a",
+            {"a": mine},
+        )
+        return bool(flag)
+
+    post("-10", NOW)  # 55 -> 45: under 50 for the first time, an email is due
+    assert pending() is True
+    assert run_db(migrated_url, alerts.send_pending) == 1 and pending() is False
+    post("-15", NOW)  # already under 50: nothing new to say
+    assert pending() is False
+    post("20", NOW)  # 30 -> 50, back to the threshold
+    post("-10", NOW + timedelta(hours=2))  # crossed again, but an email went out today
+    assert pending() is False
+    post("20", NOW)
+    post("-20", NOW + timedelta(hours=25))  # a day later it may email again
+    assert pending() is True
 
     async def notes(factory: Any) -> int:
         async with factory() as session:
@@ -239,9 +254,45 @@ def test_the_low_balance_note_comes_on_each_crossing_and_the_email_once_a_day(
 
     assert run_db(migrated_url, notes) == 3  # the bell has one per crossing
     wallet = api.get("/wallet", headers=owner).json()
-    assert wallet["low"] is False  # 50 is exactly the threshold: not low
-    sql(migrated_url, "UPDATE accounts SET credit_balance = 49 WHERE id = :a", {"a": mine})
-    assert api.get("/wallet", headers=owner).json()["low"] is True  # the chip warning
+    assert wallet["low"] is True  # 40 now
+    sql(migrated_url, "UPDATE accounts SET credit_balance = 50 WHERE id = :a", {"a": mine})
+    assert api.get("/wallet", headers=owner).json()["low"] is False  # exactly the threshold
+
+
+def test_every_kind_of_spend_raises_the_low_balance_alert_not_only_calls(
+    api: TestClient, migrated_url: str, vendors: Vendors
+) -> None:
+    owner = signup(api)
+    mine = account_id(api, owner)
+
+    def low_notes() -> int:
+        return int(
+            sql(migrated_url, "SELECT count(*) FROM notifications WHERE kind = 'low_balance'")
+        )
+
+    def reset(balance: str) -> None:
+        sql(
+            migrated_url,
+            "UPDATE accounts SET credit_balance = :b, low_balance_emailed_at = NULL WHERE id = :a",
+            {"a": mine, "b": balance},
+        )
+
+    reset("50.1")  # AI help: 0.2 takes it under 50
+    brief = {"brief": "Call new leads.", "channel": "instant", "language": "en"}
+    assert api.post("/ai/brief-questions", json=brief, headers=owner).status_code == 200
+    assert low_notes() == 1
+    reset("50")  # rent: a number's monthly fee
+    sql(
+        migrated_url,
+        "INSERT INTO numbers (account_id, provider, e164, number_type, status, renews_on,"
+        " monthly_fee) VALUES (:a, 'vobiz', '+919100000099', 'regular', 'active', :d, 1)",
+        {"a": mine, "d": date(2026, 1, 1)},
+    )
+    run_db(migrated_url, lambda f: renewals.renew_due(f, NOW))
+    assert low_notes() == 2
+    assert sql(
+        migrated_url, "SELECT low_balance_email_pending FROM accounts WHERE id = :a", {"a": mine}
+    )
 
 
 # --- The fee for AI help -----------------------------------------------------------------------
@@ -275,24 +326,28 @@ def test_each_kind_of_ai_help_costs_the_fee_through_the_ledger(
     assert entries(migrated_url, mine, "ai_use") == [-FEE] * 3
 
 
-def test_analysis_costs_the_fee_once_per_call_and_a_re_analysis_when_asked_for(
+def test_analysis_costs_the_fee_once_per_call_even_when_it_is_run_again(
     api: TestClient, migrated_url: str, vendors: Vendors
 ) -> None:
     from .test_post_call_job import make_call, process, setup
 
-    vendors.text = model_reply()
     employee, owner = setup(api, migrated_url)
     mine = account_id(api, owner)
     call = make_call(migrated_url, employee)
+    vendors.down = True  # the first analysis fails: nothing was delivered, so nothing is charged
     assert process(migrated_url) == 1
-    assert balance(api, owner) == 50 - FEE  # taken even if it left the account at zero
-    sql(migrated_url, "UPDATE calls SET analysis_status = 'failed' WHERE id = :c", {"c": call})
+    assert sql(migrated_url, "SELECT analysis_status FROM calls WHERE id = :c", {"c": call}) == (
+        "failed"
+    )
+    assert balance(api, owner) == 50
     asked = api.post(f"/calls/{call}/reanalyze", headers=owner)
     assert asked.status_code == 202
-    assert balance(api, owner) == 50 - 2 * FEE  # the request is the fee for the re-analysis
+    assert balance(api, owner) == 50  # asking is free: the fee is for the analysis itself
+    vendors.down = False
+    vendors.text = model_reply()
     assert process(migrated_url) == 1
-    assert balance(api, owner) == 50 - 2 * FEE  # and the re-run itself is not charged again
-    assert len(entries(migrated_url, mine, "ai_use")) == 2
+    assert balance(api, owner) == 50 - FEE  # one fee in all, not one for the request and one more
+    assert len(entries(migrated_url, mine, "ai_use")) == 1
 
 
 def test_help_is_refused_with_402_at_zero_and_a_failed_request_gets_its_fee_back(

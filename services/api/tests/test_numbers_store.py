@@ -146,9 +146,46 @@ def test_a_carrier_refusal_gives_the_credits_back_and_keeps_no_number(
     assert balance(api, owner) == 1050
     kinds = sql(migrated_url, "SELECT string_agg(kind::text, ',' ORDER BY id) FROM wallet_ledger")
     assert kinds == "bonus,topup,number,refund"
-    assert sql(migrated_url, "SELECT count(*) FROM numbers") == 0
+    held = "SELECT count(*) FROM numbers WHERE status <> 'released'"
+    assert sql(migrated_url, held) == 0  # the attempt is kept, as released
     vobiz.fail_buy = False
     assert api.post("/numbers/purchase", json={"e164": REGULAR}, headers=owner).status_code == 201
+
+
+def test_a_lost_carrier_answer_keeps_the_credits_held_and_the_number_for_a_person_to_check(
+    api: TestClient, migrated_url: str, vobiz: VobizAccount
+) -> None:
+    owner, _ = ready(api, migrated_url)
+    vobiz.buy_times_out = True  # the carrier sold it, but the answer never came back
+    got = api.post("/numbers/purchase", json={"e164": REGULAR}, headers=owner)
+    assert got.status_code == 202 and got.json()["status"] == "reconcile"
+    assert balance(api, owner) == Decimal(1050 - 649)  # not refunded
+    assert REGULAR in vobiz.owned
+    kinds = sql(migrated_url, "SELECT string_agg(kind::text, ',' ORDER BY id) FROM wallet_ledger")
+    assert kinds == "bonus,topup,number"
+    # It is written down, cannot be bought twice, cannot be used, and the owner has been told.
+    assert sql(migrated_url, "SELECT status FROM numbers WHERE e164 = :e", {"e": REGULAR}) == (
+        "reconcile"
+    )
+    again = api.post("/numbers/purchase", json={"e164": REGULAR}, headers=owner)
+    assert again.status_code == 409
+    assert (
+        sql(
+            migrated_url,
+            "SELECT count(*) FROM notifications WHERE kind = 'number_purchase_unconfirmed'",
+        )
+        == 1
+    )
+
+
+def test_a_carrier_server_error_is_also_an_unknown_result_not_a_refusal(
+    api: TestClient, migrated_url: str, vobiz: VobizAccount
+) -> None:
+    owner, _ = ready(api, migrated_url)
+    vobiz.buy_status = 503
+    got = api.post("/numbers/purchase", json={"e164": REGULAR}, headers=owner)
+    assert got.status_code == 202 and got.json()["status"] == "reconcile"
+    assert balance(api, owner) == Decimal(1050 - 649)
 
 
 def test_a_number_someone_holds_cannot_be_bought_again(

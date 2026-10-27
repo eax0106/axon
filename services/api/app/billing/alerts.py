@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.billing.config import low_balance_threshold
 from app.models import Account, Notification, User
@@ -18,31 +18,53 @@ log = logging.getLogger("axon.billing")
 EMAIL_EVERY = timedelta(days=1)
 
 
-async def after_spend(
-    session: AsyncSession, account_id: uuid.UUID, balance: Decimal, spent: Decimal, now: datetime
-) -> bool:
-    """Call after a charge, inside the same transaction. Notes the account when this charge took
-    it from above the threshold to under it. Returns True when an email should be sent (once the
-    transaction has committed: see `send_low_balance_email`)."""
+def note_crossing(
+    session: AsyncSession, account: Account, before: Decimal, after: Decimal, now: datetime
+) -> None:
+    """Called by the ledger for every spend, inside the same transaction. When this spend took the
+    balance from the threshold or above to under it, the bell gets an entry, and the account is
+    marked for an email if none went out in the last day (the worker sends it: see `send_pending`).
+    """
     threshold = low_balance_threshold()
-    if not (balance < threshold <= balance + spent):
-        return False
-    account = await session.get(Account, account_id)
-    assert account is not None  # FK guarantees it
+    if not (after < threshold <= before):
+        return
     session.add(
         Notification(
-            account_id=account_id,
+            account_id=account.id,
             kind="low_balance",
             title="Low credit balance",
-            body=f"You have {balance:.2f} credits left. Top up so your employees can keep calling.",
+            body=f"You have {after:.2f} credits left. Top up so your employees can keep calling.",
         )
     )
-    due = (
-        account.low_balance_emailed_at is None or account.low_balance_emailed_at < now - EMAIL_EVERY
-    )
-    if due:
+    if account.low_balance_emailed_at is None or account.low_balance_emailed_at < now - EMAIL_EVERY:
         account.low_balance_emailed_at = now
-    return due
+        account.low_balance_email_pending = True
+
+
+async def send_pending(factory: async_sessionmaker[AsyncSession]) -> int:
+    """Email every account marked by `note_crossing`. The mark is cleared before sending, so a
+    crash loses one email rather than sending it twice. Returns how many were attempted."""
+    async with factory() as session:
+        ids = list(
+            await session.scalars(select(Account.id).where(Account.low_balance_email_pending))
+        )
+    sent = 0
+    for account_id in ids:
+        async with factory() as session:
+            account = await session.get(Account, account_id, with_for_update=True)
+            if account is None or not account.low_balance_email_pending:
+                continue
+            account.low_balance_email_pending = False
+            balance = account.credit_balance
+            await session.commit()
+            await email_owner(
+                session,
+                account_id,
+                "Your credit balance is low",
+                f"You have {balance:.2f} credits left. Top up so your employees can keep calling.",
+            )
+            sent += 1
+    return sent
 
 
 async def email_owner(
@@ -65,14 +87,3 @@ async def email_owner(
         log.warning("email %r failed: %s", subject, type(exc).__name__)
         return False
     return True
-
-
-async def send_low_balance_email(
-    session: AsyncSession, account_id: uuid.UUID, balance: Decimal
-) -> bool:
-    return await email_owner(
-        session,
-        account_id,
-        "Your credit balance is low",
-        f"You have {balance:.2f} credits left. Top up so your employees can keep calling.",
-    )

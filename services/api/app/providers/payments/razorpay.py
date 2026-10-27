@@ -14,7 +14,7 @@ from collections.abc import Mapping
 
 import httpx
 
-from app.providers.base import Order, PaymentProvider
+from app.providers.base import Order, PaymentInfo, PaymentProvider
 
 BASE = "https://api.razorpay.com/v1"
 TIMEOUT_S = 15.0
@@ -51,6 +51,17 @@ class RazorpayPayments(PaymentProvider):
             response = await client.post("/orders", json=body)
             response.raise_for_status()
             return Order(id=str(response.json()["id"]))
+
+    async def fetch_payment(self, payment_id: str) -> PaymentInfo:
+        async with self._client() as client:
+            response = await client.get(f"/payments/{payment_id}")
+            response.raise_for_status()
+            body = response.json()
+        return PaymentInfo(
+            order_id=str(body.get("order_id") or ""),
+            amount_paise=int(body["amount"]),
+            captured=body.get("status") == "captured",
+        )
 
     def public_key(self) -> str:
         return self._key_id

@@ -11,7 +11,7 @@ from app.providers.telephony.vobiz import VobizTelephony
 
 from .conftest import sql
 from .dialing import NOW, lead_in, tick
-from .helpers import account_id, live_employee, seed, signup
+from .helpers import account_id, give_credits, live_employee, seed, signup
 from .vobiz_fake import VobizAccount
 
 PHONE = "+919876543210"
@@ -244,3 +244,23 @@ def test_codes_are_503_without_carrier_keys(api: TestClient, migrated_url: str) 
         "VOBIZ_AUTH_TOKEN",
     ]
     assert sql(migrated_url, "SELECT count(*) FROM phone_otps") == 0
+
+
+def test_the_code_call_honours_the_do_not_call_list(
+    api: TestClient, migrated_url: str, vobiz: VobizAccount
+) -> None:
+    owner = signup(api)
+    give_credits(migrated_url, account_id(api, owner), "100")
+    live_employee(api, migrated_url, owner)  # gives the account a number to speak from
+    sql(
+        migrated_url,
+        "INSERT INTO dnc_entries (account_id, phone, source) VALUES (:a, :p, 'manual')",
+        {"a": account_id(api, owner), "p": PHONE},
+    )
+    refused = api.post("/accounts/owner-phone", json={"phone": PHONE}, headers=owner)
+    assert refused.status_code == 409 and "do-not-call" in refused.json()["detail"]
+    assert vobiz.calls == []
+    sql(migrated_url, "DELETE FROM dnc_entries")
+    assert (
+        api.post("/accounts/owner-phone", json={"phone": PHONE}, headers=owner).status_code == 202
+    )

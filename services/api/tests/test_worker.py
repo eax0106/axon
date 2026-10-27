@@ -38,6 +38,7 @@ def test_the_cron_schedule_and_hooks() -> None:
     assert set(names) == {
         "cron:billing_tick",
         "cron:dial_tick",
+        "cron:low_balance_tick",
         "cron:post_call_tick",
         "cron:reap_tick",
         "cron:renewal_tick",

@@ -18,11 +18,11 @@ from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, StringConstraints
 from sqlalchemy import delete, select
 
-from app.auth import CurrentUser, _secret
+from app.auth import CurrentUser, jwt_secret
 from app.db import Session
 from app.employees.limits import take
 from app.employees.router import OwnerUser
-from app.models import Account, NumberStatus, PhoneNumber, PhoneOtp
+from app.models import Account, DncEntry, NumberStatus, PhoneNumber, PhoneOtp
 from app.providers.base import ProviderKind, TelephonyProvider
 from app.providers.registry import require
 from app.settings import api_public_url
@@ -35,7 +35,7 @@ INDIAN_MOBILE = re.compile(r"^\+91[6-9]\d{9}$")
 
 
 def code_for(token: str) -> str:
-    digest = hmac.new(_secret().encode(), token.encode(), hashlib.sha256).digest()
+    digest = hmac.new(jwt_secret().encode(), token.encode(), hashlib.sha256).digest()
     return f"{int.from_bytes(digest[:8], 'big') % 1_000_000:06d}"
 
 
@@ -61,6 +61,16 @@ async def send_code(body: PhoneBody, user: OwnerUser, session: Session) -> dict[
     if from_number is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "buy a phone number first: the code is spoken from it"
+        )
+    on_dnc = await session.scalar(
+        select(DncEntry.id).where(
+            DncEntry.account_id == user.account_id, DncEntry.phone == body.phone
+        )
+    )
+    if on_dnc:  # the one outbound call here must honour the list like any other
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "that number is on the do-not-call list: remove it there before verifying it",
         )
     await take(session, user, "owner_phone_code", CALLS_PER_HOUR)
     token = secrets.token_urlsafe(32)

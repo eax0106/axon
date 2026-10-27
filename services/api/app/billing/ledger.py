@@ -9,11 +9,13 @@ a webhook safe.
 
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing import alerts
 from app.billing.config import CREDIT_DECIMALS
 from app.models import Account, LedgerKind, WalletEntry
 
@@ -54,8 +56,11 @@ async def post(
     ref_id: str | None = None,
     note: str | None = None,
     allow_overdraw: bool = False,
+    now: datetime | None = None,
 ) -> Posted:
-    """Add `amount` (negative to spend) to the wallet. Does not commit.
+    """Add `amount` (negative to spend) to the wallet. Does not commit. A spend that takes the
+    balance under the low-balance threshold raises the alert (see `alerts.note_crossing`), whatever
+    it was for: a call, AI help, rent, a number or a channel.
 
     A spend that would take the balance below zero raises InsufficientCreditsError, unless
     `allow_overdraw`: that is for a charge for something already delivered (a call that has just
@@ -84,6 +89,10 @@ async def post(
         ref_id=ref_id,
         note=note,
     )
+    if value < 0:
+        alerts.note_crossing(
+            session, account, account.credit_balance, balance, now or datetime.now(UTC)
+        )
     account.credit_balance = balance
     session.add(entry)
     await session.flush()

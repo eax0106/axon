@@ -1,13 +1,16 @@
 """The number store, the holder's KYC, and which employee uses which number."""
 
+import logging
 import re
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+import httpx
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.auth import CurrentUser
 from app.billing import ledger
@@ -18,12 +21,14 @@ from app.models import (
     Employee,
     KycHolder,
     LedgerKind,
+    Notification,
     NumberStatus,
     NumberType,
     PhoneNumber,
 )
 from app.numbers import attach as attaching
-from app.numbers.renewals import next_month, today_ist
+from app.numbers import channels
+from app.numbers.renewals import next_month, prev_month, today_ist
 from app.providers.base import (
     InventoryNumber,
     NumberKycProvider,
@@ -32,6 +37,7 @@ from app.providers.base import (
 )
 from app.providers.registry import require
 
+log = logging.getLogger("axon.numbers")
 router = APIRouter()
 PAN = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$")
 VERIFIED = "verified"
@@ -140,10 +146,24 @@ class Purchase(BaseModel):
     holder_id: uuid.UUID | None = None
 
 
+def _carrier_refused(exc: Exception) -> bool:
+    """True only when the carrier clearly said no (a 4xx answer), so nothing was bought. A timeout,
+    a dropped connection or a 5xx leaves the outcome unknown: it may have sold the number."""
+    return (
+        isinstance(exc, httpx.HTTPStatusError)
+        and 400 <= exc.response.status_code < 500
+        and exc.response.status_code != status.HTTP_408_REQUEST_TIMEOUT
+    )
+
+
 @router.post("/numbers/purchase", status_code=status.HTTP_201_CREATED)
-async def purchase(body: Purchase, user: OwnerUser, session: Session) -> dict[str, Any]:
-    """Buy a number: the first month is taken from credits, then the carrier is asked; if the
-    carrier refuses, the credits go back."""
+async def purchase(
+    body: Purchase, user: OwnerUser, session: Session, response: Response
+) -> dict[str, Any]:
+    """Buy a number: the first month is taken from credits and the number is written down as
+    waiting for the carrier, then the carrier is asked. If it clearly refuses, the credits go back.
+    If the answer is lost (a timeout, a 5xx), the carrier may have sold it, so the credits stay
+    taken, the number stays `reconcile` and the owner is told; a person checks with the carrier."""
     holder = await _verified_holder(session, user.account_id, body.holder_id)
     if holder is None:
         raise HTTPException(
@@ -165,31 +185,57 @@ async def purchase(body: Purchase, user: OwnerUser, session: Session) -> dict[st
         session, user.account_id, LedgerKind.NUMBER, -charge,
         ref_type="number_purchase", ref_id=reference, note=f"new number {item.e164}",
     )  # fmt: skip
-    await session.commit()
-    try:
-        provider_ref = await store.buy_number(item.e164)
-    except Exception:
-        await ledger.post(
-            session, user.account_id, LedgerKind.REFUND, charge,
-            ref_type="number_purchase_refund", ref_id=reference, note=f"{item.e164} not bought",
-        )  # fmt: skip
-        await session.commit()
-        raise
     number = PhoneNumber(
         account_id=user.account_id,
         provider=store.name,
         e164=item.e164,
         number_type=NumberType(item.number_type),
         channels=1,
-        status=NumberStatus.ACTIVE,
-        renews_on=next_month(today_ist(datetime.now(UTC))),
-        provider_ref=provider_ref,
+        status=NumberStatus.RECONCILE,
         holder_id=holder.id,
         monthly_fee=number_monthly_fee(),
     )
     session.add(number)
+    try:
+        await session.commit()
+    except IntegrityError:  # someone bought it between the check and now
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "that number is already taken") from None
+    number_id, account_id = number.id, user.account_id  # a rollback expires the objects
+    try:
+        provider_ref = await store.buy_number(item.e164)
+    except Exception as exc:
+        await session.rollback()
+        pending = await session.get(PhoneNumber, number_id, with_for_update=True)
+        assert pending is not None
+        if _carrier_refused(exc):
+            pending.status = NumberStatus.RELEASED
+            await ledger.post(
+                session, account_id, LedgerKind.REFUND, charge,
+                ref_type="number_purchase_refund", ref_id=reference, note=f"{item.e164} not bought",
+            )  # fmt: skip
+            await session.commit()
+            raise
+        session.add(
+            Notification(
+                account_id=account_id,
+                kind="number_purchase_unconfirmed",
+                title=f"We are checking your new number {item.e164}",
+                body="The carrier did not confirm the purchase. The credits stay held while we "
+                "check with them; you will not be charged twice.",
+            )
+        )
+        await session.commit()
+        log.error("purchase of %s: carrier result unknown (%s)", item.e164, type(exc).__name__)
+        response.status_code = status.HTTP_202_ACCEPTED
+        return _number_out(pending)
+    bought = await session.get(PhoneNumber, number_id, with_for_update=True)
+    assert bought is not None
+    bought.status = NumberStatus.ACTIVE
+    bought.provider_ref = provider_ref
+    bought.renews_on = next_month(today_ist(datetime.now(UTC)))
     await session.commit()
-    return _number_out(number)
+    return _number_out(bought)
 
 
 @router.delete("/numbers/{number_id}")
@@ -214,11 +260,25 @@ class Channels(BaseModel):
 async def set_channels(
     number_id: uuid.UUID, body: Channels, user: OwnerUser, session: Session
 ) -> dict[str, Any]:
-    """How many calls the number can carry at once. Each extra channel is rented with the number
-    from the next renewal."""
+    """How many calls the number can carry at once; the dialer holds a call back while all are
+    busy. Raising it is charged now for the days left in the rental period; lowering it is free and
+    not refunded. Each extra channel is also rented with the number at every renewal."""
+    await ledger.lock_account(session, user.account_id)  # the account first, then the number
     number = await attaching.load_number(session, user.account_id, number_id)
+    await session.refresh(number)
     if number.status is NumberStatus.RELEASED:
         raise HTTPException(status.HTTP_409_CONFLICT, "a released number has no channels")
+    if body.channels > number.channels:
+        if number.status is not NumberStatus.ACTIVE:
+            raise HTTPException(status.HTTP_409_CONFLICT, "pay the rent before adding channels")
+        start = prev_month(number.renews_on) if number.renews_on else None
+        charge = channels.upgrade_fee(number, body.channels, today_ist(datetime.now(UTC)), start)
+        if charge > 0:
+            await ledger.post(
+                session, user.account_id, LedgerKind.NUMBER, -charge,
+                ref_type="channel_upgrade", ref_id=f"{number.id}:{uuid.uuid4().hex}",
+                note=f"{body.channels} channels on {number.e164} until {number.renews_on}",
+            )  # fmt: skip
     number.channels = body.channels
     await session.commit()
     return _number_out(number)

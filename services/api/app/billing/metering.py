@@ -7,15 +7,16 @@ record is never charged: after a day it is flagged `reconcile` for a person to l
 """
 
 import logging
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.billing import alerts, ledger
+from app.billing import ledger
 from app.billing.config import rate_per_minute
-from app.instant.dialer import _detail
+from app.instant.dialer import call_detail
 from app.models import Call, CallEvent, CallStatus, Employee, LedgerKind, Voice, VoiceTier
 from app.providers.base import TelephonyProvider
 
@@ -23,6 +24,7 @@ log = logging.getLogger("axon.billing")
 FINAL = (CallStatus.COMPLETED, CallStatus.NO_ANSWER, CallStatus.BUSY, CallStatus.FAILED)
 WAIT_FOR_RECORD = timedelta(seconds=30)  # the carrier writes its record just after the call ends
 GIVE_UP_AFTER = timedelta(hours=24)
+RECHECK_AFTER = timedelta(seconds=60)  # a call still waiting is looked at again no sooner than this
 BATCH = 20
 
 
@@ -47,7 +49,11 @@ async def bill_pending(
     *,
     limit: int = BATCH,
 ) -> dict[str, int]:
-    """Look at finished calls not yet billed; counts of billed, free, flagged and still waiting."""
+    """Look at finished calls not yet billed; counts of billed, free, flagged and still waiting.
+
+    Calls never looked at come first, then the ones checked longest ago, and a call that is still
+    waiting is left alone for a minute: a run of calls whose carrier record is late (or whose fetch
+    keeps failing) cannot hold back the calls behind them."""
     counts = {"billed": 0, "free": 0, "reconcile": 0, "waiting": 0}
     async with factory() as session:
         ids = list(
@@ -59,8 +65,12 @@ async def bill_pending(
                     Call.status.in_(FINAL),
                     Call.ended_at < now - WAIT_FOR_RECORD,
                     Call.carrier_call_id.is_not(None),
+                    or_(
+                        Call.billing_checked_at.is_(None),
+                        Call.billing_checked_at <= now - RECHECK_AFTER,
+                    ),
                 )
-                .order_by(Call.ended_at)
+                .order_by(Call.billing_checked_at.asc().nulls_first(), Call.ended_at)
                 .limit(limit)
             )
         )
@@ -72,7 +82,7 @@ async def bill_pending(
 async def _bill_one(
     factory: async_sessionmaker[AsyncSession],
     telephony: TelephonyProvider,
-    call_id: object,
+    call_id: uuid.UUID,
     now: datetime,
 ) -> str:
     async with factory() as session:
@@ -80,16 +90,18 @@ async def _bill_one(
         if call is None or call.billing_status is not None:
             return "waiting"
         try:
-            detail = await _detail(telephony, call)
-        except Exception as exc:  # an outage at the carrier: try again next tick
+            detail = await call_detail(telephony, call)
+        except Exception as exc:  # an outage at the carrier, or a record we cannot read
             log.warning("carrier record for call %s unavailable: %s", call.id, type(exc).__name__)
-            return "waiting"
+            detail = None
         if detail is None:
             if call.ended_at is not None and call.ended_at < now - GIVE_UP_AFTER:
                 call.billing_status = "reconcile"
                 session.add(CallEvent(call_id=call.id, type="billing_reconcile", data={}))
                 await session.commit()
                 return "reconcile"
+            call.billing_checked_at = now
+            await session.commit()
             return "waiting"
         if not detail.answered or detail.talk_s <= 0:
             call.billing_status = "free"
@@ -105,17 +117,10 @@ async def _bill_one(
             ref_id=str(call.id),
             note=f"{detail.talk_s} s talk time",
             allow_overdraw=True,  # the call already happened
+            now=now,
         )
         call.credits_charged = -posted.entry.amount
         call.billed_seconds = detail.talk_s
         call.billing_status = "billed"
-        email_due = await alerts.after_spend(
-            session, call.account_id, posted.entry.balance_after, charge, now
-        )
         await session.commit()
-        balance_now = posted.entry.balance_after
-        account_id = call.account_id
-    if email_due:
-        async with factory() as session:
-            await alerts.send_low_balance_email(session, account_id, balance_now)
     return "billed"

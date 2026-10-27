@@ -60,4 +60,12 @@ async def ai_budget(user: CurrentUser, session: Session) -> AsyncIterator[None]:
         raise
 
 
+async def ai_rate(user: CurrentUser, session: Session) -> None:
+    """The hourly allowance without a fee, for work that is paid for elsewhere: a re-analysis (the
+    analysis fee is taken once, when the analysis completes) and one chunk of a spoken brief (the
+    brief pays when it goes to the builder, not for each chunk of audio)."""
+    await take(session, user, "ai.request", AI_PER_HOUR)
+
+
 AiBudget = Depends(ai_budget)
+AiRate = Depends(ai_rate)

@@ -192,7 +192,38 @@ def test_a_carrier_outage_leaves_the_call_for_the_next_tick(
     fake.down = True
     assert bill(migrated_url, telephony)["waiting"] == 1
     fake.down = False
-    assert bill(migrated_url, telephony)["billed"] == 1
+    assert bill(migrated_url, telephony)["billed"] == 0  # looked at a moment ago: left alone
+    assert bill(migrated_url, telephony, NOW + metering.RECHECK_AFTER)["billed"] == 1
+
+
+def test_calls_waiting_for_a_record_do_not_hold_back_the_calls_behind_them(
+    api: TestClient, migrated_url: str, cdr: tuple[Cdr, VobizTelephony]
+) -> None:
+    fake, telephony = cdr
+    owner = signup(api)
+    mine = account_id(api, owner)
+    for i in range(metering.BATCH):  # older calls whose carrier record has not appeared
+        finished_call(migrated_url, api, owner, ended_at=ENDED - timedelta(hours=2, seconds=i))
+    _, newer = finished_call(migrated_url, api, owner)
+    fake.records[newer] = {"billsec": 60, "duration": 70, "hangup_cause": "NORMAL_CLEARING"}
+    assert bill(migrated_url, telephony)["waiting"] == metering.BATCH
+    after = bill(migrated_url, telephony, NOW + timedelta(seconds=30))
+    assert after == {"billed": 1, "free": 0, "reconcile": 0, "waiting": 0}
+    assert balance(migrated_url, mine) == Decimal("46.5")
+
+
+def test_a_record_that_cannot_be_fetched_for_a_day_is_flagged_not_retried_forever(
+    api: TestClient, migrated_url: str, cdr: tuple[Cdr, VobizTelephony]
+) -> None:
+    fake, telephony = cdr
+    owner = signup(api)
+    mine = account_id(api, owner)
+    call, _ = finished_call(migrated_url, api, owner)
+    fake.down = True  # the carrier answers 503 every time
+    assert bill(migrated_url, telephony)["waiting"] == 1
+    assert bill(migrated_url, telephony, NOW + timedelta(hours=25))["reconcile"] == 1
+    status = sql(migrated_url, "SELECT billing_status FROM calls WHERE id = :i", {"i": call})
+    assert status == "reconcile" and balance(migrated_url, mine) == Decimal(50)
 
 
 def test_fresh_test_and_unplaced_calls_are_not_looked_at(
@@ -257,10 +288,12 @@ def test_dropping_under_the_threshold_notes_the_account_and_emails_once_a_day(
     _, first = finished_call(migrated_url, api, owner)
     fake.records[first] = {"billsec": 60, "duration": 70, "hangup_cause": "NORMAL_CLEARING"}
     bill(migrated_url, telephony)  # 52 -> 48.5, under 50
+    run_db(migrated_url, alerts.send_pending)  # the worker's low_balance_tick
     assert len(sent) == 1 and sent[0]["to"] == ["owner@example.com"]
     _, second = finished_call(migrated_url, api, owner)
     fake.records[second] = {"billsec": 60, "duration": 70, "hangup_cause": "NORMAL_CLEARING"}
     bill(migrated_url, telephony)  # already under: no second note and no second email
+    run_db(migrated_url, alerts.send_pending)
     assert len(sent) == 1
 
     async def notes(factory: Any) -> int:
