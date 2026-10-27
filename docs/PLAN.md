@@ -15,8 +15,8 @@ Legend: `todo` · `building` · `in review` · `changes` · `merged` · `blocked
 | B4 | AI employee builder | Sonnet | merged | [#5](https://github.com/eax0106/axon/pull/5) 864401d | 2 review rounds; carry-overs in docs/phases/b4.md |
 | B5 | Instant channel | Sonnet | merged | [#7](https://github.com/eax0106/axon/pull/7) b9ca988 | 2 review rounds; carry-overs in docs/phases/b5.md |
 | B6 | Post-call + data views | Sonnet | merged | [#8](https://github.com/eax0106/axon/pull/8) f44a952 | 3 review rounds (Indic quote normalisation); carry-overs in docs/phases/b6.md |
-| B7 | Billing + numbers (incl. number types and dialer rule table) | Sonnet | building | | |
-| B8 | Bulk campaigns | Sonnet | todo | | |
+| B7 | Billing + numbers (incl. number types and dialer rule table) | Sonnet | merged | [#9](https://github.com/eax0106/axon/pull/9) 654604b | 2 review rounds (billing stall, unknown purchase result, channels, alert on every spend); carry-overs in docs/phases/b7.md |
+| B8 | Bulk campaigns | Sonnet | todo | | Dialer must also check a free channel (`numbers/channels.py`) |
 | B9 | Inbound | Sonnet | todo | | |
 | B10 | In-call actions | Sonnet | todo | | |
 | B11 | Training + knowledge | Sonnet | todo | | |
