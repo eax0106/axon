@@ -222,6 +222,7 @@ async def give_consent(
         scope=ConsentScope.CAMPAIGN,
         subject_id=campaign.id,
         statement=CONSENT_STATEMENT,
+        created_at=datetime.now(UTC),  # the same clock as the contacts' rows
     )
     session.add(entry)
     await session.commit()
@@ -338,7 +339,11 @@ async def resume(campaign_id: uuid.UUID, user: CurrentUser, session: Session) ->
             status.HTTP_409_CONFLICT, "contacts were added: the owner has to confirm consent again"
         )
     campaign.note = None
-    campaign.started_at = campaign.started_at or datetime.now(UTC)
+    now = datetime.now(UTC)
+    if campaign.scheduled_at is not None and campaign.scheduled_at > now:
+        campaign.status = CampaignStatus.SCHEDULED  # its day has not come: it still waits for it
+    else:
+        campaign.started_at = campaign.started_at or now
     await session.commit()
     return await out(session, campaign)
 

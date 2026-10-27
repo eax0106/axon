@@ -261,3 +261,21 @@ def test_contacts_added_after_the_consent_need_the_consent_again(
         f"/campaigns/{campaign}/contacts", json=[{"phone": "9876543212"}], headers=owner
     )
     assert again.json()["added"] == 0 and get(api, owner, campaign)["status"] == "running"
+
+
+def test_resuming_a_campaign_that_was_waiting_for_its_start_time_keeps_waiting(
+    api: TestClient, migrated_url: str
+) -> None:
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, ["9876543210"], start=False)
+    when = datetime.now(UTC) + timedelta(days=3)
+    scheduled = api.post(
+        f"/campaigns/{campaign}/start", json={"start_at": when.isoformat()}, headers=owner
+    )
+    assert scheduled.json()["status"] == "scheduled"
+    api.post(f"/campaigns/{campaign}/contacts", json=[{"phone": "9876543211"}], headers=owner)
+    assert get(api, owner, campaign)["status"] == "paused"  # new contacts need the consent again
+    api.post(f"/campaigns/{campaign}/consent", json={"confirm": True}, headers=owner)
+    resumed = api.post(f"/campaigns/{campaign}/resume", headers=owner)
+    assert resumed.status_code == 200 and resumed.json()["status"] == "scheduled"
+    assert datetime.fromisoformat(resumed.json()["scheduled_at"]) == when
