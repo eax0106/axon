@@ -8,6 +8,16 @@ from tests.conftest import (
     migrated_url,
     no_keys,
     server_url,
+    shop,
 )
 
-__all__ = ["api", "carrier", "db_client", "fresh_database", "migrated_url", "no_keys", "server_url"]
+__all__ = [
+    "api",
+    "carrier",
+    "db_client",
+    "fresh_database",
+    "migrated_url",
+    "no_keys",
+    "server_url",
+    "shop",
+]

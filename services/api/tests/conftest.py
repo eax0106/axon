@@ -198,3 +198,47 @@ def carrier(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, VobizTelepho
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
     fake = Carrier()
     yield fake, VobizTelephony(transport=httpx.MockTransport(fake.handler))
+
+
+@pytest.fixture
+def actions_api(api: TestClient, monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Any]:
+    """The started API with Google behind a fake account (see actions_support)."""
+    from .actions_support import patch_google
+
+    return api, patch_google(monkeypatch)
+
+
+@pytest.fixture
+def shop(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """A real web server on this machine for the HTTP tool; its address is allowed for the test."""
+    import threading
+    from http.server import ThreadingHTTPServer
+
+    from app.actions import net
+
+    from .actions_support import Shop
+
+    monkeypatch.setattr(net, "ALLOW_LOCAL", True)
+    Shop.seen = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Shop)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+
+
+@pytest.fixture
+def interakt(api: TestClient, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
+    """Interakt with a key set, answering from a fake vendor."""
+    import functools
+
+    from app.providers.base import ProviderKind
+    from app.providers.registry import ADAPTERS
+    from app.providers.whatsapp.interakt import InteraktWhatsApp
+
+    from .actions_support import Vendor
+
+    monkeypatch.setenv("INTERAKT_API_KEY", "key-1")
+    vendor = Vendor()
+    adapter = functools.partial(InteraktWhatsApp, httpx.MockTransport(vendor.handler))
+    monkeypatch.setitem(ADAPTERS, (ProviderKind.WHATSAPP, "interakt"), adapter)
+    yield vendor

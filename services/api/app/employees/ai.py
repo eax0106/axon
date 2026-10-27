@@ -11,6 +11,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError
 
+from app.actions.schema import mask
 from app.auth import CurrentUser
 from app.db import Session
 from app.employees import runtime, service
@@ -208,16 +209,16 @@ async def edit_flow(
     """A proposed edit of the draft script. Nothing is saved: the client shows it and PUTs it."""
     employee = await load(session, user, employee_id)
     current = service.bundle_of(employee)
-    data = await ask(
-        EDIT_PROMPT,
-        f"Current script:\n{current.model_dump_json()}\n\nInstruction:\n{body.instruction}",
-    )
+    # The actions hold secrets and are not the model's to edit: they stay out of the prompt.
+    script = current.model_dump_json(exclude={"actions"})
+    data = await ask(EDIT_PROMPT, f"Current script:\n{script}\n\nInstruction:\n{body.instruction}")
     revised = _script_from(data)
     # The model only returns script fields; keep the ones it may not touch.
     return revised.model_copy(
         update={
             "strictness": current.strictness,
             "pre_call_variables": current.pre_call_variables,
+            "actions": mask(current.actions),
         }
     )
 

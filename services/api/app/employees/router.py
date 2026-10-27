@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.actions import service as actions
+from app.actions.schema import mask
 from app.auth import CurrentUser
 from app.db import Session
 from app.employees import ambience, runtime, service
@@ -118,11 +120,20 @@ def avatar(employee: Employee) -> dict[str, Any]:
     return {"initials": initials, "hue": hue}
 
 
+def _masked(bundle: ScriptBundle) -> ScriptBundle:
+    """The script as it may leave the server: an action's secret is never sent back."""
+    return bundle.model_copy(update={"actions": mask(bundle.actions)})
+
+
 async def out(session: AsyncSession, employee: Employee) -> EmployeeOut:
     live = await service.latest_version(session, employee.id)
     voice = await session.get(Voice, employee.voice_id) if employee.voice_id else None
     settings = service.settings_of(employee)
-    warnings = []
+    bundle = service.bundle_of(employee)
+    warnings = [
+        f"your actions need Google {s} connected"
+        for s in await actions.missing(session, employee.account_id, bundle.actions)
+    ]
     if ambience.is_missing(settings.ambience):
         name = settings.ambience
         warnings.append(f"ambience {name!r} has no sound file on this server: no background sound")
@@ -140,7 +151,7 @@ async def out(session: AsyncSession, employee: Employee) -> EmployeeOut:
         published_version=live.version if live else None,
         has_pending_edits=service.has_pending_edits(employee, live),
         avatar=avatar(employee),
-        script=service.bundle_of(employee),
+        script=_masked(bundle),
         settings=settings,
         warnings=warnings,
     )
@@ -243,7 +254,13 @@ async def put_script(
 ) -> EmployeeOut:
     """Replace the draft script. It reaches live calls only after publish."""
     employee = await load(session, user, employee_id)
-    employee.draft = body.model_dump()
+    stored = service.bundle_of(employee).actions
+    # A script sent without an `actions` field leaves the actions as they are, so an editor that
+    # does not know about them cannot wipe them.
+    kept = stored
+    if "actions" in body.model_fields_set:
+        kept = await actions.accept(session, user, list(body.actions), stored)
+    employee.draft = body.model_copy(update={"actions": kept}).model_dump()
     await session.commit()
     return await out(session, employee)
 
@@ -308,7 +325,7 @@ async def list_versions(
         VersionOut(
             version=v.version,
             published_at=v.published_at.isoformat(),
-            script=ScriptBundle.model_validate(v.bundle),
+            script=_masked(ScriptBundle.model_validate(v.bundle)),
         )
         for v in await service.versions(session, employee.id)
     ]

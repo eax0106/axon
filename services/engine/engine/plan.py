@@ -66,6 +66,8 @@ async def load_plan(db: AsyncEngine, employee: str, call: str = "") -> CallPlan 
             opening=added.opening if added else "",
             transfer_to=added.transfer_to if added else None,
             caller_id=added.caller_id if added else None,
+            party_phone=(lead.phone if lead else record.caller_phone) if own and record else None,
+            party_name=lead.name if lead else None,
         )
 
 

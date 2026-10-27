@@ -1,12 +1,12 @@
 """What an employee is made of: the script bundle (publish-gated) and the settings (instant)."""
 
-import re
 import uuid
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+from app.actions.schema import IDENTIFIER, MAX_ACTIONS, ActionConfig, check_names
+
 AMBIENCES = ("none", "office", "call_center", "restaurant", "quiet_room", "retail_store")
 LANGUAGES = ("te", "hi", "en")
 # The bundle is also stored as JSON in employee_versions, so keep it small and bounded.
@@ -43,6 +43,7 @@ class ScriptBundle(BaseModel):
     faq: list[FaqItem] = Field(default_factory=list, max_length=MAX_FAQ)
     strictness: int = Field(default=3, ge=1, le=5)
     pre_call_variables: list[str] = Field(default_factory=list, max_length=MAX_VARIABLES)
+    actions: list[ActionConfig] = Field(default_factory=list, max_length=MAX_ACTIONS)
 
     @field_validator("pre_call_variables")
     @classmethod
@@ -50,6 +51,8 @@ class ScriptBundle(BaseModel):
         if len(set(names)) != len(names):
             raise ValueError("duplicate variable name")
         return [_identifier(name) for name in names]
+
+    _actions = field_validator("actions")(check_names)
 
     @field_validator("sections")
     @classmethod

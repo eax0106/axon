@@ -9,12 +9,12 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] AI drafts name, role, welcome line, multi-section call flow, capture fields
 - [x] Script editor: welcome message, sections (reorder, edit, delete), end-of-call rules, permanent FAQ section that can't be removed
 - [x] Script strictness dial 1–5
-- [ ] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — done so far: both declared and prompted (B4), lead values filled and fenced (B5), captured values extracted after each call (B6); B8: CSV values for Bulk fill the script; rest: extraction during the call (B10)
+- [x] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — both declared and prompted (B4), lead values filled and fenced (B5), captured values extracted after each call (B6), CSV values for Bulk fill the script (B8); B10: live use during the call, where the AI passes what it has just learned to a tool (a sheet row, an HTTP body, a booking)
 - [x] Precedence: script = content, rules = conduct, voice = delivery only
 - [ ] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4 part done: tiers, picker, preview, speed, placeholder avatar, ambience setting and mixer hook; rest: the five licensed ambience loops (WIRING_CHECKLIST #17)
 - [x] Free test call to the owner's phone, browser web call, text chat sandbox — B4: web call and chat sandbox; B7: the phone test call rings only the owner's phone, proved by a one-time code, and goes through the do-not-call list and the dial rule table
 - [x] Lifecycle draft, training, live, paused; live needs a number + switched on + published
-- [ ] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits — B4 part done: script publish gate, voice and capture instant, discard; rest: actions B10, training B11, webhooks B12
+- [ ] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits — B4 part done: script publish gate, voice and capture instant, discard; B10: actions go through the publish gate with the script; rest: training B11, webhooks B12
 - [x] Keep the last 3 published versions; restore any
 - [x] Switch channel (clears call history, offers a rewrite); start over (wipes script, training, history)
 - [x] Duplicate employee
@@ -70,11 +70,11 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Number types (regular / 140 / 1600) and the purpose rule table (our addition, see DECISIONS)
 
 ## In-call actions [B10]
-- [ ] Google Calendar: connect, availability, book, test booking
-- [ ] Google Sheets read and write mid-call
-- [ ] Custom HTTP API tool with a test console
-- [ ] WhatsApp message during or after a call
-- [ ] Every action is opt-in per employee
+- [x] Google Calendar: connect, availability, book, test booking
+- [x] Google Sheets read and write mid-call
+- [x] Custom HTTP API tool with a test console
+- [x] WhatsApp message during or after a call (the AI sends the template before it ends the call; no separate post-call trigger, see docs/phases/b10.md)
+- [x] Every action is opt-in per employee
 
 ## Training and knowledge [B11]
 - [ ] Teach by text, voice or photo; each item becomes a fact or a rule; reviewed before saving

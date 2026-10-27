@@ -55,19 +55,19 @@ def read(token: str) -> WebTicket | None:
 
 
 OAUTH_TTL = timedelta(minutes=10)
-OAUTH_TYPE = "sheets_oauth"
 
 
 def issue_oauth_state(
-    user_id: uuid.UUID, employee_id: uuid.UUID, now: datetime | None = None
+    user_id: uuid.UUID, subject_id: uuid.UUID, now: datetime | None = None, purpose: str = "sheets"
 ) -> str:
     """The `state` of a Google consent link: signed, random, short-lived, and bound to the user and
-    employee who asked for it, so a link crafted by someone else cannot be completed by them."""
+    employee (or account) who asked for it, so a link crafted by someone else cannot be completed
+    by them. `purpose` keeps a state made for one kind of link from passing as another."""
     now = now or datetime.now(UTC)
     claims = {
-        "typ": OAUTH_TYPE,
+        "typ": f"{purpose}_oauth",
         "user": str(user_id),
-        "employee": str(employee_id),
+        "employee": str(subject_id),
         "nonce": uuid.uuid4().hex,
         "iat": now,
         "exp": now + OAUTH_TTL,
@@ -75,13 +75,14 @@ def issue_oauth_state(
     return jwt.encode(claims, jwt_secret(), algorithm="HS256")
 
 
-def read_oauth_state(token: str) -> tuple[uuid.UUID, uuid.UUID] | None:
-    """(user id, employee id) the state was issued for, or None if it is forged or expired."""
+def read_oauth_state(token: str, purpose: str = "sheets") -> tuple[uuid.UUID, uuid.UUID] | None:
+    """(user id, employee or account id) the state was issued for, or None if it is forged,
+    expired or made for another purpose."""
     try:
         claims = jwt.decode(
             token, jwt_secret(), algorithms=["HS256"], options={"require": ["typ", "exp", "iat"]}
         )
-        if claims["typ"] != OAUTH_TYPE:
+        if claims["typ"] != f"{purpose}_oauth":
             return None
         return uuid.UUID(claims["user"]), uuid.UUID(claims["employee"])
     except (jwt.InvalidTokenError, KeyError, ValueError):
