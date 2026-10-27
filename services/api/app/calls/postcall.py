@@ -153,6 +153,7 @@ async def _apply(
     lead = await session.get(Lead, call.lead_id) if call.lead_id else None
     call.summary, call.sentiment, call.outcome = result.summary, result.sentiment, result.outcome
     call.captured = {k: v for k, v in result.captured.items() if v is not None}
+    call.voicemail = result.voicemail
     call.analysis_status, call.analysis_error = "done", None
     # The work is done, so the fee is taken even if it leaves the account at zero. Once per call:
     # only a skipped or failed analysis can be run again, and that never reached this line.

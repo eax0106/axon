@@ -24,6 +24,11 @@ from app.calls.stats import router as stats_router
 from app.campaigns.lists import router as contact_lists_router
 from app.campaigns.panel import router as campaign_panel_router
 from app.campaigns.router import router as campaigns_router
+from app.developer import hooks  # noqa: F401 - announces new leads and campaign status changes
+from app.developer.employee_hook import router as result_webhook_router
+from app.developer.public import docs as public_docs_router
+from app.developer.public import router as public_api_router
+from app.developer.router import router as developer_router
 from app.employees.ai import router as ai_router
 from app.employees.calls import router as calls_router
 from app.employees.router import router as employees_router
@@ -83,6 +88,10 @@ app.include_router(billing_router)
 app.include_router(numbers_router)
 app.include_router(phone_verify_router)
 app.include_router(dial_rules_router)
+app.include_router(developer_router)
+app.include_router(result_webhook_router)
+app.include_router(public_api_router)
+app.include_router(public_docs_router)
 
 
 @app.exception_handler(AuthNotConfiguredError)

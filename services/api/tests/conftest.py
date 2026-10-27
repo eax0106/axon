@@ -260,3 +260,23 @@ def teaching(monkeypatch: pytest.MonkeyPatch) -> Iterator[Vendor]:
         lambda self, timeout=60.0: httpx.AsyncClient(transport=transport),
     )
     yield fake
+
+
+@pytest.fixture
+def receiver(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
+    """A real web server on this machine standing in for a developer's webhook receiver; its
+    address is allowed for the test."""
+    import threading
+    from http.server import ThreadingHTTPServer
+
+    from app.actions import net
+
+    from .developer_support import Receiver
+
+    monkeypatch.setattr(net, "ALLOW_LOCAL", True)
+    Receiver.reset()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Receiver)
+    Receiver.base = f"http://127.0.0.1:{server.server_port}"
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield Receiver
+    server.shutdown()

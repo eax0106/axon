@@ -71,12 +71,16 @@ async def tick(
 
 
 async def activate_due(session: AsyncSession, now: datetime) -> int:
-    result = await session.execute(
-        update(Campaign)
-        .where(Campaign.status == CampaignStatus.SCHEDULED, Campaign.scheduled_at <= now)
-        .values(status=CampaignStatus.RUNNING, started_at=now, note=None)
-    )
-    return contacts.affected(result)
+    due = list(
+        await session.scalars(
+            select(Campaign)
+            .where(Campaign.status == CampaignStatus.SCHEDULED, Campaign.scheduled_at <= now)
+            .with_for_update()
+        )
+    )  # loaded, not bulk-updated: the change is announced to the webhooks when it is flushed
+    for campaign in due:
+        campaign.status, campaign.started_at, campaign.note = CampaignStatus.RUNNING, now, None
+    return len(due)
 
 
 async def claim(

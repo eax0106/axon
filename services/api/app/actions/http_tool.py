@@ -88,8 +88,6 @@ async def call(
     url, body = build(action, values)
     if net.url_problem(url):  # a value cannot have changed the host, but the rule is the rule
         return {"ok": False, "error": "that address is not allowed"}
-    parts = urlsplit(url)
-    host, port = parts.hostname or "", parts.port or (443 if parts.scheme == "https" else 80)
     headers = dict(action.headers)
     if action.auth.kind == "bearer":
         headers["Authorization"] = f"Bearer {action.auth.secret}"
@@ -97,10 +95,7 @@ async def call(
         headers[action.auth.header] = action.auth.secret
     try:
         async with asyncio.timeout(action.timeout_s):
-            address = await net.resolve(host, port)
-            shown = f"[{address}]" if ":" in address else address
-            pinned = urlunsplit(parts._replace(netloc=f"{shown}:{port}"))
-            headers["Host"] = parts.netloc  # the name, so the service sees what it expects
+            pinned, headers["Host"], host = await net.pin(url)  # Host: the name the service expects
             async with (
                 httpx.AsyncClient(timeout=action.timeout_s, transport=transport) as client,
                 client.stream(

@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.actions.schema import IDENTIFIER, MAX_ACTIONS, ActionConfig, check_names
+from app.developer.result_webhook import ResultWebhook
 
 AMBIENCES = ("none", "office", "call_center", "restaurant", "quiet_room", "retail_store")
 LANGUAGES = ("te", "hi", "en")
@@ -44,6 +45,8 @@ class ScriptBundle(BaseModel):
     strictness: int = Field(default=3, ge=1, le=5)
     pre_call_variables: list[str] = Field(default_factory=list, max_length=MAX_VARIABLES)
     actions: list[ActionConfig] = Field(default_factory=list, max_length=MAX_ACTIONS)
+    # Where the result of each call that reached a person is sent (publish-gated like the rest).
+    result_webhook: ResultWebhook | None = None
 
     @field_validator("pre_call_variables")
     @classmethod

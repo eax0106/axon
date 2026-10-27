@@ -417,6 +417,12 @@ class Call(Base):
         Index("ix_calls_queue", "status", "scheduled_for"),
         Index("ix_calls_account_created", "account_id", "created_at"),
         Index("ix_calls_analysis", "analysis_status"),
+        # The webhook job looks only at settled calls it has not announced yet.
+        Index(
+            "ix_calls_unannounced",
+            "ended_at",
+            postgresql_where=text("events_emitted_at IS NULL AND ended_at IS NOT NULL"),
+        ),
     )
     id: Mapped[uuid.UUID] = _pk()
     account_id: Mapped[uuid.UUID] = _account_fk()
@@ -458,6 +464,10 @@ class Call(Base):
     analysis_status: Mapped[str | None] = mapped_column(String(20))
     analysis_error: Mapped[str | None] = mapped_column(String(200))
     analysis_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The caller's own recorded greeting was heard (the analysis quotes it); false when unknown.
+    voicemail: Mapped[bool] = mapped_column(server_default="false")
+    # When the developer webhooks were told this call settled; NULL = not yet.
+    events_emitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_callback: Mapped[bool] = mapped_column(server_default="false")  # the caller asked for it
     # An inbound call nobody answered: why, in plain words. The caller's number is kept here as the
     # carrier gave it, because a landline or withheld number has no lead.
@@ -735,30 +745,97 @@ class ApiKey(Base):
     created_at: Mapped[datetime] = _created()
 
 
+class ApiRequest(Base):
+    """One request made with an API key, kept for the developer's request log."""
+
+    __tablename__ = "api_request_log"
+    __table_args__ = (Index("ix_api_request_log_account_created", "account_id", "created_at"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    key_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("api_keys.id", ondelete="SET NULL"))
+    method: Mapped[str] = mapped_column(String(10))
+    path: Mapped[str] = mapped_column(String(300))  # the route as written, never the query string
+    status_code: Mapped[int]
+    duration_ms: Mapped[int]
+    created_at: Mapped[datetime] = _created()
+
+
 class WebhookEndpoint(Base):
     __tablename__ = "webhook_endpoints"
     id: Mapped[uuid.UUID] = _pk()
     account_id: Mapped[uuid.UUID] = _account_fk()
     url: Mapped[str] = mapped_column(String(2000))
-    # ponytail: plaintext because signing needs it back; B12 decides on encryption at rest.
+    # Stored as written, like every other secret we must send back out (action secrets, tokens):
+    # signing needs it. Shown to the owner only when it is made or rotated.
     secret: Mapped[str] = mapped_column(String(100))
     events: Mapped[list[str]] = mapped_column(ARRAY(String(50)))
+    active: Mapped[bool] = mapped_column(server_default="true")
+    description: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = _created()
 
 
-class WebhookDelivery(Base):
-    __tablename__ = "webhook_deliveries"
+class WebhookEvent(Base):
+    """Something that happened in an account, written in the same transaction as the change. A
+    worker tick turns it into one delivery per subscribed endpoint, so a lost send never loses the
+    event and nothing is announced for a change that rolled back."""
+
+    __tablename__ = "webhook_events"
+    __table_args__ = (
+        Index(
+            "ix_webhook_events_unsent",
+            "created_at",
+            postgresql_where=text("fanned_out_at IS NULL"),
+        ),
+    )
     id: Mapped[uuid.UUID] = _pk()
-    endpoint_id: Mapped[uuid.UUID] = mapped_column(
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    # Set for a call event: the employee's own result webhook is sent from it.
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL")
+    )
+    type: Mapped[str] = mapped_column(String(50))
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = _created()
+    fanned_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WebhookDelivery(Base):
+    """One event going to one address. An account endpoint's secret is read at send time (so a
+    rotation reaches the retries); an employee's result webhook keeps the address and secret it had
+    when the call settled."""
+
+    __tablename__ = "webhook_deliveries"
+    __table_args__ = (
+        Index(
+            "ix_webhook_deliveries_due",
+            "next_attempt_at",
+            postgresql_where=text("status = 'pending'"),
+        ),
+        Index("ix_webhook_deliveries_account_created", "account_id", "created_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("webhook_events.id", ondelete="CASCADE"), index=True
+    )
+    endpoint_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("webhook_endpoints.id", ondelete="CASCADE"), index=True
     )
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE")
+    )
+    target_url: Mapped[str] = mapped_column(String(2000))
+    target_secret: Mapped[str | None] = mapped_column(String(500))  # employee webhooks only
     event: Mapped[str] = mapped_column(String(50))
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)  # the whole envelope that is sent
     status: Mapped[DeliveryStatus] = mapped_column(
         _enum(DeliveryStatus, "delivery_status"), default=DeliveryStatus.PENDING
     )
+    is_test: Mapped[bool] = mapped_column(server_default="false")
     attempts: Mapped[int] = mapped_column(server_default="0")
     response_code: Mapped[int | None]
+    last_error: Mapped[str | None] = mapped_column(String(200))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

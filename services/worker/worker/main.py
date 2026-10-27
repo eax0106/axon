@@ -1,5 +1,5 @@
 """Arq worker: the Instant dialer, the campaign scheduler, post-call analysis, billing, the daily
-incoming-call summary and the Sheets lead poller.
+incoming-call summary, the Sheets lead poller and the developer webhooks.
 
 Run: `arq worker.main.WorkerSettings`. Health: `arq --check worker.main.WorkerSettings`.
 Every tick is a plain function of the database and `now` (app.instant), so the worker is only
@@ -18,6 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.billing import alerts, metering
 from app.calls import postcall
 from app.campaigns import runner as campaigns
+from app.developer import (
+    delivery,
+    hooks,  # noqa: F401 - announces new leads and campaign status changes
+    settle,
+)
 from app.inbound import summary
 from app.instant import dialer
 from app.instant.sheets import poll_all
@@ -134,12 +139,28 @@ async def sheets_tick(ctx: dict[str, Any]) -> int:
     return await poll_all(_factory(ctx), sheets, datetime.now(UTC))
 
 
+async def webhook_tick(ctx: dict[str, Any]) -> int:
+    """Every few seconds: announce calls that settled, turn new events into sends, and send the
+    ones that are due (first sends and retries)."""
+    now = datetime.now(UTC)
+    announced = await settle.settle_calls(_factory(ctx), now)
+    taken = await delivery.fan_out(_factory(ctx), now)
+    return announced + taken + await delivery.deliver_due(_factory(ctx), now)
+
+
+async def webhook_prune_tick(ctx: dict[str, Any]) -> int:
+    """Every hour: forget the request log, events and deliveries older than 30 days."""
+    return await delivery.prune(_factory(ctx), datetime.now(UTC))
+
+
 class WorkerSettings:
     functions = (ping,)
     cron_jobs = (
         cron(dial_tick, second=set(range(0, 60, 3)), run_at_startup=False, timeout=50),
         cron(campaign_tick, second=set(range(1, 60, 3)), run_at_startup=False, timeout=50),
         cron(post_call_tick, second=set(range(5, 60, 10)), run_at_startup=False, timeout=240),
+        cron(webhook_tick, second=set(range(2, 60, 5)), run_at_startup=False, timeout=120),
+        cron(webhook_prune_tick, minute=17, second=50, run_at_startup=False, timeout=240),
         cron(billing_tick, second={25, 55}, run_at_startup=False, timeout=120),
         cron(low_balance_tick, second={10, 40}, run_at_startup=False, timeout=120),
         cron(
