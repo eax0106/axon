@@ -32,3 +32,21 @@ async def charge_ai_use(
         note=f"AI help: {what}",
         allow_overdraw=allow_overdraw,
     )
+
+
+async def refund_ai_use(
+    session: AsyncSession, account_id: uuid.UUID, what: str, ref_id: str
+) -> None:
+    """Give back a fee for AI help that failed before it delivered anything. Once per fee."""
+    fee = ai_use_fee()
+    if fee <= 0:
+        return
+    await ledger.post(
+        session,
+        account_id,
+        LedgerKind.REFUND,
+        fee,
+        ref_type=f"ai_refund:{what}",
+        ref_id=ref_id,
+        note=f"AI help failed: {what}",
+    )

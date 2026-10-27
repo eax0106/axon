@@ -1,10 +1,12 @@
 import asyncio
+import importlib.util
 import os
 import secrets
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -15,8 +17,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.db import Base
 from app.main import app
+from app.providers.kyc.vobiz import VobizKyc
 from app.providers.registry import VENDOR_KEYS
+from app.providers.telephony.vobiz import BASE_URL, VobizTelephony
 from app.settings import get_settings
+
+from .vobiz_fake import VobizAccount
 
 ALL_KEYS = sorted(
     {key for vendors in VENDOR_KEYS.values() for keys in vendors.values() for key in keys}
@@ -109,6 +115,33 @@ def migrated_url(fresh_database: Any) -> str:
     return url
 
 
+def reseed_dial_rules(url: str) -> None:
+    """Put the launch rule table back (migration 0005 seeds it; a TRUNCATE empties it)."""
+    path = ALEMBIC_INI.parent / "migrations" / "versions" / "0005_billing_and_numbers.py"
+    spec = importlib.util.spec_from_file_location("migration_0005", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rows = module.default_rules()
+    marks = ", ".join(f"(:p{i}, :n{i}, :c{i}, :a{i}, :r{i})" for i in range(len(rows)))
+    params = {
+        f"{key}{i}": row[name]
+        for i, row in enumerate(rows)
+        for key, name in (
+            ("p", "purpose"),
+            ("n", "number_type"),
+            ("c", "context"),
+            ("a", "allowed"),
+            ("r", "reason"),
+        )
+    }
+    sql(
+        url,
+        f"INSERT INTO dial_rules (purpose, number_type, context, allowed, reason) VALUES {marks}",  # noqa: S608
+        params,
+    )
+
+
 @pytest.fixture
 def db_client(
     migrated_url: str, monkeypatch: pytest.MonkeyPatch, no_keys: None
@@ -121,3 +154,24 @@ def db_client(
     get_settings.cache_clear()
     tables = ", ".join(f'"{t}"' for t in Base.metadata.tables)
     sql(migrated_url, f"TRUNCATE {tables} CASCADE")
+    reseed_dial_rules(migrated_url)
+
+
+@pytest.fixture
+def vobiz(monkeypatch: pytest.MonkeyPatch) -> Iterator[VobizAccount]:
+    """Vobiz's number store and KYC with keys set; every adapter talks to this fake account."""
+    monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
+    monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    fake = VobizAccount()
+    transport = httpx.MockTransport(fake.handler)
+
+    def client(self: Any, suffix: str = "") -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url=f"{BASE_URL}/Account/MA_TEST{suffix}",
+            headers=self._headers,
+            transport=transport,
+        )
+
+    monkeypatch.setattr(VobizTelephony, "_client", lambda self: client(self))
+    monkeypatch.setattr(VobizKyc, "_client", lambda self: client(self, "/kyc"))
+    yield fake

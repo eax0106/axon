@@ -218,7 +218,7 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> _Claim:
         call.scheduled_for = now + NOT_READY_RETRY
         await _event(session, call, "blocked_credits", reason=held)
         return _Claim(call.id, "rescheduled")
-    verdict = policy.check_dial(employee, number, lead.phone)
+    verdict = await policy.check_dial(session, employee, number, "instant")
     if not verdict.allowed:
         call.status = CallStatus.CANCELED
         await _event(session, call, "cancelled", reason=verdict.reason)

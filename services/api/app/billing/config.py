@@ -38,8 +38,17 @@ def number_monthly_fee() -> Decimal:
     return _money("AXON_NUMBER_MONTHLY_FEE", "649")
 
 
+def number_setup_fee() -> Decimal:
+    return _money("AXON_NUMBER_SETUP_FEE", "0")
+
+
 def extra_channel_monthly_fee() -> Decimal:
     return _money("AXON_EXTRA_CHANNEL_FEE", "0")
+
+
+def topup_limits() -> tuple[Decimal, Decimal]:
+    """The smallest and largest single top-up, in rupees."""
+    return _money("AXON_TOPUP_MIN", "100"), _money("AXON_TOPUP_MAX", "100000")
 
 
 def low_balance_threshold() -> Decimal:

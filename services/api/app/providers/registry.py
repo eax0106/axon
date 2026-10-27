@@ -16,7 +16,9 @@ from app.models import VoiceTier
 from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
 from app.providers.email.resend import ResendEmail
 from app.providers.google.sheets import GoogleSheets
+from app.providers.kyc.vobiz import VobizKyc
 from app.providers.leads.meta_lead_ads import MetaLeadAds
+from app.providers.payments.razorpay import RazorpayPayments
 from app.providers.speech.cartesia import CartesiaTTS
 from app.providers.speech.gemini import GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
@@ -58,6 +60,8 @@ ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
     (ProviderKind.SHEETS, "google"): GoogleSheets,
     (ProviderKind.STORAGE, "r2"): R2Storage,
     (ProviderKind.EMAIL, "resend"): ResendEmail,
+    (ProviderKind.PAYMENTS, "razorpay"): RazorpayPayments,
+    (ProviderKind.NUMBER_KYC, "vobiz"): VobizKyc,
     (ProviderKind.STT, "sarvam"): SarvamSTT,
     (ProviderKind.STT, "smallest"): SmallestSTT,
     (ProviderKind.LLM, "gemini"): GeminiLLM,

@@ -18,6 +18,7 @@ from app.billing import metering
 from app.calls import postcall
 from app.instant import dialer
 from app.instant.sheets import poll_all
+from app.numbers import renewals
 from app.providers.base import (
     ProviderKind,
     ProviderNotConfiguredError,
@@ -86,6 +87,13 @@ async def billing_tick(ctx: dict[str, Any]) -> int:
     return counts["billed"] + counts["free"] + counts["reconcile"]
 
 
+async def renewal_tick(ctx: dict[str, Any]) -> int:
+    """Every ten minutes: rent for numbers that are due, grace for those that cannot pay, release
+    for those whose grace is over."""
+    counts = await renewals.renew_due(_factory(ctx), datetime.now(UTC))
+    return sum(counts.values())
+
+
 async def post_call_tick(ctx: dict[str, Any]) -> int:
     """Every few seconds: analyse calls that just ended (summary, outcome, captured fields)."""
     return await postcall.process_pending(_factory(ctx), datetime.now(UTC))
@@ -107,6 +115,9 @@ class WorkerSettings:
         cron(dial_tick, second=set(range(0, 60, 3)), run_at_startup=False, timeout=50),
         cron(post_call_tick, second=set(range(5, 60, 10)), run_at_startup=False, timeout=240),
         cron(billing_tick, second={25, 55}, run_at_startup=False, timeout=120),
+        cron(
+            renewal_tick, minute=set(range(0, 60, 10)), second=35, run_at_startup=False, timeout=240
+        ),
         cron(reap_tick, second=15, run_at_startup=False, timeout=50),
         cron(sheets_tick, second=45, run_at_startup=False, timeout=50),
     )

@@ -136,3 +136,32 @@ def add_call(url: str, account: Any, employee: Any = None, lead: Any = None, **c
         f"INSERT INTO calls ({', '.join(names)}) VALUES ({', '.join(marks)}) RETURNING id",  # noqa: S608
         {"account_id": account, "employee_id": employee, "lead_id": lead, **values},
     )
+
+
+def give_credits(url: str, account: Any, amount: str) -> None:
+    """Top an account up through the ledger, as a payment would."""
+    import uuid
+    from decimal import Decimal
+
+    from app.billing import ledger
+    from app.models import LedgerKind
+
+    async def work(factory: Any) -> None:
+        async with factory() as session:
+            await ledger.post(
+                session, uuid.UUID(str(account)), LedgerKind.TOPUP, Decimal(amount),
+                ref_type="test", ref_id=uuid.uuid4().hex,
+            )  # fmt: skip
+            await session.commit()
+
+    run_db(url, work)
+
+
+def verified_holder(url: str, account: Any, name: str = "Asha Rao") -> Any:
+    """A KYC holder that has finished PAN and DigiLocker."""
+    return sql(
+        url,
+        "INSERT INTO kyc_holders (account_id, name, pan_last4, status, provider_ref)"
+        " VALUES (:a, :n, '234F', 'verified', 'h_1') RETURNING id",
+        {"a": account, "n": name},
+    )

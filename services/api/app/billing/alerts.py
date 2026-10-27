@@ -45,11 +45,11 @@ async def after_spend(
     return due
 
 
-async def send_low_balance_email(
-    session: AsyncSession, account_id: uuid.UUID, balance: Decimal
+async def email_owner(
+    session: AsyncSession, account_id: uuid.UUID, subject: str, text: str
 ) -> bool:
     """Email the account owner. Best effort: no email provider or a failed send is logged, never
-    raised, because the charge it follows has already happened."""
+    raised, because the event it reports has already happened."""
     owner = await session.scalar(
         select(User).where(User.account_id == account_id).order_by(User.created_at).limit(1)
     )
@@ -58,14 +58,21 @@ async def send_low_balance_email(
     try:
         provider = require(ProviderKind.EMAIL)
         assert isinstance(provider, EmailProvider)
-        await provider.send(
-            owner.email,
-            "Your credit balance is low",
-            f"You have {balance:.2f} credits left. Top up so your employees can keep calling.",
-        )
+        await provider.send(owner.email, subject, text)
     except ProviderNotConfiguredError:
         return False
     except Exception as exc:
-        log.warning("low-balance email failed: %s", type(exc).__name__)
+        log.warning("email %r failed: %s", subject, type(exc).__name__)
         return False
     return True
+
+
+async def send_low_balance_email(
+    session: AsyncSession, account_id: uuid.UUID, balance: Decimal
+) -> bool:
+    return await email_owner(
+        session,
+        account_id,
+        "Your credit balance is low",
+        f"You have {balance:.2f} credits left. Top up so your employees can keep calling.",
+    )

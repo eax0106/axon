@@ -1,9 +1,11 @@
 """Per-account hourly limits for anything that costs us vendor money without charging the account.
 
 The account row is locked while counting, so parallel requests cannot all slip under the limit.
-Uses are recorded in the audit log, which the AI-use fee (B7) can read as well.
+Each use of AI help is also paid for in credits (app.billing.fees).
 """
 
+import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, status
@@ -11,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser
-from app.billing.fees import charge_ai_use
+from app.billing.fees import charge_ai_use, refund_ai_use
 from app.db import Session
 from app.models import Account, AuditEntry, User
 
@@ -42,11 +44,20 @@ async def take(session: AsyncSession, user: User, action: str, limit: int) -> No
     await session.commit()
 
 
-async def ai_budget(user: CurrentUser, session: Session) -> None:
-    """Each use of AI help: within the account's hourly allowance, then paid for in credits."""
+async def ai_budget(user: CurrentUser, session: Session) -> AsyncIterator[None]:
+    """Each use of AI help: within the account's hourly allowance, then paid for in credits. The
+    fee goes back if the request then fails, so a vendor outage costs the customer nothing."""
     await take(session, user, "ai.request", AI_PER_HOUR)
-    await charge_ai_use(session, user.account_id, "request")
+    account_id, ref = user.account_id, uuid.uuid4().hex  # read now: a rollback expires `user`
+    await charge_ai_use(session, account_id, "request", ref)
     await session.commit()
+    try:
+        yield
+    except Exception:
+        await session.rollback()
+        await refund_ai_use(session, account_id, "request", ref)
+        await session.commit()
+        raise
 
 
 AiBudget = Depends(ai_budget)

@@ -12,7 +12,7 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [ ] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — done so far: both declared and prompted (B4), lead values filled and fenced (B5), captured values extracted after each call (B6); rest: CSV values for Bulk (B8) and extraction during the call (B10)
 - [x] Precedence: script = content, rules = conduct, voice = delivery only
 - [ ] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4 part done: tiers, picker, preview, speed, placeholder avatar, ambience setting and mixer hook; rest: the five licensed ambience loops (WIRING_CHECKLIST #17)
-- [ ] Free test call to the owner's phone, browser web call, text chat sandbox — B4 part done: web call, chat sandbox, phone test call to any +91 mobile; rest: verify the owner's number and route test calls through DNC and the purpose rule (B7)
+- [x] Free test call to the owner's phone, browser web call, text chat sandbox — B4: web call and chat sandbox; B7: the phone test call rings only the owner's phone, proved by a one-time code, and goes through the do-not-call list and the dial rule table
 - [x] Lifecycle draft, training, live, paused; live needs a number + switched on + published
 - [ ] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits — B4 part done: script publish gate, voice and capture instant, discard; rest: actions B10, training B11, webhooks B12
 - [x] Keep the last 3 published versions; restore any
@@ -57,17 +57,17 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Caller memory across calls (toggle, reset)
 - [x] "Call me at 6" callback scheduling across channels
 - [x] Dashboard and performance: channel split, connect / qualify / conversion %, best hour, leaderboard, within-60-s speed, 7/30/90-day and custom ranges
-- [ ] Notifications (bell), auto-DNC confirmation, announcements — B6 part done: bell, unread count, mark read, callback and auto-DNC confirmations; rest: announcements (admin console, B13), low-balance alert (B7)
+- [ ] Notifications (bell), auto-DNC confirmation, announcements — B6 part done: bell, unread count, mark read, callback and auto-DNC confirmations; B7 part done: low-balance bell entry; rest: announcements (admin console, B13)
 
 ## Billing and numbers [B7]
-- [ ] Prepaid credits, 1 credit = ₹1, never expire, 50 free credits; top-up presets or custom amount by card or UPI
-- [ ] Billing from pickup only (ringing, busy and no-answer are free); per-second metering; tier rates; AI-use fee; hourly spend cap
-- [ ] Low-balance email (about ₹50, at most once a day) and a warning on the credit chip
-- [ ] Statements (this month and last), transactions with running balance, per-employee usage, invoices with GST
-- [ ] Number store: search inventory, quote, purchase; first-number KYC by PAN, then Aadhaar via DigiLocker; verified holder reused
-- [ ] ₹649/month auto-renew from credits; grace period with emails; release on lapse; nothing else deleted
-- [ ] One number per employee; extra channels per number
-- [ ] Number types (regular / 140 / 1600) and the purpose rule table (our addition, see DECISIONS)
+- [x] Prepaid credits, 1 credit = ₹1, never expire, 50 free credits; top-up presets or custom amount by card or UPI
+- [x] Billing from pickup only (ringing, busy and no-answer are free); per-second metering; tier rates; AI-use fee; hourly spend cap
+- [x] Low-balance email (about ₹50, at most once a day) and a warning on the credit chip
+- [x] Statements (this month and last), transactions with running balance, per-employee usage, invoices with GST
+- [x] Number store: search inventory, quote, purchase; first-number KYC by PAN, then Aadhaar via DigiLocker; verified holder reused
+- [x] ₹649/month auto-renew from credits; grace period with emails; release on lapse; nothing else deleted
+- [x] One number per employee; extra channels per number
+- [x] Number types (regular / 140 / 1600) and the purpose rule table (our addition, see DECISIONS)
 
 ## In-call actions [B10]
 - [ ] Google Calendar: connect, availability, book, test booking
