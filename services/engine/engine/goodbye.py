@@ -52,12 +52,20 @@ class GoodbyeGate:
     def idle(self) -> bool:
         return not self._speaking and self._issued <= self._played
 
-    async def request_end(self) -> None:
-        """The AI wants to end the call. Safe to call more than once."""
+    async def request_end(self, then: Callable[[], Awaitable[None]] | None = None) -> None:
+        """The AI wants to end the call, or (with `then`) to do something once what it said has been
+        heard, such as handing the call to a person. Safe to call more than once."""
         if self._task is None:
-            self._task = asyncio.create_task(self._wait_then_end())
+            self._task = asyncio.create_task(self._wait_then(then or self._finish))
 
-    async def _wait_then_end(self) -> None:
+    def reopen(self) -> None:
+        """What `then` was for did not happen: the call goes on and may ask again."""
+        self._task = None
+
+    async def _finish(self) -> None:
+        await self._end("agent_ended")
+
+    async def _wait_then(self, then: Callable[[], Awaitable[None]]) -> None:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self._timeout_s
         await asyncio.sleep(self._settle_s)
@@ -67,7 +75,7 @@ class GoodbyeGate:
                 await asyncio.wait_for(self._changed.wait(), max(deadline - loop.time(), 0))
             except TimeoutError:
                 break
-        await self._end("agent_ended")
+        await then()
 
     def cancel(self) -> None:
         if self._task:

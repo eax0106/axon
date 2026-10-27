@@ -1,5 +1,5 @@
-"""Arq worker: the Instant dialer, the campaign scheduler, post-call analysis, billing and the
-Sheets lead poller.
+"""Arq worker: the Instant dialer, the campaign scheduler, post-call analysis, billing, the daily
+incoming-call summary and the Sheets lead poller.
 
 Run: `arq worker.main.WorkerSettings`. Health: `arq --check worker.main.WorkerSettings`.
 Every tick is a plain function of the database and `now` (app.instant), so the worker is only
@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.billing import alerts, metering
 from app.calls import postcall
 from app.campaigns import runner as campaigns
+from app.inbound import summary
 from app.instant import dialer
 from app.instant.sheets import poll_all
 from app.numbers import renewals
@@ -118,6 +119,11 @@ async def post_call_tick(ctx: dict[str, Any]) -> int:
     return await postcall.process_pending(_factory(ctx), datetime.now(UTC))
 
 
+async def summary_tick(ctx: dict[str, Any]) -> int:
+    """Every ten minutes: from 8 AM India time, email each account yesterday's incoming calls."""
+    return await summary.send_due(_factory(ctx), datetime.now(UTC))
+
+
 async def sheets_tick(ctx: dict[str, Any]) -> int:
     """Every minute: take new rows from connected Google Sheets."""
     try:
@@ -141,6 +147,9 @@ class WorkerSettings:
         ),
         cron(reap_tick, second=15, run_at_startup=False, timeout=50),
         cron(sheets_tick, second=45, run_at_startup=False, timeout=50),
+        cron(
+            summary_tick, minute=set(range(5, 60, 10)), second=20, run_at_startup=False, timeout=240
+        ),
     )
     on_startup = startup
     on_shutdown = shutdown

@@ -83,6 +83,20 @@ class TelephonyProvider(Provider):
     async def hang_up(self, call_uuid: str) -> None:
         """End the call; a call that already ended is not an error."""
 
+    @abstractmethod
+    async def ensure_application(self, name: str, answer_url: str, hangup_url: str) -> str:
+        """Register what the carrier should fetch when a call arrives on a number routed to it
+        (`answer_url` returns the call's instructions, `hangup_url` hears of its end). Returns the
+        carrier's id for it."""
+
+    @abstractmethod
+    async def route_number(self, e164: str, application_id: str) -> None:
+        """Send incoming calls on a number we hold to that application. Repeating it is fine."""
+
+    @abstractmethod
+    async def transfer(self, call_uuid: str, instructions_url: str) -> None:
+        """Move the caller of a live call to new instructions fetched from `instructions_url`."""
+
 
 class ObjectStorageProvider(Provider):
     kind = ProviderKind.STORAGE

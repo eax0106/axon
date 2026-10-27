@@ -48,6 +48,7 @@ class Analysis:
     callback_at: datetime | None = None
     do_not_call: bool = False
     do_not_call_quote: str | None = None  # the caller's words, so the owner can see why
+    message: str | None = None  # what the caller asked us to pass on, if they said so
     memory: str | None = None
 
 
@@ -118,6 +119,8 @@ SYSTEM = (
     ' "quote": "the exact words from the transcript that show it, or null"}},'
     ' "callback": {"at": "ISO 8601 date and time with offset when the caller asked to be called'
     ' back, or null", "quote": "their exact words, or null"},'
+    ' "message": {"text": "what the Caller asked to pass on to the business, in one or two plain'
+    ' sentences, or null", "quote": "their exact words, or null"},'
     ' "do_not_call": {"requested": true or false, "quote": "their exact words, or null"},'
     ' "memory": "at most three short sentences of lasting facts about this person worth '
     'remembering for the next call, or null"}\n'
@@ -180,6 +183,9 @@ def parse(
     when = _future_time(callback.get("at"), now)
     if when and caller_quoted(callback.get("quote"), turns):
         result.callback_at = when
+    said = _entry(data.get("message"))
+    if caller_quoted(said.get("quote"), turns):  # a message nobody left is not written for them
+        result.message = _clean(said.get("text"), MAX_VALUE)
     dnc = _entry(data.get("do_not_call"))
     result.do_not_call = (
         dnc.get("requested") is True and caller_quoted(dnc.get("quote"), turns) is not None

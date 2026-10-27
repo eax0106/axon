@@ -81,7 +81,11 @@ def live_employee(
         {"a": account, "n": number},
     )
     sql(url, "UPDATE employees SET number_id = :n WHERE id = :e", {"n": number_id, "e": employee})
-    if live:
+    if live and channel == "inbound":
+        # Going live as an inbound employee routes the number at the carrier (see
+        # test_inbound_vobiz.py); these tests are about what happens after.
+        sql(url, "UPDATE employees SET status = 'live' WHERE id = :e", {"e": employee})
+    elif live:
         assert client.post(f"/employees/{employee}/activate", headers=owner).status_code == 200
     return employee
 

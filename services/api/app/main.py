@@ -26,6 +26,7 @@ from app.campaigns.router import router as campaigns_router
 from app.employees.ai import router as ai_router
 from app.employees.calls import router as calls_router
 from app.employees.router import router as employees_router
+from app.inbound.router import router as inbound_router
 from app.instant.policy import router as dial_rules_router
 from app.instant.public import router as instant_public_router
 from app.instant.router import router as instant_router
@@ -65,6 +66,7 @@ app.include_router(calls_router)
 app.include_router(instant_router)
 app.include_router(campaigns_router)
 app.include_router(campaign_panel_router)
+app.include_router(inbound_router)
 app.include_router(contact_lists_router)
 app.include_router(instant_public_router)
 app.include_router(conversations_router)

@@ -2,6 +2,7 @@
 
 import hashlib
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,6 +15,7 @@ from app.db import Session
 from app.employees import ambience, runtime, service
 from app.employees.lifecycle import Action, TransitionError, next_status
 from app.employees.script import LANGUAGES, EmployeeSettings, ScriptBundle
+from app.inbound import connect as inbound_connect
 from app.models import Channel, Employee, EmployeeStatus, Purpose, Role, User, Voice, VoiceTier
 from app.voices import VoiceOut, default_voice, supports, voice_out
 
@@ -322,7 +324,12 @@ async def restore(
     return await out(session, employee)
 
 
-async def _move(session: AsyncSession, employee: Employee, action: Action) -> EmployeeOut:
+async def _move(
+    session: AsyncSession,
+    employee: Employee,
+    action: Action,
+    before_commit: Callable[[], Awaitable[None]] | None = None,
+) -> EmployeeOut:
     live = await service.latest_version(session, employee.id)
     try:
         employee.status = next_status(
@@ -333,13 +340,18 @@ async def _move(session: AsyncSession, employee: Employee, action: Action) -> Em
         )
     except TransitionError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    if before_commit is not None:
+        await before_commit()  # if it refuses, the status above is never saved
     await session.commit()
     return await out(session, employee)
 
 
 @router.post("/{employee_id}/activate")
 async def activate(employee_id: uuid.UUID, user: OwnerUser, session: Session) -> EmployeeOut:
-    return await _move(session, await load(session, user, employee_id), Action.ACTIVATE)
+    employee = await load(session, user, employee_id)
+    return await _move(
+        session, employee, Action.ACTIVATE, lambda: inbound_connect.on_activate(session, employee)
+    )
 
 
 @router.post("/{employee_id}/deactivate")

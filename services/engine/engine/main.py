@@ -9,16 +9,20 @@ import json
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from urllib.parse import urlencode
+from datetime import UTC, datetime, timedelta
+from urllib.parse import parse_qs, urlencode
 
 from fastapi import FastAPI, Request, Response, WebSocket
 from loguru import logger
 from pipecat.processors.frame_processor import FrameProcessor
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.websockets import WebSocketState
 
+from app.employees.tickets import issue_call_ticket, read_call_ticket
 from app.employees.tickets import read as read_ticket
+from app.inbound import transfer as transferring
+from app.inbound.routing import route
 from app.main import provider_not_configured
 from app.providers.base import ProviderKind, ProviderNotConfiguredError, TelephonyProvider
 from app.providers.registry import require
@@ -28,10 +32,19 @@ from engine.events import redis_sink
 from engine.legs import voice_legs
 from engine.plan import claim_test_call, load_plan
 from engine.records import CallRecorder
-from engine.vobiz import StreamStart, VobizFrameSerializer, answer_xml
+from engine.vobiz import (
+    HANGUP_XML,
+    REJECT_XML,
+    StreamStart,
+    VobizFrameSerializer,
+    answer_xml,
+    transfer_xml,
+)
 from engine.web import WebFrameSerializer
 
 START_TIMEOUT_S = 10.0  # Vobiz sends `start` right after connecting
+TRANSFER_TICKET_TTL = timedelta(minutes=2)  # the carrier fetches the transfer XML at once
+RESULT_TICKET_TTL = timedelta(seconds=transferring.DIAL_LIMIT_S + 3600)  # it answers after the talk
 SUPPORTED_LANGUAGES = {"te", "hi", "en"}
 
 
@@ -94,6 +107,8 @@ async def _setup(
         voice_tier=plan.voice.tier.value if plan.voice else None,
         ambience=plan.ambience,
         ambience_volume=plan.ambience_volume,
+        opening=plan.opening,
+        transfer_to=plan.transfer_to,
     )
 
 
@@ -112,14 +127,89 @@ async def vobiz_answer(
     except _NoPlanError:
         return Response("employee not found or not published", status_code=404)
     _telephony()
+    return _stream_response(settings.language, call, employee)
+
+
+def _stream_response(language: str, call: str, employee: str) -> Response:
     stream_url = "wss://" + engine_public_url().removeprefix("https://") + "/vobiz/stream"
-    query = {"lang": settings.language, "call": call}
+    query = {"lang": language, "call": call}
     if employee:
         query["employee"] = employee
-    return Response(
-        answer_xml(f"{stream_url}?{urlencode(query)}"),
-        media_type="application/xml",
+    return Response(answer_xml(f"{stream_url}?{urlencode(query)}"), media_type="application/xml")
+
+
+def _xml(body: str) -> Response:
+    return Response(body, media_type="application/xml")
+
+
+@app.post("/vobiz/inbound")
+async def vobiz_inbound(request: Request) -> Response:
+    """Answer URL of the voice application our numbers are routed to: a call has arrived. The call
+    is answered when the employee can take it, and turned away (rejected) otherwise; either way
+    it is recorded."""
+    telephony = _telephony()
+    engine_public_url()  # 503 now, rather than an answer the carrier cannot follow
+    form = parse_qs((await request.body()).decode("utf-8", "replace"))
+
+    def field(name: str) -> str:
+        return (form.get(name) or [""])[0]
+
+    factory = async_sessionmaker(request.app.state.db, expire_on_commit=False)
+    routed = await route(
+        factory,
+        telephony,
+        to=field("To"),
+        caller=field("From"),
+        carrier_id=field("CallUUID"),
+        now=datetime.now(UTC),
     )
+    if routed.kind != "answer":
+        return _xml(REJECT_XML)
+    return _stream_response(
+        _language(routed.language), str(routed.call_id), str(routed.employee_id)
+    )
+
+
+@app.api_route("/vobiz/transfer", methods=["GET", "POST"])
+async def vobiz_transfer(request: Request, ticket: str = "") -> Response:
+    """The instructions the carrier runs on the caller's leg when the AI hands the call to a
+    person: ring the number the owner chose, and report back. Opened only by a ticket the engine
+    gave out for this one call."""
+    call_id = read_call_ticket(ticket, "transfer")
+    if call_id is None:
+        return Response("invalid or expired ticket", status_code=403)
+    factory = async_sessionmaker(request.app.state.db, expire_on_commit=False)
+    async with factory() as session:
+        found = await transferring.target(session, call_id)
+    if found is None:
+        return _xml(HANGUP_XML)
+    person, caller_id = found
+    result = issue_call_ticket("transfer_result", call_id, RESULT_TICKET_TTL)
+    result_url = f"{engine_public_url()}/vobiz/transfer-result?{urlencode({'ticket': result})}"
+    return _xml(
+        transfer_xml(
+            person,
+            caller_id,
+            result_url,
+            timeout=transferring.DIAL_TIMEOUT_S,
+            limit=transferring.DIAL_LIMIT_S,
+        )
+    )
+
+
+@app.post("/vobiz/transfer-result")
+async def vobiz_transfer_result(request: Request, ticket: str = "") -> Response:
+    """How the transfer ended. The call is over for the caller either way."""
+    call_id = read_call_ticket(ticket, "transfer_result")
+    if call_id is None:
+        return Response("invalid or expired ticket", status_code=403)
+    form = parse_qs((await request.body()).decode("utf-8", "replace"))
+    dial_status = (form.get("DialStatus") or ["unknown"])[0][:30]
+    factory = async_sessionmaker(request.app.state.db, expire_on_commit=False)
+    async with factory() as session:
+        await transferring.record_result(session, call_id, dial_status, datetime.now(UTC))
+        await session.commit()
+    return _xml(HANGUP_XML)
 
 
 async def _read_start(websocket: WebSocket) -> StreamStart:
@@ -166,6 +256,14 @@ async def vobiz_stream(
     publish = redis_sink(websocket.app.state.redis, call or start.call_id)
     serializer = VobizFrameSerializer(start, hang_up=hang_up)
     recorder = _recorder(websocket.app, call)
+    transfer = None
+    if settings.transfer_to and recorder is not None:  # a ticket needs our call row to name
+
+        async def transfer() -> None:
+            ticket = issue_call_ticket("transfer", recorder.call_id, TRANSFER_TICKET_TTL)
+            url = f"{engine_public_url()}/vobiz/transfer?{urlencode({'ticket': ticket})}"
+            await telephony.transfer(start.call_id, url)
+
     await run_call(
         websocket,
         start.call_id,
@@ -175,6 +273,7 @@ async def vobiz_stream(
         publish,
         recorder,
         carrier_call_id=start.call_id,
+        transfer=transfer,
     )
 
 

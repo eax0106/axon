@@ -81,6 +81,15 @@ class _Carrier(TelephonyProvider):
     async def is_live(self, call_uuid: str) -> bool:
         return self.live
 
+    async def ensure_application(self, name: str, answer_url: str, hangup_url: str) -> str:
+        return "app"
+
+    async def route_number(self, e164: str, application_id: str) -> None:
+        return None
+
+    async def transfer(self, call_uuid: str, instructions_url: str) -> None:
+        return None
+
     async def hang_up(self, call_uuid: str) -> None:
         if _Carrier.failures:
             _Carrier.failures -= 1

@@ -295,6 +295,8 @@ class Employee(Base):
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     # Instant dialer rules (window, delay, out-of-window rule, retry ladder); see instant/rules.py.
     dialer: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    # Incoming calls: opening hours, greetings, transfer, auto call-back; see inbound/settings.py.
+    inbound: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -456,6 +458,14 @@ class Call(Base):
     analysis_error: Mapped[str | None] = mapped_column(String(200))
     analysis_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_callback: Mapped[bool] = mapped_column(server_default="false")  # the caller asked for it
+    # An inbound call nobody answered: why, in plain words. The caller's number is kept here as the
+    # carrier gave it, because a landline or withheld number has no lead.
+    miss_reason: Mapped[str | None] = mapped_column(String(200))
+    caller_phone: Mapped[str | None] = mapped_column(String(20))
+    # The auto call-back to a missed caller points at the missed call; it is tried once.
+    callback_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("calls.id", ondelete="SET NULL"), index=True
+    )
     # Dialer queue: a queued call with scheduled_for NULL is held until someone redials it.
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempt: Mapped[int] = mapped_column(server_default="1")
@@ -530,6 +540,41 @@ class Note(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = _created()
+
+
+class InboundMessage(Base):
+    """A message a caller left, or a call back they asked for: a task for the owner with a done
+    tick. One per call."""
+
+    __tablename__ = "inbound_messages"
+    __table_args__ = (Index("ix_inbound_messages_account_open", "account_id", "done_at"),)
+    id: Mapped[uuid.UUID] = _pk()
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"), index=True
+    )
+    call_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("calls.id", ondelete="CASCADE"), unique=True
+    )
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"))
+    phone: Mapped[str | None] = mapped_column(String(20))
+    name: Mapped[str | None] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    callback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    done_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created()
+
+
+class DailySummary(Base):
+    """The day an account's summary email was taken for: one row, so it is sent once."""
+
+    __tablename__ = "daily_summaries"
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    day: Mapped[date] = mapped_column(Date, primary_key=True)  # the day summarised (India time)
+    sent_at: Mapped[datetime] = _created()
 
 
 class CallEvent(Base):
