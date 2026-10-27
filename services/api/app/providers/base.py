@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import ClassVar, TypedDict
@@ -246,6 +247,12 @@ class SheetsProvider(Provider):
     kind = ProviderKind.SHEETS
 
     @abstractmethod
+    async def append_row(
+        self, refresh_token: str, sheet_id: str, cell_range: str, row: list[str]
+    ) -> None:
+        """Add one row under the data in a sheet range. Values are stored as text, never parsed."""
+
+    @abstractmethod
     async def exchange_code(self, code: str, redirect_uri: str) -> str:
         """Trade a consent code for a refresh token the account can be read with later."""
 
@@ -254,3 +261,61 @@ class SheetsProvider(Provider):
         self, refresh_token: str, sheet_id: str, cell_range: str
     ) -> list[list[str]]:
         """The rows of a sheet range, header first."""
+
+
+@dataclass(frozen=True)
+class OAuthGrant:
+    refresh_token: str
+    scopes: frozenset[str]  # what the user actually allowed, which can be less than was asked for
+
+
+@dataclass(frozen=True)
+class Busy:
+    start: datetime
+    end: datetime
+
+
+class CalendarProvider(Provider):
+    kind = ProviderKind.CALENDAR
+
+    @abstractmethod
+    async def exchange_code(self, code: str, redirect_uri: str) -> OAuthGrant:
+        """Trade a consent code for a refresh token; one consent covers Calendar and Sheets."""
+
+    @abstractmethod
+    async def revoke(self, refresh_token: str) -> None:
+        """Take the permission back at the vendor."""
+
+    @abstractmethod
+    async def busy(
+        self, refresh_token: str, calendar_id: str, start: datetime, end: datetime
+    ) -> list[Busy]:
+        """When the calendar is taken between `start` and `end`."""
+
+    @abstractmethod
+    async def create_event(
+        self,
+        refresh_token: str,
+        calendar_id: str,
+        event_id: str,
+        title: str,
+        description: str,
+        start: datetime,
+        end: datetime,
+    ) -> bool:
+        """Put an event on the calendar under the caller's own `event_id`; False when that id is
+        already there (the same booking made twice). Nobody is invited."""
+
+    @abstractmethod
+    async def delete_event(self, refresh_token: str, calendar_id: str, event_id: str) -> None:
+        """Remove an event; one already gone is not an error."""
+
+
+class WhatsAppProvider(Provider):
+    kind = ProviderKind.WHATSAPP
+
+    @abstractmethod
+    async def send_template(
+        self, to_e164: str, name: str, language: str, params: list[str], recipient_name: str
+    ) -> None:
+        """Send an approved template to one number; raises if the vendor refuses it."""

@@ -1,10 +1,11 @@
 """What a call needs to know about an employee, read from its newest published version."""
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.actions.schema import Action
 from app.employees import service
 from app.employees.compiler import CallContext, compile_prompt
 from app.employees.script import ScriptBundle
@@ -24,6 +25,9 @@ class CallPlan:
     opening: str = ""  # spoken before the caller says anything (incoming calls)
     transfer_to: str | None = None  # a person the AI may hand the call to
     caller_id: str | None = None  # the number the transfer leg shows: the employee's own
+    actions: list[Action] = field(default_factory=list)  # what the AI may do during the call
+    party_phone: str | None = None  # the other person's number: the only one a message goes to
+    party_name: str | None = None
 
 
 async def business_name(session: AsyncSession, employee: Employee) -> str:
@@ -66,6 +70,8 @@ async def plan_for(
     opening: str = "",
     transfer_to: str | None = None,
     caller_id: str | None = None,
+    party_phone: str | None = None,
+    party_name: str | None = None,
 ) -> CallPlan | None:
     """The plan for a call: the newest published version, or the draft for test calls.
     None when there is nothing published and no draft was asked for."""
@@ -89,4 +95,7 @@ async def plan_for(
         opening=opening,
         transfer_to=transfer_to,
         caller_id=caller_id,
+        actions=list(bundle.actions),
+        party_phone=party_phone,
+        party_name=party_name,
     )

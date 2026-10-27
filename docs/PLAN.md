@@ -18,7 +18,7 @@ Legend: `todo` · `building` · `in review` · `changes` · `merged` · `blocked
 | B7 | Billing + numbers (incl. number types and dialer rule table) | Sonnet | merged | [#9](https://github.com/eax0106/axon/pull/9) 654604b | 2 review rounds (billing stall, unknown purchase result, channels, alert on every spend); carry-overs in docs/phases/b7.md |
 | B8 | Bulk campaigns | Sonnet | merged | [#10](https://github.com/eax0106/axon/pull/10) d542e77 | 3 review rounds (callback on a campaign's last call, naive start time, resume of a scheduled campaign); B7 free-channel carry-over done. Waiting on the owner: defaults of 2 calls at once, 2 retries an hour apart, 7-day dedupe, and the consent re-confirm rule (contacts added after consent pause the campaign until it is confirmed again). Details in docs/phases/b8.md |
 | B9 | Inbound | Sonnet | merged | [#11](https://github.com/eax0106/axon/pull/11) 1482b5b | 1 review round (a transfer closed the call before Vobiz fetched the instructions; a retried answer-URL fetch logged a false busy miss; channel not held during a transfer; orphan queued call for a Bulk employee). Waiting on the owner: native-speaker check of the Telugu and Hindi default greetings and recording notice; a fully verified Vobiz account is needed for inbound. Details in docs/phases/b9.md |
-| B10 | In-call actions | Sonnet | todo | | |
+| B10 | In-call actions | Sonnet | in review | PR pending | Tool framework, custom HTTP tool, Google Calendar booking, Sheets read/write, WhatsApp send (Interakt, AiSensy). Details in docs/phases/b10.md |
 | B11 | Training + knowledge | Sonnet | todo | | |
 | B12 | Developer platform (API keys, webhooks) | Sonnet | todo | | |
 | B13 | Reliability + admin | Opus | todo | | |

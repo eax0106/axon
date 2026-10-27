@@ -15,6 +15,7 @@ from typing import Literal
 from app.models import VoiceTier
 from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
 from app.providers.email.resend import ResendEmail
+from app.providers.google.calendar import GoogleCalendar
 from app.providers.google.sheets import GoogleSheets
 from app.providers.kyc.vobiz import VobizKyc
 from app.providers.leads.meta_lead_ads import MetaLeadAds
@@ -25,6 +26,8 @@ from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
 from app.providers.speech.smallest import SmallestSTT, SmallestTTS
 from app.providers.storage.r2 import R2Storage
 from app.providers.telephony.vobiz import VobizTelephony
+from app.providers.whatsapp.aisensy import AiSensyWhatsApp
+from app.providers.whatsapp.interakt import InteraktWhatsApp
 
 _VOBIZ = ("VOBIZ_AUTH_ID", "VOBIZ_AUTH_TOKEN")
 _GOOGLE = ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET")
@@ -58,6 +61,9 @@ ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
     (ProviderKind.TELEPHONY, "vobiz"): VobizTelephony,
     (ProviderKind.LEADS, "meta_lead_ads"): MetaLeadAds,
     (ProviderKind.SHEETS, "google"): GoogleSheets,
+    (ProviderKind.CALENDAR, "google"): GoogleCalendar,
+    (ProviderKind.WHATSAPP, "interakt"): InteraktWhatsApp,
+    (ProviderKind.WHATSAPP, "aisensy"): AiSensyWhatsApp,
     (ProviderKind.STORAGE, "r2"): R2Storage,
     (ProviderKind.EMAIL, "resend"): ResendEmail,
     (ProviderKind.PAYMENTS, "razorpay"): RazorpayPayments,

@@ -19,6 +19,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.websockets import WebSocketState
 
+from app.actions.tools import ActionContext, build_tools
 from app.employees.tickets import issue_call_ticket, read_call_ticket
 from app.employees.tickets import read as read_ticket
 from app.inbound import transfer as transferring
@@ -85,6 +86,13 @@ def _recorder(app_: FastAPI, call: str) -> CallRecorder | None:
         return None
 
 
+def _call_id(call: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(call)
+    except ValueError:
+        return None
+
+
 class _NoPlanError(Exception):
     """The employee is unknown, or has nothing published and this is not a test call."""
 
@@ -101,6 +109,13 @@ async def _setup(
     if plan is None:
         raise _NoPlanError
     legs = voice_legs(plan.language, voice=plan.voice, speed=plan.tts_speed)
+    context = ActionContext(
+        async_sessionmaker(app_.state.db, expire_on_commit=False),
+        plan.account_id,
+        _call_id(call),
+        plan.party_phone,
+        plan.party_name,
+    )
     return legs, CallSettings(
         language=plan.language,
         system_prompt=plan.system_prompt,
@@ -109,6 +124,7 @@ async def _setup(
         ambience_volume=plan.ambience_volume,
         opening=plan.opening,
         transfer_to=plan.transfer_to,
+        tools=tuple(build_tools(plan.actions, context)),
     )
 
 

@@ -509,6 +509,18 @@ class LeadConnection(Base):
     created_at: Mapped[datetime] = _created()
 
 
+class GoogleConnection(Base):
+    """The account's Google permission for in-call actions: Calendar and Sheets, one per account."""
+
+    __tablename__ = "google_connections"
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    refresh_token: Mapped[str] = mapped_column(Text)
+    scopes: Mapped[list[str]] = mapped_column(ARRAY(String(200)), server_default="{}")
+    created_at: Mapped[datetime] = _created()
+
+
 class LeadIntakeEntry(Base):
     __tablename__ = "lead_intake_log"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

@@ -14,9 +14,9 @@ Filled in after the code is built (Track 3). Keys go into `.env` locally or the 
 | 8 | Cartesia API key | Premium voices | B3 | Owner, then Claude | todo |
 | 9 | Razorpay key id, secret, webhook secret | Credit top-ups | B7 | Owner | todo |
 | 10 | Transactional email provider key | Low-balance, summaries, alerts | B6, B9 | Claude | todo |
-| 11 | Google Cloud OAuth client (verified app) | Calendar, Sheets | B5, B10 | Owner, then Claude | todo |
+| 11 | Google Cloud OAuth client (verified app), with the Calendar and Sheets APIs enabled. The in-call actions ask for `calendar.events`, `calendar.freebusy` and `spreadsheets` (a sensitive scope: Google's app verification is needed before real customers connect). Contract tests also read `GOOGLE_TEST_REFRESH_TOKEN` (a token for a test account with all three scopes), `GOOGLE_TEST_CALENDAR_ID` and `GOOGLE_TEST_SHEET_ID` | Calendar, Sheets | B5, B10 | Owner, then Claude | todo |
 | 12 | Meta developer app (Lead Ads webhook) | Instant leads from ads | B5 | Owner, then Claude | todo. V1: page tokens are entered by hand per lead form; the Meta OAuth connect flow is built in Track 3 |
-| 13 | WhatsApp BSP (Interakt or AiSensy) + approved templates | WhatsApp actions | B10 | Owner | todo |
+| 13 | WhatsApp BSP (Interakt or AiSensy) + approved templates. Interakt: the template's code name; AiSensy: a live API campaign that holds the template. Contract tests read `WHATSAPP_TEST_PHONE` and `INTERAKT_TEST_TEMPLATE` or `AISENSY_TEST_CAMPAIGN`. Neither vendor documents a read-only call, so a wrong key shows on the first send, not in `/admin/providers` | WhatsApp actions | B10 | Owner | todo |
 | 14 | Strix: `STRIX_LLM` + `LLM_API_KEY`, Docker image (~5.8 GB) | Security test | SEC | Owner | todo |
 | 15 | Hosting account (India region) | Deployment | Launch | Owner, then Claude | todo |
 | 16 | Test phones + native Telugu and Hindi speakers | Quality checks | B2, B14 | Owner | todo |

@@ -29,6 +29,7 @@ KEPT_EVENTS = {
     "recording_not_stored",
     "usage",
     "transferred",
+    "action",
 }
 MAX_EVENTS = 500
 HANDED_OVER = "transferred"  # how a call ends that the AI passed to a person

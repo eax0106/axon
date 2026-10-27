@@ -49,6 +49,7 @@ from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from starlette.websockets import WebSocket, WebSocketState
 
+from app.actions.tools import Tool, run_timed
 from app.providers.base import ObjectStorageProvider, ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import require
 from engine.ambience import mixer_for
@@ -73,6 +74,7 @@ class CallSettings:
     silence_timeout_s: float = 20.0  # caller silent this long after the bot spoke -> end call
     opening: str = ""  # spoken first, before the caller says a word (an incoming call)
     transfer_to: str | None = None  # a person the AI may hand the call to (an incoming call)
+    tools: tuple[Tool, ...] = ()  # what the employee's actions let the AI do during the call
 
     def __post_init__(self) -> None:
         if not MIN_CALL_S <= self.max_call_s <= MAX_CALL_S:
@@ -163,6 +165,27 @@ def register_end_call(llm: FrameProcessor, gate: GoodbyeGate) -> None:
     register("end_call", end_call)
 
 
+def register_tools(
+    llm: FrameProcessor, tools: tuple[Tool, ...], emit: Callable[[dict[str, Any]], Awaitable[None]]
+) -> None:
+    """Let the LLM use the employee's actions. A write must not be abandoned halfway because the
+    caller spoke over the AI, so an interruption does not cancel a tool. Only the fact that a tool
+    ran is recorded: never what it was given or answered, which can be a caller's details."""
+    register = getattr(llm, "register_function", None)
+    if register is None:
+        return
+    for tool in tools:
+
+        async def use(params: FunctionCallParams, tool: Tool = tool) -> None:
+            result, ms = await run_timed(tool, dict(params.arguments))
+            await emit(
+                {"type": "action", "name": tool.name, "ok": bool(result.get("ok")), "ms": ms}
+            )
+            await params.result_callback(result)
+
+        register(tool.name, use, cancel_on_interruption=False, timeout_secs=tool.timeout_s + 10)
+
+
 async def run_call(
     websocket: WebSocket,
     call_id: str,
@@ -203,6 +226,9 @@ async def run_call(
     tools = [END_CALL]
     if transfer is not None:
         tools.append(TRANSFER_TO_HUMAN)
+    tools += [
+        FunctionSchema(t.name, t.description, t.properties, t.required) for t in settings.tools
+    ]
     aggregators = LLMContextAggregatorPair(
         LLMContext(messages=messages, tools=ToolsSchema(standard_tools=tools)),
         user_params=LLMUserAggregatorParams(
@@ -236,6 +262,7 @@ async def run_call(
         ]
     )
     live = _LiveEvents(publish, call_record)
+    register_tools(llm, settings.tools, live.emit)
     observer = CallObserver(live.emit, transport.input())
     # ponytail: PipelineTask/PipelineRunner are deprecated in Pipecat 1.3 (removed in 2.0); the
     # PipelineWorker/WorkerRunner pair never returned after EndFrame here. Migrate with 2.0.

@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.actions.router import router as actions_router
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
 from app.billing.ledger import InsufficientCreditsError
@@ -62,6 +63,7 @@ app.include_router(auth_router)
 app.include_router(live_router)
 app.include_router(employees_router)
 app.include_router(ai_router)
+app.include_router(actions_router)
 app.include_router(calls_router)
 app.include_router(instant_router)
 app.include_router(campaigns_router)

@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from app.actions.schema import IDENTIFIER
 from app.employees.compiler import clean_value
-from app.employees.script import IDENTIFIER
 from app.instant.intake import normalize_phone
 
 MAX_ROWS = 20_000

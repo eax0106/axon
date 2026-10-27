@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 from app.employees import tickets
 from app.instant import sheets as poller
 from app.providers.base import ProviderKind
-from app.providers.google.sheets import SCOPE, TOKEN_URL, GoogleSheets, consent_url
+from app.providers.google.oauth import TOKEN_URL
+from app.providers.google.sheets import SCOPE, GoogleSheets, consent_url
 from app.providers.registry import ADAPTERS, require
 
 from .conftest import sql
