@@ -7,7 +7,7 @@ from typing import Annotated
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
@@ -17,10 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing import ledger
 from app.billing.config import free_signup_credits
 from app.db import Session
-from app.models import Account, LedgerKind, Role, User
+from app.models import Account, AuditEntry, LedgerKind, Role, User
 from app.settings import get_settings
 
 TOKEN_TTL = timedelta(hours=12)
+IMPERSONATION_TTL = timedelta(minutes=30)
 MIN_SECRET_LEN = 32
 _hasher = PasswordHasher()
 # Verified against when the email is unknown, so both paths cost one argon2 verify.
@@ -41,9 +42,18 @@ def jwt_secret() -> str:
     return secret
 
 
-def issue_token(user: User, now: datetime | None = None) -> str:
+def issue_token(user: User, now: datetime | None = None, impersonator: User | None = None) -> str:
+    """A session for `user`. With `impersonator` (platform staff) it is a short support session:
+    every change made with it is logged under the staff member's id."""
     now = now or datetime.now(UTC)
-    claims = {"sub": str(user.id), "iat": now, "exp": now + TOKEN_TTL}
+    # `iat` keeps its fraction of a second, so a password change revokes every older session.
+    claims: dict[str, object] = {
+        "sub": str(user.id),
+        "iat": now.timestamp(),
+        "exp": now + TOKEN_TTL,
+    }
+    if impersonator is not None:
+        claims["imp"], claims["exp"] = str(impersonator.id), now + IMPERSONATION_TTL
     return jwt.encode(claims, jwt_secret(), algorithm="HS256")
 
 
@@ -54,15 +64,39 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 async def current_user(
+    request: Request,
     session: Session,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> User:
     if credentials is None:
         raise _unauthorized("not authenticated")
-    return await user_from_token(session, credentials.credentials)
+    user, impersonator = await _session_of(session, credentials.credentials)
+    request.state.impersonator = impersonator
+    if impersonator is not None and request.method not in ("GET", "HEAD", "OPTIONS"):
+        # Written before the change, in its own transaction: the attempt is logged even if the
+        # change itself fails.
+        session.add(
+            AuditEntry(
+                account_id=user.account_id,
+                actor_user_id=user.id,
+                impersonator_user_id=impersonator,
+                action="impersonated_request",
+                target_type="route",
+                target_id=f"{request.method} {request.url.path}"[:100],
+            )
+        )
+        await session.commit()
+    return user
 
 
 async def user_from_token(session: AsyncSession, token: str) -> User:
+    return (await _session_of(session, token))[0]
+
+
+async def _session_of(session: AsyncSession, token: str) -> tuple[User, uuid.UUID | None]:
+    """The user a token speaks for, and the staff member impersonating them (if any). Refused when
+    the token was issued before the user's last password change, or when the impersonator is no
+    longer platform staff."""
     try:
         claims = jwt.decode(
             token,
@@ -71,22 +105,49 @@ async def user_from_token(session: AsyncSession, token: str) -> User:
             options={"require": ["sub", "exp", "iat"]},
         )
         user_id = uuid.UUID(claims["sub"])
+        impersonator_id = uuid.UUID(claims["imp"]) if "imp" in claims else None
     except (jwt.InvalidTokenError, ValueError) as exc:
         raise _unauthorized("invalid or expired token") from exc
     user = await session.get(User, user_id)
-    if user is None:
+    if user is None or _revoked(user, claims["iat"]):
         raise _unauthorized("invalid or expired token")
-    return user
+    if impersonator_id is not None:
+        staff = await session.get(User, impersonator_id)
+        if staff is None or not staff.is_platform_admin:
+            raise _unauthorized("invalid or expired token")
+    return user, impersonator_id
+
+
+def _revoked(user: User, issued_at: float) -> bool:
+    valid_after = user.tokens_valid_after
+    return valid_after is not None and issued_at < valid_after.timestamp()
 
 
 CurrentUser = Annotated[User, Depends(current_user)]
 
 
-async def require_admin(user: CurrentUser) -> User:
-    """Platform staff only; account roles never grant this."""
-    if not user.is_platform_admin:
+async def require_admin(user: CurrentUser, request: Request) -> User:
+    """Platform staff only; account roles never grant this, and neither does a support session."""
+    if not user.is_platform_admin or request.state.impersonator is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "platform admins only")
     return user
+
+
+def refuse_in_support_session(request: Request) -> None:
+    """For what only the account's own people may do: change the password, and anything that
+    outlives a support session and lets calls be placed or sends the account's calls or data out
+    (API keys, the lead-intake secret, webhooks, actions, a Google connection, a transfer number).
+    Routes that also take other changes call it only when such a field changes."""
+    if request.state.impersonator is not None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not allowed in a support session")
+
+
+async def not_impersonating(user: CurrentUser, request: Request) -> User:
+    refuse_in_support_session(request)
+    return user
+
+
+OwnUser = Annotated[User, Depends(not_impersonating)]
 
 
 class Credentials(BaseModel):
@@ -150,6 +211,27 @@ async def login(body: Credentials, session: Session) -> Token:
         user.password_hash = _hasher.hash(body.password)
         await session.commit()
     return Token(access_token=issue_token(user))
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/auth/password")
+async def change_password(body: PasswordChange, user: OwnUser, session: Session) -> Token:
+    """Change the password. Every session issued before it is signed out, on every device; the
+    answer is a fresh session for this one."""
+    try:
+        _hasher.verify(user.password_hash, body.current_password)
+    except VerificationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "current password is wrong") from exc
+    now = datetime.now(UTC)
+    user.password_hash = _hasher.hash(body.new_password)
+    user.tokens_valid_after = now
+    session.add(AuditEntry(account_id=user.account_id, actor_user_id=user.id, action="password"))
+    await session.commit()
+    return Token(access_token=issue_token(user, now))
 
 
 @router.get("/accounts/me")

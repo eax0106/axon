@@ -30,6 +30,7 @@ class CallPlan:
     party_phone: str | None = None  # the other person's number: the only one a message goes to
     party_name: str | None = None
     has_documents: bool = False  # the AI gets a tool to look things up in them
+    max_call_s: int = 600  # the account's call-length cap
 
 
 async def business_name(session: AsyncSession, employee: Employee) -> str:
@@ -90,6 +91,8 @@ async def plan_for(
         bundle = ScriptBundle.model_validate(live.bundle)
     settings = service.settings_of(employee)
     taught = await load_knowledge(session, employee.id)
+    account = await session.get(Account, employee.account_id)
+    assert account is not None  # FK guarantees it
     return CallPlan(
         employee_id=employee.id,
         account_id=employee.account_id,
@@ -108,4 +111,5 @@ async def plan_for(
         party_phone=party_phone,
         party_name=party_name,
         has_documents=taught.documents,
+        max_call_s=account.max_call_s,
     )

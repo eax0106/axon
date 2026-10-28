@@ -11,12 +11,17 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.account.settings import router as account_router
 from app.actions.router import router as actions_router
+from app.admin.accounts import router as admin_accounts_router
+from app.admin.ops import router as admin_ops_router
+from app.admin.reports import router as admin_reports_router
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
 from app.billing.ledger import InsufficientCreditsError
 from app.billing.router import router as billing_router
 from app.calls.conversations import router as conversations_router
+from app.calls.dnc import router as dnc_router
 from app.calls.leads import router as leads_router
 from app.calls.memory import router as memory_router
 from app.calls.notifications import router as notifications_router
@@ -42,6 +47,8 @@ from app.phone_verify import router as phone_verify_router
 from app.providers.base import ProviderNotConfiguredError
 from app.providers.registry import report_all
 from app.settings import get_settings
+from app.support import router as support_router
+from app.support import staff_router as support_staff_router
 from app.training.router import router as training_router
 from app.voices import router as voices_router
 
@@ -92,6 +99,13 @@ app.include_router(developer_router)
 app.include_router(result_webhook_router)
 app.include_router(public_api_router)
 app.include_router(public_docs_router)
+app.include_router(account_router)
+app.include_router(dnc_router)
+app.include_router(admin_accounts_router)
+app.include_router(admin_ops_router)
+app.include_router(admin_reports_router)
+app.include_router(support_router)
+app.include_router(support_staff_router)
 
 
 @app.exception_handler(AuthNotConfiguredError)

@@ -25,6 +25,7 @@ from pipecat.frames.frames import (
     Frame,
     FunctionCallResultProperties,
     LLMMessagesAppendFrame,
+    LLMRunFrame,
     TTSSpeakFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
@@ -50,17 +51,27 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from starlette.websockets import WebSocket, WebSocketState
 
 from app.actions.tools import Tool, run_timed
+from app.models import VoiceTier
 from app.providers.base import ObjectStorageProvider, ProviderKind, ProviderNotConfiguredError
+from app.providers.failover import billed_tier
 from app.providers.registry import require
 from engine.ambience import mixer_for
 from engine.events import CallObserver, EventSink, Usage
 from engine.goodbye import GoodbyeGate, PlayedStreamTap
-from engine.records import CallRecorder
+from engine.legs import ServiceLeg
+from engine.records import PROVIDER_FAILURE, CallRecorder
 from engine.vobiz import checkpoint
 
 PIPELINE_RATE = 16000  # Smart Turn and Silero work at 16 kHz; the serializer converts to 8 kHz
 MIN_CALL_S, MAX_CALL_S = 10, 3600
 NO_REPLY = FunctionCallResultProperties(run_llm=False)
+# Spoken when a leg of the call has no vendor left, before the call is hung up. Our own words;
+# the Telugu and Hindi wait for the native-speaker check (WIRING_CHECKLIST).
+APOLOGY = {
+    "en": "Sorry, we have a technical problem and need to end this call here. Thank you.",
+    "hi": "माफ़ कीजिए, तकनीकी समस्या की वजह से हमें यह कॉल यहीं खत्म करनी होगी। धन्यवाद।",
+    "te": "క్షమించండి, సాంకేతిక సమస్య వల్ల ఈ కాల్‌ను ఇక్కడితో ముగించాల్సి వస్తోంది. ధన్యవాదాలు.",
+}
 
 
 @dataclass(frozen=True)
@@ -263,7 +274,14 @@ async def run_call(
     )
     live = _LiveEvents(publish, call_record)
     register_tools(llm, settings.tools, live.emit)
-    observer = CallObserver(live.emit, transport.input())
+    switched = [leg for leg in legs if isinstance(leg, ServiceLeg)]
+    names = {s.name: (str(leg.kind), v) for leg in switched for s, v in leg.vendors.items()}
+    observer = CallObserver(
+        live.emit,
+        transport.input(),
+        vendor_of=names.get,
+        listening=lambda: stt.vendor if isinstance(stt, ServiceLeg) else None,
+    )
     # ponytail: PipelineTask/PipelineRunner are deprecated in Pipecat 1.3 (removed in 2.0); the
     # PipelineWorker/WorkerRunner pair never returned after EndFrame here. Migrate with 2.0.
     task = PipelineTask(
@@ -278,6 +296,57 @@ async def run_call(
         idle_timeout_secs=None,  # the silence watchdog and the length cap end calls instead
         enable_rtvi=False,
     )
+
+    given_up: list[ProviderKind] = []
+    tier = [VoiceTier(settings.voice_tier)] if settings.voice_tier else []
+
+    async def failed_over(leg: ServiceLeg, failed: Any, now_on: Any, error: str) -> None:
+        """The leg moved to its next vendor. A lost LLM turn is asked for again; a fallback voice
+        of a cheaper tier sets what the call is billed at, for the rest of the call and before."""
+        old, new = leg.vendors[failed], leg.vendors[now_on]
+        await live.emit({"type": "failover", "leg": str(leg.kind), "from": old, "to": new})
+        logger.warning(f"{leg.kind} failed over from {old} to {new}: {error}")
+        if call_record is not None:
+            await call_record.vendor_failed(str(leg.kind), old)
+        if leg.kind is ProviderKind.LLM:
+            await task.queue_frame(LLMRunFrame())
+        cheaper = billed_tier([*tier, leg.tiers[now_on]])
+        if tier and cheaper is not tier[0]:
+            assert cheaper is not None
+            tier[0] = cheaper
+            await live.emit({"type": "tier_fallback", "tier": cheaper.value})
+            if call_record is not None:
+                await call_record.bill_at(cheaper.value)
+
+    async def exhausted(leg: ServiceLeg, failed: Any, error: str) -> None:
+        """The leg has no vendor left: apologise (if a voice still works) and hang up once it was
+        heard, or hang up at once."""
+        vendor = leg.vendors[failed]
+        given_up.append(leg.kind)
+        await live.emit({"type": "provider_failure", "leg": str(leg.kind), "vendor": vendor})
+        logger.error(f"{leg.kind} has no vendor left ({vendor}: {error}); ending the call")
+        if call_record is not None:
+            await call_record.vendor_failed(str(leg.kind), vendor)
+        if ProviderKind.TTS not in given_up and not ended:
+            apology = TTSSpeakFrame(APOLOGY.get(settings.language, APOLOGY["en"]))
+            apology.interruptible = False
+            await task.queue_frame(apology)
+            await gate.request_end(lambda: end(PROVIDER_FAILURE))
+        else:
+            await end(PROVIDER_FAILURE)
+
+    def watch(leg: ServiceLeg) -> None:
+        async def on_failover(_: Any, failed: Any, now_on: Any, error: str) -> None:
+            await failed_over(leg, failed, now_on, error)
+
+        async def on_exhausted(_: Any, failed: Any, error: str) -> None:
+            await exhausted(leg, failed, error)
+
+        leg.strategy.add_event_handler("on_failover", on_failover)
+        leg.strategy.add_event_handler("on_exhausted", on_exhausted)
+
+    for leg in switched:
+        watch(leg)
 
     transferring: list[bool] = []
 
@@ -354,10 +423,12 @@ async def run_call(
         gate.cancel()
         observer.usage.ended_at = time.monotonic()
     reason = ended[0] if ended else "pipeline_finished"
+    # The vendors that carried the call to its end count as a success for their health score.
+    served = {str(leg.kind): leg.vendor for leg in switched if leg.kind not in given_up}
     # However the pipeline exits, finish the call (recording, usage, `ended` last) in its own
     # task: if this handler is being cancelled, its cancel scope would interrupt every await here.
     finishing = asyncio.create_task(
-        _finish(live, publish, call_id, recording, observer.usage, reason, call_record)
+        _finish(live, publish, call_id, recording, observer.usage, reason, call_record, served)
     )
     _FINISHING.add(finishing)
     finishing.add_done_callback(_FINISHING.discard)
@@ -401,6 +472,7 @@ async def _finish(
     usage: Usage,
     reason: str,
     recorder: CallRecorder | None,
+    served: dict[str, str],
 ) -> None:
     # Pipeline tasks still tearing down may emit late events (e.g. bot_stopped_speaking); close the
     # live gate first so `ended` is always the last event.
@@ -422,6 +494,6 @@ async def _finish(
     await emit({"type": "ended", "reason": reason})
     if recorder is not None:
         try:
-            await recorder.finished(reason, key)
+            await recorder.finished(reason, key, served)
         except Exception:
             logger.exception("could not write the call record")

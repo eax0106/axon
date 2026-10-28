@@ -35,6 +35,7 @@ def api(db_client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatc
 def carrier(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Carrier, VobizTelephony]]:
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     fake = Carrier()
     transport = httpx.MockTransport(fake.handler)
     adapter = VobizTelephony(transport=transport)

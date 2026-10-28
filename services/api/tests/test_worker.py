@@ -39,6 +39,8 @@ def test_the_cron_schedule_and_hooks() -> None:
         "cron:billing_tick",
         "cron:campaign_tick",
         "cron:dial_tick",
+        "cron:health_prune_tick",
+        "cron:heartbeat_tick",
         "cron:low_balance_tick",
         "cron:post_call_tick",
         "cron:reap_tick",
@@ -93,6 +95,7 @@ def test_a_dial_tick_places_a_due_call_through_the_real_adapter(
     sql(migrated_url, "UPDATE calls SET scheduled_for = now() - interval '1 minute'")
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     monkeypatch.setenv("AXON_ENGINE_PUBLIC_URL", "https://engine.example.in")
     monkeypatch.setenv("AXON_API_PUBLIC_URL", "https://api.example.in")
     placed: list[httpx.Request] = []

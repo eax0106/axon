@@ -56,6 +56,7 @@ def api(
     monkeypatch.setenv("AXON_API_PUBLIC_URL", "https://api.example.in")
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", TOKEN)
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     cdr = Cdr()
     transport = httpx.MockTransport(cdr.handler)
     monkeypatch.setattr(

@@ -16,7 +16,7 @@ from pipecat.services.smallest.tts import SmallestTTSService
 from sqlalchemy.ext.asyncio import create_async_engine
 from tests.helpers import seed, signup
 
-from app.providers.base import ProviderNotConfiguredError
+from app.providers.base import ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import VENDOR_KEYS
 from engine.ambience import mixer_for
 from engine.legs import voice_legs
@@ -135,7 +135,8 @@ def test_the_tts_is_built_from_the_employees_voice_row_and_speed(
             assert plan is not None
             return plan, voice_legs(plan.language, voice=plan.voice, speed=plan.tts_speed)
 
-        plan, (_, _, tts) = run(migrated_url, build)
+        plan, (_, _, leg) = run(migrated_url, build)
+        tts = leg.services[0]  # the employee's own voice leads; the rest are fallbacks
         assert (
             isinstance(tts, service) and plan.voice is not None and plan.voice.provider == provider
         )
@@ -182,7 +183,7 @@ def test_setup_for_an_unpublished_employee_is_refused(api: TestClient, migrated_
         run(migrated_url, lambda a: _setup(a, "en", employee["id"], ""))
 
 
-def test_a_voice_whose_vendor_has_no_key_is_503(
+def test_a_voice_whose_vendor_has_no_key_falls_back_and_503_only_when_none_is_left(
     api: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     owner = signup(api)
@@ -190,9 +191,15 @@ def test_a_voice_whose_vendor_has_no_key_is_503(
     employee = hire(api, owner, language="en", voice_id=voice["id"])
     api.post(f"/employees/{employee['id']}/publish", headers=owner)
     monkeypatch.delenv("CARTESIA_API_KEY")
+    (_, _, tts), _ = run(migrated_url, lambda a: _setup(a, "en", employee["id"], ""))
+    assert [tts.vendors[s] for s in tts.services] == ["sarvam", "smallest"]
+    # The fallback voices go too (their keys are shared with speech-to-text, so rename them).
+    monkeypatch.setitem(VENDOR_KEYS[ProviderKind.TTS], "sarvam", ("SARVAM_VOICE_OFF",))
+    monkeypatch.setitem(VENDOR_KEYS[ProviderKind.TTS], "smallest", ("SMALLEST_VOICE_OFF",))
     with pytest.raises(ProviderNotConfiguredError) as raised:
         run(migrated_url, lambda a: _setup(a, "en", employee["id"], ""))
-    assert raised.value.missing_keys == ["CARTESIA_API_KEY"]
+    assert raised.value.kind is ProviderKind.TTS
+    assert raised.value.missing_keys == ["CARTESIA_API_KEY"]  # the employee's own vendor
 
 
 def test_answer_url_and_stream_url_carry_the_employee(api: TestClient, migrated_url: str) -> None:

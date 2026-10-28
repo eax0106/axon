@@ -362,3 +362,21 @@ def test_a_whole_call_through_the_engine_leaves_its_row_finished(
     )
     assert event_types(migrated_url, call)[-1] == "ended"
     assert datetime.now(UTC) > got["ended_at"]
+
+
+def test_vendor_outcomes_feed_the_health_score(world: tuple[str, Any, Any]) -> None:
+    url = world[0]
+    call = new_call(world)
+
+    async def work(r: CallRecorder) -> None:
+        await r.started()
+        await r.vendor_failed("tts", "cartesia")  # the call failed over and left it behind
+        await r.finished("agent_ended", None, {"stt": "sarvam", "llm": "gemini", "tts": "sarvam"})
+
+    recorder(url, call, work)
+    outcomes = sql(
+        url,
+        "SELECT string_agg(kind || ':' || vendor || ':' || ok, ',' ORDER BY kind, vendor)"
+        " FROM provider_outcomes",
+    )
+    assert outcomes == "llm:gemini:true,stt:sarvam:true,tts:cartesia:false,tts:sarvam:true"

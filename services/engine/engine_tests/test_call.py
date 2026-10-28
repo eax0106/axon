@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 
 import engine.call
 import engine.main
+from app.models import VoiceTier
 from app.providers import registry
 from app.providers.base import Provider, ProviderKind, TelephonyProvider
 from engine.call import CallSettings
@@ -129,6 +130,8 @@ def providers(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         monkeypatch.setitem(registry.VENDOR_KEYS[kind], name, ())
         monkeypatch.setitem(registry.ADAPTERS, (kind, name), adapters[(kind, name)])
         monkeypatch.setenv(f"AXON_{kind.upper()}_PROVIDER", name)
+    for tier in VoiceTier:  # every voice tier is served by the test voice
+        monkeypatch.setitem(registry.TIER_TTS, tier, "testleg")
     monkeypatch.setenv("AXON_ENGINE_PUBLIC_URL", "https://engine.example.in")
     monkeypatch.setattr(engine.call, "MIN_CALL_S", 0)
     _Carrier.live, _Carrier.failures, _Carrier.hangups = True, 0, []

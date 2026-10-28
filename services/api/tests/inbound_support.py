@@ -26,6 +26,7 @@ def routed_carrier(monkeypatch: pytest.MonkeyPatch) -> Iterator[Carrier]:
     """The carrier the API itself talks to: every adapter the registry builds goes through it."""
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     fake = Carrier()
     transport = httpx.MockTransport(fake.handler)
     monkeypatch.setattr(

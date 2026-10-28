@@ -5,11 +5,11 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentUser
+from app.auth import CurrentUser, refuse_in_support_session
 from app.db import Session
 from app.employees.router import OwnerUser, load
 from app.inbound import connect
@@ -48,11 +48,18 @@ async def get_settings(
 
 @router.put("/employees/{employee_id}/inbound-settings")
 async def put_settings(
-    employee_id: uuid.UUID, body: InboundSettings, user: OwnerUser, session: Session
+    employee_id: uuid.UUID,
+    body: InboundSettings,
+    request: Request,
+    user: OwnerUser,
+    session: Session,
 ) -> InboundSettings:
     """Applies to the next call at once. The transfer number may not be the employee's own number:
-    the call would ring itself."""
+    the call would ring itself. A support session may not change it: callers would be put through
+    to a phone of its choosing after it ends."""
     employee = await load(session, user, employee_id)
+    if body.transfer_number != inbound_of(employee.inbound).transfer_number:
+        refuse_in_support_session(request)
     number = await session.get(PhoneNumber, employee.number_id) if employee.number_id else None
     if number is not None and body.transfer_number == number.e164:
         raise HTTPException(422, "the transfer number cannot be the employee's own number")

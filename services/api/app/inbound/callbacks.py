@@ -15,9 +15,10 @@ from app.instant import rules
 from app.instant.rules import DialerSettings
 from app.models import Call, CallEvent, CallStatus, Channel, Direction, DncEntry, Employee, Lead
 
-# A caller who found the line shut or busy is called back. One who found the employee paused or
-# the account out of credits is not: the dialer would only wait for those to change, perhaps days.
-AUTO_CODES = ("closed", "busy")
+# A caller who found the line shut or busy, or the platform unable to take the call, is called
+# back. One who found the employee paused or the account out of credits is not: the dialer would
+# only wait for those to change, perhaps days.
+AUTO_CODES = ("closed", "busy", "unavailable")
 ONCE_PER = timedelta(days=1)
 DIALED_CHANNELS = (Channel.INSTANT, Channel.INBOUND)  # a Bulk employee's callers are its campaign's
 

@@ -5,7 +5,7 @@ import uuid
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -18,7 +18,7 @@ from app.actions.schema import (
     mask,
 )
 from app.actions.tools import ActionContext, build_tools
-from app.auth import CurrentUser
+from app.auth import CurrentUser, not_impersonating
 from app.db import Session
 from app.employees import service as employees
 from app.employees import tickets
@@ -68,7 +68,7 @@ class GoogleConnect(BaseModel):
     redirect_uri: str = Field(min_length=8, max_length=500)
 
 
-@router.post("/integrations/google/connect")
+@router.post("/integrations/google/connect", dependencies=[Depends(not_impersonating)])
 async def google_connect(body: GoogleConnect, user: OwnerUser, session: Session) -> dict[str, bool]:
     if tickets.read_oauth_state(body.state, "google") != (user.id, user.account_id):
         raise HTTPException(400, "bad or expired state: start the connection again")
@@ -111,7 +111,7 @@ async def get_actions(employee_id: uuid.UUID, user: CurrentUser, session: Sessio
     return ActionsBody(actions=mask(employees.bundle_of(employee).actions))
 
 
-@router.put("/employees/{employee_id}/actions")
+@router.put("/employees/{employee_id}/actions", dependencies=[Depends(not_impersonating)])
 async def put_actions(
     employee_id: uuid.UUID, body: ActionsBody, user: CurrentUser, session: Session
 ) -> ActionsBody:

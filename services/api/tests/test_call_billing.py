@@ -51,6 +51,7 @@ def api(db_client: TestClient, migrated_url: str) -> TestClient:
 def cdr(monkeypatch: pytest.MonkeyPatch) -> tuple[Cdr, VobizTelephony]:
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     fake = Cdr()
     return fake, VobizTelephony(transport=httpx.MockTransport(fake.handler))
 

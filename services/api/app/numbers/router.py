@@ -179,13 +179,15 @@ async def purchase(
         raise HTTPException(status.HTTP_409_CONFLICT, "that number is already taken")
     store = _store()
     item = await _find(body.e164)
-    reference = uuid.uuid4().hex
+    number_id = uuid.uuid4()
+    reference = number_id.hex  # the number's own id: whoever settles a `reconcile` finds the charge
     charge = ledger.credits(number_setup_fee() + number_monthly_fee())
     await ledger.post(
         session, user.account_id, LedgerKind.NUMBER, -charge,
         ref_type="number_purchase", ref_id=reference, note=f"new number {item.e164}",
     )  # fmt: skip
     number = PhoneNumber(
+        id=number_id,
         account_id=user.account_id,
         provider=store.name,
         e164=item.e164,
@@ -201,7 +203,7 @@ async def purchase(
     except IntegrityError:  # someone bought it between the check and now
         await session.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, "that number is already taken") from None
-    number_id, account_id = number.id, user.account_id  # a rollback expires the objects
+    account_id = user.account_id  # a rollback expires the objects
     try:
         provider_ref = await store.buy_number(item.e164)
     except Exception as exc:

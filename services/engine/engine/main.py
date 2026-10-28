@@ -14,7 +14,6 @@ from urllib.parse import parse_qs, urlencode
 
 from fastapi import FastAPI, Request, Response, WebSocket
 from loguru import logger
-from pipecat.processors.frame_processor import FrameProcessor
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.websockets import WebSocketState
@@ -25,13 +24,14 @@ from app.employees.tickets import read as read_ticket
 from app.inbound import transfer as transferring
 from app.inbound.routing import route
 from app.main import provider_not_configured
+from app.providers import health
 from app.providers.base import ProviderKind, ProviderNotConfiguredError, TelephonyProvider
 from app.providers.registry import require
 from app.settings import engine_public_url, get_settings
 from app.training.tool import knowledge_tool
 from engine.call import CallSettings, run_call
 from engine.events import redis_sink
-from engine.legs import voice_legs
+from engine.legs import LLMLeg, ServiceLeg, voice_legs
 from engine.plan import claim_test_call, load_plan
 from engine.records import CallRecorder
 from engine.vobiz import (
@@ -100,7 +100,7 @@ class _NoPlanError(Exception):
 
 async def _setup(
     app_: FastAPI, lang: str, employee: str, call: str
-) -> tuple[tuple[FrameProcessor, FrameProcessor, FrameProcessor], CallSettings]:
+) -> tuple[tuple[ServiceLeg, LLMLeg, ServiceLeg], CallSettings]:
     """The legs and settings for a call: the employee's own when `employee` is given, else the
     defaults. Raises ProviderNotConfiguredError (503) or _NoPlanError."""
     if not employee:
@@ -109,8 +109,10 @@ async def _setup(
     plan = await load_plan(app_.state.db, employee, call)
     if plan is None:
         raise _NoPlanError
-    legs = voice_legs(plan.language, voice=plan.voice, speed=plan.tts_speed)
     factory = async_sessionmaker(app_.state.db, expire_on_commit=False)
+    async with factory() as session:  # vendors failing right now are tried last
+        down = await health.unhealthy(session, datetime.now(UTC))
+    legs = voice_legs(plan.language, voice=plan.voice, speed=plan.tts_speed, down=down)
     context = ActionContext(
         factory, plan.account_id, _call_id(call), plan.party_phone, plan.party_name
     )
@@ -126,6 +128,7 @@ async def _setup(
         opening=plan.opening,
         transfer_to=plan.transfer_to,
         tools=tuple(tools),
+        max_call_s=plan.max_call_s,
     )
 
 

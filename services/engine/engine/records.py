@@ -9,10 +9,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import case, func, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from app.instant import dialer
 from app.models import Call, CallEvent, CallStatus
+from app.providers import health
 
 # How a call ended, as run_call names it. Anything else (an exception name) is a failed call.
 COMPLETED_REASONS = {
@@ -30,9 +32,13 @@ KEPT_EVENTS = {
     "usage",
     "transferred",
     "action",
+    "failover",
+    "tier_fallback",
+    "provider_failure",
 }
 MAX_EVENTS = 500
 HANDED_OVER = "transferred"  # how a call ends that the AI passed to a person
+PROVIDER_FAILURE = "provider_failure"  # a leg had no vendor left: the call was given up
 OPEN = (CallStatus.QUEUED, CallStatus.RINGING, CallStatus.IN_PROGRESS)
 
 
@@ -125,7 +131,23 @@ class CallRecorder:
             )
             await session.commit()
 
-    async def finished(self, reason: str, recording_key: str | None) -> None:
+    async def vendor_failed(self, kind: str, vendor: str) -> None:
+        """The call left `vendor` (it failed over, or the leg had nothing left): a failure."""
+        async with self._factory() as session:
+            health.record(session, kind, vendor, ok=False, at=datetime.now(UTC))
+            await session.commit()
+
+    async def bill_at(self, tier: str) -> None:
+        """The call fell back to a cheaper voice: the whole call is billed at that tier."""
+        async with self._factory() as session:
+            await session.execute(
+                update(Call).where(Call.id == self.call_id).values(voice_tier=tier)
+            )
+            await session.commit()
+
+    async def finished(
+        self, reason: str, recording_key: str | None, served: dict[str, str] | None = None
+    ) -> None:
         """Write the end of the call.
 
         The status, end time and duration only change while the call is open (the carrier's callback
@@ -136,8 +158,20 @@ class CallRecorder:
         transfer result or the carrier's hang-up callback settles it."""
         status = CallStatus.COMPLETED if reason in COMPLETED_REASONS else CallStatus.FAILED
         turns = self.transcript.turns()
+        now = datetime.now(UTC)
         async with self._factory() as session:
-            if reason != HANDED_OVER:  # a handed-over call is still up: the carrier settles it
+            for kind, vendor in (served or {}).items():
+                health.record(session, kind, vendor, ok=True, at=now)
+            if reason == PROVIDER_FAILURE:
+                # Our fault, not the caller's: the attempt is settled like a failed dial, so an
+                # outgoing call is tried again later along its retry ladder.
+                row = await session.scalar(
+                    select(Call).where(*self._ours(), Call.status.in_(OPEN)).with_for_update()
+                )
+                if row is not None:
+                    duration = round(time.monotonic() - self._started)
+                    await dialer.settle(session, row, CallStatus.FAILED, now, duration)
+            elif reason != HANDED_OVER:  # a handed-over call is still up: the carrier settles it
                 await session.execute(
                     update(Call)
                     .where(*self._ours(), Call.status.in_(OPEN))

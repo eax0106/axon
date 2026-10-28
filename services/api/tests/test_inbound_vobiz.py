@@ -27,6 +27,7 @@ def test_the_adapter_makes_the_application_attaches_the_number_and_transfers_a_c
 ) -> None:
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -123,6 +124,7 @@ def test_connect_needs_a_number_and_the_keys(
     sql(migrated_url, "UPDATE employees SET number_id = NULL")
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     assert api.post(f"/employees/{employee}/inbound/connect", headers=owner).status_code == 409
 
 

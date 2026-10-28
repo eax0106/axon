@@ -34,7 +34,8 @@ from app.models import (
     PhoneNumber,
 )
 from app.numbers import channels
-from app.providers.base import CallDetail, TelephonyProvider
+from app.providers import failover, health
+from app.providers.base import CallDetail, ProviderKind, TelephonyProvider
 from app.settings import api_public_url, engine_public_url
 
 BATCH = 20
@@ -43,6 +44,7 @@ NOT_READY_RETRY = timedelta(minutes=5)  # a live-employee check that failed: loo
 RINGING_TIMEOUT = timedelta(minutes=3)  # no end callback by then: ask the carrier what happened
 HANDED_OVER_MAX = timedelta(seconds=DIAL_LIMIT_S + 600)  # a bridged call has ended by then
 GIVE_UP_AFTER = timedelta(minutes=15)  # the carrier never reported: count the attempt as failed
+CARRIER = str(ProviderKind.TELEPHONY)
 
 
 @dataclass(frozen=True)
@@ -156,6 +158,8 @@ async def place(
             # other failure (timeout, dropped connection) may have placed it: hold, never retry.
             refused = isinstance(exc, httpx.HTTPStatusError)
             async with factory() as session:
+                if _carrier_fault(exc):
+                    health.record(session, CARRIER, telephony.name, ok=False, at=now)
                 call = await session.get(Call, item.call_id, with_for_update=True)
                 assert call is not None
                 kind = "dial_failed" if refused else "dial_unconfirmed"
@@ -172,9 +176,19 @@ async def place(
             await session.execute(
                 update(Call).where(Call.id == item.call_id).values(carrier_call_id=carrier_id)
             )
+            health.record(session, CARRIER, telephony.name, ok=True, at=now)
             await session.commit()
         results.append(Dialed(item.call_id, "dialed"))
     return results
+
+
+def _carrier_fault(exc: Exception) -> bool:
+    """Did the carrier itself fail (down, overloaded, our login refused), rather than turn down
+    this one call (a bad number, say)? Only its own faults count against its health."""
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return True
+    code = exc.response.status_code
+    return code >= 500 or code in (401, 403, 429)
 
 
 @dataclass(frozen=True)
@@ -241,6 +255,13 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> Claim:
     if held is not None:  # not an error: the call waits until credits or the hour allow it
         call.scheduled_for = now + NOT_READY_RETRY
         await _event(session, call, "blocked_credits", reason=held)
+        return Claim(call.id, "rescheduled")
+    voice = await failover.employee_voice(session, employee)
+    down = await failover.blocked_reason(session, voice, now)
+    if down is not None:  # the platform cannot carry the call now: it waits, no attempt is used
+        wait = CHANNEL_BUSY_RETRY if down == failover.CAPACITY else NOT_READY_RETRY
+        call.scheduled_for = now + wait
+        await _event(session, call, "blocked_platform", reason=down)
         return Claim(call.id, "rescheduled")
     # A call back (the caller asked for it, or we missed them) is read under the call-back rule.
     context: policy.Context = "callback" if call.is_callback else "instant"

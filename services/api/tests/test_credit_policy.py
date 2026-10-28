@@ -57,6 +57,7 @@ def api(db_client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatc
 def carrier(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Carrier, VobizTelephony]]:
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     fake = Carrier()
     yield fake, VobizTelephony(transport=httpx.MockTransport(fake.handler))
 
@@ -329,13 +330,14 @@ def test_each_kind_of_ai_help_costs_the_fee_through_the_ledger(
 def test_analysis_costs_the_fee_once_per_call_even_when_it_is_run_again(
     api: TestClient, migrated_url: str, vendors: Vendors
 ) -> None:
-    from .test_post_call_job import make_call, process, setup
+    from .test_post_call_job import NOW, make_call, process, setup
 
     employee, owner = setup(api, migrated_url)
     mine = account_id(api, owner)
     call = make_call(migrated_url, employee)
-    vendors.down = True  # the first analysis fails: nothing was delivered, so nothing is charged
-    assert process(migrated_url) == 1
+    vendors.down = True  # the analysis fails, retries included: nothing delivered, nothing charged
+    for minutes in (0, 2, 12):
+        assert process(migrated_url, NOW + timedelta(minutes=minutes)) == 1
     assert sql(migrated_url, "SELECT analysis_status FROM calls WHERE id = :c", {"c": call}) == (
         "failed"
     )
@@ -345,7 +347,7 @@ def test_analysis_costs_the_fee_once_per_call_even_when_it_is_run_again(
     assert balance(api, owner) == 50  # asking is free: the fee is for the analysis itself
     vendors.down = False
     vendors.text = model_reply()
-    assert process(migrated_url) == 1
+    assert process(migrated_url, NOW + timedelta(minutes=13)) == 1
     assert balance(api, owner) == 50 - FEE  # one fee in all, not one for the request and one more
     assert len(entries(migrated_url, mine, "ai_use")) == 1
 

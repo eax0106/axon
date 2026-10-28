@@ -7,6 +7,7 @@ below are fixed per vendor until B4 reads them from the `voices` table.
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from pipecat.processors.frame_processor import FrameProcessor
 from pipecat.services.cartesia.tts import CartesiaTTSService, GenerationConfig
@@ -27,6 +28,11 @@ SARVAM_TTS_VOICE = "shubh"  # fallback for a call with no employee voice
 # Voices from Smallest's catalog that speak each V1 language.
 SMALLEST_VOICES = {"te": "srihari", "hi": "devansh", "en": "avery"}
 CARTESIA_ENGLISH_VOICE = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+
+
+# A caller hears silence while the LLM thinks: an answer that has not started (or stalls) this long
+# counts as a failure, and the call moves to the backup LLM instead of waiting on the vendor.
+LLM_TIMEOUT_S = 10.0
 
 
 @dataclass(frozen=True)
@@ -63,10 +69,18 @@ def _sarvam_tts(code: str, delivery: Delivery) -> FrameProcessor:
     )
 
 
+class _SarvamLLM(SarvamLLMService):
+    """Sarvam's LLM with the call's timeout and no silent retries: the backup vendor retries."""
+
+    def create_client(self, *args: Any, **kwargs: Any) -> Any:
+        client = super().create_client(*args, **kwargs)
+        return client.with_options(timeout=LLM_TIMEOUT_S, max_retries=0)
+
+
 def _sarvam_llm(code: str, _: Delivery) -> FrameProcessor:
     language(code)  # reject languages outside V1
     # ponytail: Sarvam's reasoning counts against max tokens, so keep the cap at 1500 or more.
-    return SarvamLLMService(
+    return _SarvamLLM(
         api_key=os.environ["SARVAM_API_KEY"],
         settings=SarvamLLMService.Settings(model=sarvam.LLM_MODEL, max_tokens=1500),
     )
@@ -122,6 +136,7 @@ def _gemini_llm(code: str, _: Delivery) -> FrameProcessor:
     return GoogleLLMService(
         api_key=os.environ["GEMINI_API_KEY"],
         settings=GoogleLLMService.Settings(model=gemini.model()),
+        stream_idle_timeout_secs=LLM_TIMEOUT_S,
     )
 
 

@@ -179,6 +179,7 @@ class DeliveryStatus(StrEnum):
 
 class Account(Base):
     __tablename__ = "accounts"
+    __table_args__ = (CheckConstraint("max_call_s BETWEEN 10 AND 3600", name="max_call_s_range"),)
     id: Mapped[uuid.UUID] = _pk()
     name: Mapped[str] = mapped_column(String(200))
     business_name: Mapped[str | None] = mapped_column(String(200))
@@ -196,6 +197,8 @@ class Account(Base):
     billing: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     owner_phone: Mapped[str | None] = mapped_column(String(20))  # verified by a one-time code
     owner_phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Every call of the account is hung up after this many seconds (10 s to 60 min).
+    max_call_s: Mapped[int] = mapped_column(server_default="600")
     created_at: Mapped[datetime] = _created()
 
 
@@ -212,6 +215,8 @@ class User(Base):
     role: Mapped[Role] = mapped_column(_enum(Role, "user_role"), default=Role.OWNER)
     # ALTERX staff: admin console, provider health, impersonation. Never set through the API.
     is_platform_admin: Mapped[bool] = mapped_column(server_default=text("false"))
+    # Sessions issued before this moment are refused (set when the password changes).
+    tokens_valid_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
 
@@ -468,6 +473,8 @@ class Call(Base):
     analysis_status: Mapped[str | None] = mapped_column(String(20))
     analysis_error: Mapped[str | None] = mapped_column(String(200))
     analysis_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    analysis_attempts: Mapped[int] = mapped_column(server_default="0")
+    analysis_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The caller's own recorded greeting was heard (the analysis quotes it); false when unknown.
     voicemail: Mapped[bool] = mapped_column(server_default="false")
     # When the developer webhooks were told this call settled; NULL = not yet.
@@ -951,4 +958,57 @@ class TrainingSuggestion(Base):
     status: Mapped[SuggestionStatus] = mapped_column(
         _enum(SuggestionStatus, "suggestion_status"), default=SuggestionStatus.OPEN
     )
+    created_at: Mapped[datetime] = _created()
+
+
+class ProviderOutcome(Base):
+    """How a vendor did: a failure when a call left it (failover, or a leg with nothing left), a
+    success for each vendor that served a call to its end, and the carrier's answer to a dial.
+    The health score reads the last minutes of these rows."""
+
+    __tablename__ = "provider_outcomes"
+    __table_args__ = (Index("ix_provider_outcomes_at", "at"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    vendor: Mapped[str] = mapped_column(String(50))
+    ok: Mapped[bool]
+    at: Mapped[datetime] = _created()
+
+
+class ProviderRate(Base):
+    """What one unit of a vendor's usage costs us, entered by staff from the vendor's price list."""
+
+    __tablename__ = "provider_rates"
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True)
+    vendor: Mapped[str] = mapped_column(String(50), primary_key=True)
+    unit: Mapped[str] = mapped_column(String(30), primary_key=True)
+    inr_per_unit: Mapped[Decimal] = mapped_column(Numeric(16, 8))
+
+
+class ProviderBalance(Base):
+    """The balance staff last read off a vendor's dashboard; spend since then is estimated."""
+
+    __tablename__ = "provider_balances"
+    vendor: Mapped[str] = mapped_column(String(50), primary_key=True)
+    balance_inr: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    alert_below_inr: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+
+
+class SupportMessage(Base):
+    """The support chat (both sides), feedback and ratings."""
+
+    __tablename__ = "support_messages"
+    __table_args__ = (
+        CheckConstraint("rating BETWEEN 1 AND 5", name="rating_range"),
+        Index("ix_support_messages_account_created", "account_id", "created_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(20))  # chat, feedback or rating
+    from_staff: Mapped[bool] = mapped_column(server_default="false")
+    body: Mapped[str] = mapped_column(Text, server_default="")
+    rating: Mapped[int | None]
+    call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("calls.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = _created()
