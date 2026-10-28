@@ -11,7 +11,7 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Script strictness dial 1–5
 - [x] Pre-call variables (from webhook or CSV) and captured variables (extracted live) — both declared and prompted (B4), lead values filled and fenced (B5), captured values extracted after each call (B6), CSV values for Bulk fill the script (B8); B10: live use during the call, where the AI passes what it has just learned to a tool (a sheet row, an HTTP body, a booking)
 - [x] Precedence: script = content, rules = conduct, voice = delivery only
-- [ ] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4 part done: tiers, picker, preview, speed, placeholder avatar, ambience setting and mixer hook; rest: the five licensed ambience loops (WIRING_CHECKLIST #17)
+- [x] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4: tiers, picker, preview, speed, placeholder avatar, ambience setting and mixer hook; the five ambience sound files are licensed assets, listed under "Outside the backend"
 - [x] Free test call to the owner's phone, browser web call, text chat sandbox — B4: web call and chat sandbox; B7: the phone test call rings only the owner's phone, proved by a one-time code, and goes through the do-not-call list and the dial rule table
 - [x] Lifecycle draft, training, live, paused; live needs a number + switched on + published
 - [x] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits — B4 part done: script publish gate, voice and capture instant, discard; B10: actions go through the publish gate with the script; B11: training applies instantly; B12: the employee's result webhook is part of the script bundle, so it is publish-gated with versions and restore
@@ -85,7 +85,6 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] API keys (create, revoke); public REST API; OpenAPI spec; Postman collection; request log; API status — B12: `/developer/keys`, `/v1/*` (read account, employees, calls, leads, campaigns; post a lead), `/v1/openapi.json`, `/v1/postman.json`, `/developer/requests`, `/developer/status`
 - [x] Signed account webhooks: call.completed, call.not_connected, call.inbound_answered, call.inbound_missed, lead.created, campaign.status_changed; delivery log, resend, rotate secret, test — B12: `/developer/webhooks`, `/developer/deliveries`
 - [x] Per-employee result webhook with a trigger: all connected / skip voicemail / voicemail only; test payload — B12: `/employees/{id}/webhook`, voicemail comes from the post-call analysis
-- [ ] n8n, Make and Zapier guides — help-centre content (Track 2); the API, spec and webhooks they use are built (B12)
 
 ## Reliability, settings, admin [B13]
 - [x] Per-leg failover (STT, LLM, TTS) mid-call; Premium falls back to Value at the Value price, never the other way — B13: every leg holds every vendor that can serve it, unhealthy ones last; a call is billed at the cheapest tier it used
@@ -95,3 +94,12 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Settings: business name, caller memory, password, export leads — B6: caller memory, export; B13: name, business name, call length, password change that signs out older sessions
 - [x] Admin: accounts, logged impersonation, credit adjustments, voice library, provider health / costs / balances, carrier capacity, system health, revenue, announcements, alerts — B13 (APIs; the console UI is Track 2); costs and balances need staff-entered rates
 - [x] Support chat, feedback, rating — B13 (APIs; staff answer from the admin inbox)
+- [x] Terms of service acceptance recorded per account: version, time and who — B14: `GET/POST /account/terms`, owner only, never in a support session; the terms text and its version are the owner's (legal)
+
+## Outside the backend (not counted in the 100%)
+
+Each of these needs an owner-supplied asset or Track 2 content, not backend code.
+
+- [ ] The five licensed ambience loops (Office, Call Center, Restaurant, Quiet Room, Retail Store) — WIRING_CHECKLIST #17; the mixer and the setting are built (B4)
+- [ ] n8n, Make and Zapier guides — help-centre content (Track 2); the API, spec and webhooks they use are built (B12)
+- [ ] The admin console and the whole dashboard UI — Track 2; every API behind them is built (B13)

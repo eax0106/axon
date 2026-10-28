@@ -25,3 +25,7 @@ dist/
 # os
 .DS_Store
 Thumbs.db
+
+# Database dumps (they hold every customer secret)
+backups/
+*.dump

@@ -144,3 +144,35 @@ def test_missing_jwt_secret_answers_503_and_creates_nothing(
     assert sql(migrated_url, "SELECT count(*) FROM accounts") == 0
     monkeypatch.setenv("AXON_JWT_SECRET", TEST_JWT_SECRET)
     get_settings.cache_clear()
+
+
+def test_hashing_a_password_does_not_stall_other_requests(
+    db_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+    import time
+
+    from app import auth
+
+    _signup(db_client)
+    real = auth._hasher
+
+    class Slow:
+        def verify(self, *args: Any) -> Any:
+            time.sleep(0.6)
+            return real.verify(*args)
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real, name)
+
+    monkeypatch.setattr(auth, "_hasher", Slow())
+    signing_in = threading.Thread(
+        target=lambda: db_client.post("/auth/login", json={"email": EMAIL, "password": PASSWORD})
+    )
+    signing_in.start()
+    time.sleep(0.15)
+    started = time.monotonic()
+    assert db_client.get("/healthz").status_code == 200
+    answered_in = time.monotonic() - started
+    signing_in.join()
+    assert answered_in < 0.3

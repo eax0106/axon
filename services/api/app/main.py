@@ -20,6 +20,7 @@ from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
 from app.billing.ledger import InsufficientCreditsError
 from app.billing.router import router as billing_router
+from app.bodylimit import BodyLimit
 from app.calls.conversations import router as conversations_router
 from app.calls.dnc import router as dnc_router
 from app.calls.leads import router as leads_router
@@ -53,13 +54,15 @@ from app.training.router import router as training_router
 from app.voices import router as voices_router
 
 READY_TIMEOUT_S = 2.0
+# Opening a pooled connection can take longer than a probe may, when the host is saturated.
+DB_CONNECT_TIMEOUT_S = 15.0
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     app.state.db = create_async_engine(
-        settings.database_url, pool_pre_ping=True, connect_args={"timeout": READY_TIMEOUT_S}
+        settings.database_url, pool_pre_ping=True, connect_args={"timeout": DB_CONNECT_TIMEOUT_S}
     )
     app.state.redis = Redis.from_url(
         settings.redis_url,
@@ -72,6 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Axon Voice Engine API", lifespan=lifespan)
+app.add_middleware(BodyLimit)
 app.include_router(auth_router)
 app.include_router(live_router)
 app.include_router(employees_router)

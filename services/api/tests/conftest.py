@@ -33,6 +33,12 @@ ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
 TEST_JWT_SECRET = "test-only-secret-" + "x" * 32
 
 
+@pytest.fixture(autouse=True)
+def _no_auth_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests sign in from one address by the hundred; test_auth_rate_limit turns it back on."""
+    monkeypatch.setenv("AXON_AUTH_RATE_LIMIT", "off")
+
+
 @pytest.fixture
 def no_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in ALL_KEYS:
