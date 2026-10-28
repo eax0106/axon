@@ -69,7 +69,7 @@ def test_a_support_session_needs_a_reason_and_logs_everything_it_changes(
     assert opened.status_code == 200 and opened.json()["expires_in"] == 1800
     support = bearer(opened)
     claims = jwt.decode(opened.json()["access_token"], TEST_JWT_SECRET, algorithms=["HS256"])
-    assert round(claims["exp"] - claims["iat"]) == 30 * 60
+    assert abs(claims["exp"] - claims["iat"] - 30 * 60) < 1  # `exp` drops the fraction
 
     me = db_client.get("/accounts/me", headers=support).json()
     assert me["user"]["email"] == "owner@example.com" and me["account"]["id"] == acme
