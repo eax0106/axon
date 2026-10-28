@@ -1,5 +1,6 @@
 """Own email/password auth: argon2 password hashes, HS256 JWT bearer tokens, account roles."""
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -14,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import ratelimit
 from app.billing import ledger
 from app.billing.config import free_signup_credits
 from app.db import Session
@@ -23,6 +25,8 @@ from app.settings import get_settings
 TOKEN_TTL = timedelta(hours=12)
 IMPERSONATION_TTL = timedelta(minutes=30)
 MIN_SECRET_LEN = 32
+# Hashing takes tens of milliseconds of CPU: callers run it in a thread (argon2 releases the GIL)
+# so one sign-in never stalls every other request on the worker.
 _hasher = PasswordHasher()
 # Verified against when the email is unknown, so both paths cost one argon2 verify.
 _DUMMY_HASH = _hasher.hash("timing-equaliser-not-a-password")
@@ -174,8 +178,10 @@ class Token(BaseModel):
 
 
 @router.post("/auth/signup", status_code=status.HTTP_201_CREATED)
-async def signup(body: Signup, session: Session) -> Token:
+async def signup(body: Signup, session: Session, request: Request) -> Token:
     jwt_secret()  # fail with 503 before creating anything if tokens can't be issued
+    key = f"signup:{ratelimit.client_address(request)}"
+    await ratelimit.hit(request, key, ratelimit.SIGNUPS_PER_HOUR, window_s=3600)
     account = Account(name=body.account_name)
     session.add(account)
     await session.flush()
@@ -186,7 +192,7 @@ async def signup(body: Signup, session: Session) -> Token:
     user = User(
         account_id=account.id,
         email=body.email,
-        password_hash=_hasher.hash(body.password),
+        password_hash=await asyncio.to_thread(_hasher.hash, body.password),
         role=Role.OWNER,
     )
     session.add(user)
@@ -198,17 +204,24 @@ async def signup(body: Signup, session: Session) -> Token:
 
 
 @router.post("/auth/login")
-async def login(body: Credentials, session: Session) -> Token:
+async def login(body: Credentials, session: Session, request: Request) -> Token:
     jwt_secret()
+    by_address = f"login:address:{ratelimit.client_address(request)}"
+    by_email = f"login:email:{body.email}"
+    await ratelimit.hit(request, by_address, ratelimit.SIGNIN_PER_ADDRESS)
+    await ratelimit.hit(request, by_email, ratelimit.SIGNIN_PER_EMAIL)
     user = await session.scalar(select(User).where(func.lower(User.email) == body.email))
     try:
-        _hasher.verify(user.password_hash if user else _DUMMY_HASH, body.password)
+        await asyncio.to_thread(
+            _hasher.verify, user.password_hash if user else _DUMMY_HASH, body.password
+        )
     except VerificationError:
         user = None
     if user is None:
         raise _unauthorized("invalid email or password")
+    await ratelimit.clear(request, by_email)
     if _hasher.check_needs_rehash(user.password_hash):
-        user.password_hash = _hasher.hash(body.password)
+        user.password_hash = await asyncio.to_thread(_hasher.hash, body.password)
         await session.commit()
     return Token(access_token=issue_token(user))
 
@@ -219,15 +232,20 @@ class PasswordChange(BaseModel):
 
 
 @router.post("/auth/password")
-async def change_password(body: PasswordChange, user: OwnUser, session: Session) -> Token:
+async def change_password(
+    body: PasswordChange, user: OwnUser, session: Session, request: Request
+) -> Token:
     """Change the password. Every session issued before it is signed out, on every device; the
     answer is a fresh session for this one."""
+    key = f"password:{user.id}"
+    await ratelimit.hit(request, key, ratelimit.PASSWORD_PER_USER)
     try:
-        _hasher.verify(user.password_hash, body.current_password)
+        await asyncio.to_thread(_hasher.verify, user.password_hash, body.current_password)
     except VerificationError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "current password is wrong") from exc
+    await ratelimit.clear(request, key)
     now = datetime.now(UTC)
-    user.password_hash = _hasher.hash(body.new_password)
+    user.password_hash = await asyncio.to_thread(_hasher.hash, body.new_password)
     user.tokens_valid_after = now
     session.add(AuditEntry(account_id=user.account_id, actor_user_id=user.id, action="password"))
     await session.commit()

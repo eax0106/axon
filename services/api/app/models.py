@@ -199,6 +199,9 @@ class Account(Base):
     owner_phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Every call of the account is hung up after this many seconds (10 s to 60 min).
     max_call_s: Mapped[int] = mapped_column(server_default="600")
+    # The terms the owner last accepted; the audit log says who and keeps every earlier version.
+    terms_version: Mapped[str | None] = mapped_column(String(40))
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
 
