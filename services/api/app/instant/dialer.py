@@ -256,8 +256,8 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> Claim:
         call.scheduled_for = now + NOT_READY_RETRY
         await _event(session, call, "blocked_credits", reason=held)
         return Claim(call.id, "rescheduled")
-    tier = await failover.employee_tier(session, employee)
-    down = await failover.blocked_reason(session, tier, now)
+    voice = await failover.employee_voice(session, employee)
+    down = await failover.blocked_reason(session, voice, now)
     if down is not None:  # the platform cannot carry the call now: it waits, no attempt is used
         wait = CHANNEL_BUSY_RETRY if down == failover.CAPACITY else NOT_READY_RETRY
         call.scheduled_for = now + wait

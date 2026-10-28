@@ -57,7 +57,7 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Caller memory across calls (toggle, reset)
 - [x] "Call me at 6" callback scheduling across channels
 - [x] Dashboard and performance: channel split, connect / qualify / conversion %, best hour, leaderboard, within-60-s speed, 7/30/90-day and custom ranges
-- [ ] Notifications (bell), auto-DNC confirmation, announcements — B6 part done: bell, unread count, mark read, callback and auto-DNC confirmations; B7 part done: low-balance bell entry; rest: announcements (admin console, B13)
+- [x] Notifications (bell), auto-DNC confirmation, announcements — B6: bell, unread count, mark read, callback and auto-DNC confirmations; B7: low-balance bell entry; B13: announcements from the admin console reach every account's bell
 
 ## Billing and numbers [B7]
 - [x] Prepaid credits, 1 credit = ₹1, never expire, 50 free credits; top-up presets or custom amount by card or UPI
@@ -88,10 +88,10 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [ ] n8n, Make and Zapier guides — help-centre content (Track 2); the API, spec and webhooks they use are built (B12)
 
 ## Reliability, settings, admin [B13]
-- [ ] Per-leg failover (STT, LLM, TTS) mid-call; Premium falls back to Value at the Value price, never the other way
-- [ ] If nothing is healthy, don't start the call and retry later; on a fatal mid-call error, a spoken apology and clean hangup
-- [ ] Max call length (default 10 min, 10 s – 60 min)
-- [ ] Account DNC list (single and bulk add, with reason); auto-add when a caller asks
-- [ ] Settings: business name, caller memory, password, export leads
-- [ ] Admin: accounts, logged impersonation, credit adjustments, voice library, provider health / costs / balances, carrier capacity, system health, revenue, announcements, alerts
-- [ ] Support chat, feedback, rating
+- [x] Per-leg failover (STT, LLM, TTS) mid-call; Premium falls back to Value at the Value price, never the other way — B13: every leg holds every vendor that can serve it, unhealthy ones last; a call is billed at the cheapest tier it used
+- [x] If nothing is healthy, don't start the call and retry later; on a fatal mid-call error, a spoken apology and clean hangup — B13: health scored from real calls and dials; Instant, campaigns and inbound wait; the Telugu and Hindi apology await the native-speaker check
+- [x] Max call length (default 10 min, 10 s – 60 min) — B13: account setting, reaches every call
+- [x] Account DNC list (single and bulk add, with reason); auto-add when a caller asks — B6: auto-add; B13: list, search, single and bulk add, owner-only removal
+- [x] Settings: business name, caller memory, password, export leads — B6: caller memory, export; B13: name, business name, call length, password change that signs out older sessions
+- [x] Admin: accounts, logged impersonation, credit adjustments, voice library, provider health / costs / balances, carrier capacity, system health, revenue, announcements, alerts — B13 (APIs; the console UI is Track 2); costs and balances need staff-entered rates
+- [x] Support chat, feedback, rating — B13 (APIs; staff answer from the admin inbox)

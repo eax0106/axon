@@ -327,7 +327,7 @@ async def run_call(
         logger.error(f"{leg.kind} has no vendor left ({vendor}: {error}); ending the call")
         if call_record is not None:
             await call_record.vendor_failed(str(leg.kind), vendor)
-        if leg.kind is not ProviderKind.TTS and tts.is_usable and not ended:
+        if ProviderKind.TTS not in given_up and not ended:
             apology = TTSSpeakFrame(APOLOGY.get(settings.language, APOLOGY["en"]))
             apology.interruptible = False
             await task.queue_frame(apology)

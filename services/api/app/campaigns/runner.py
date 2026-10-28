@@ -133,8 +133,8 @@ async def _gate(
     if held := await credit_policy.blocked_reason(session, campaign.account_id, now):
         campaign.note = held
         return None
-    tier = await failover.employee_tier(session, employee)
-    if down := await failover.blocked_reason(session, tier, now):
+    voice = await failover.employee_voice(session, employee)
+    if down := await failover.blocked_reason(session, voice, now):
         campaign.note = down
         return None
     verdict = await policy.check_dial(session, employee, number, "outbound", campaign.purpose)

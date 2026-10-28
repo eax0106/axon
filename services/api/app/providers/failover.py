@@ -57,9 +57,8 @@ def billed_tier(tiers: Iterable[VoiceTier | None]) -> VoiceTier | None:
     return min(used, key=PRICE_ORDER.index) if used else None
 
 
-async def employee_tier(session: AsyncSession, employee: Employee) -> VoiceTier | None:
-    voice = await session.get(Voice, employee.voice_id) if employee.voice_id else None
-    return voice.tier if voice else None
+async def employee_voice(session: AsyncSession, employee: Employee) -> Voice | None:
+    return await session.get(Voice, employee.voice_id) if employee.voice_id else None
 
 
 async def in_flight(session: AsyncSession, account_id: uuid.UUID | None = None) -> int:
@@ -70,21 +69,22 @@ async def in_flight(session: AsyncSession, account_id: uuid.UUID | None = None) 
 
 
 async def blocked_reason(
-    session: AsyncSession, tier: VoiceTier | None, now: datetime, *, outbound: bool = True
+    session: AsyncSession, voice: Voice | None, now: datetime, *, outbound: bool = True
 ) -> str | None:
     """Why the platform may not start a call right now, in plain words, or None. A call is not
     started (it waits) while the platform is full, while the carrier is failing (outbound only),
-    or while a leg has no vendor that is both configured and healthy."""
+    or while a leg has no vendor that is both configured and healthy. `voice` is the employee's:
+    its vendor leads the voice chain, as on the call itself (`engine.legs.voice_legs`)."""
     if await in_flight(session) >= max_concurrent_calls():
         return CAPACITY
     down = await health.unhealthy(session, now)
     carrier = selected_name(ProviderKind.TELEPHONY)
     if outbound and (str(ProviderKind.TELEPHONY), carrier) in down:
         return CARRIER_DOWN
+    tier, own = (voice.tier, voice.provider) if voice else (None, None)
     for kind in LEGS:
-        working = [
-            v for v in chain(kind, tier) if not missing_keys(kind, v) and (str(kind), v) not in down
-        ]
+        vendors = chain(kind, tier, own if kind is ProviderKind.TTS else None)
+        working = [v for v in vendors if not missing_keys(kind, v) and (str(kind), v) not in down]
         if not working:
             return f"no {LEG_NAMES[kind]} provider is working right now; calls resume when one does"
     return None

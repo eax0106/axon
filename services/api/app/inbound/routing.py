@@ -212,8 +212,8 @@ async def _refusal(
     held = await credit_policy.blocked_reason(session, number.account_id, now)
     if held is not None:
         return "credits", held
-    tier = await failover.employee_tier(session, employee)
-    down = await failover.blocked_reason(session, tier, now, outbound=False)
+    voice = await failover.employee_voice(session, employee)
+    down = await failover.blocked_reason(session, voice, now, outbound=False)
     if down is not None:
         return "unavailable", down
     verdict = await policy.check_dial(session, employee, number, "inbound")

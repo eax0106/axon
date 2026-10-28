@@ -39,6 +39,8 @@ def test_the_cron_schedule_and_hooks() -> None:
         "cron:billing_tick",
         "cron:campaign_tick",
         "cron:dial_tick",
+        "cron:health_prune_tick",
+        "cron:heartbeat_tick",
         "cron:low_balance_tick",
         "cron:post_call_tick",
         "cron:reap_tick",
