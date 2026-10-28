@@ -47,6 +47,8 @@ from app.phone_verify import router as phone_verify_router
 from app.providers.base import ProviderNotConfiguredError
 from app.providers.registry import report_all
 from app.settings import get_settings
+from app.support import router as support_router
+from app.support import staff_router as support_staff_router
 from app.training.router import router as training_router
 from app.voices import router as voices_router
 
@@ -102,6 +104,8 @@ app.include_router(dnc_router)
 app.include_router(admin_accounts_router)
 app.include_router(admin_ops_router)
 app.include_router(admin_reports_router)
+app.include_router(support_router)
+app.include_router(support_staff_router)
 
 
 @app.exception_handler(AuthNotConfiguredError)

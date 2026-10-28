@@ -2,8 +2,9 @@
 
 Runs on the worker. The engine leaves a finished call with `analysis_status = 'pending'`; the job
 takes pending calls under a row lock (so two workers never analyse the same call), asks the LLM
-through the provider registry, and writes the result. Without an LLM key the calls are marked
-`skipped`, never filled with made-up data; `reanalyze` puts them back.
+through the provider registry, and writes the result. A failed analysis is retried twice (after 2
+and then 10 minutes) before it is left `failed`. Without an LLM key the calls are marked
+`skipped`, never filled with made-up data; `reanalyze` puts either back.
 """
 
 import logging
@@ -43,6 +44,7 @@ BATCH = 3  # a batch must finish inside the worker's job timeout: 3 x 60 s of LL
 CLAIM_TIMEOUT = timedelta(minutes=10)  # an `analysing` claim older than this was abandoned
 STALE_TEST_QUEUED = timedelta(minutes=10)  # a web ticket lives 2 minutes
 STALE_TEST_RUNNING = timedelta(minutes=90)  # longer than the longest call (60 minutes)
+RETRY_AFTER = (timedelta(minutes=2), timedelta(minutes=10))  # waits before each retry of a failure
 
 
 async def process_pending(
@@ -77,7 +79,10 @@ async def _claim(
                 select(Call)
                 .where(
                     or_(
-                        Call.analysis_status == "pending",
+                        and_(
+                            Call.analysis_status == "pending",
+                            or_(Call.analysis_retry_at.is_(None), Call.analysis_retry_at <= now),
+                        ),
                         and_(
                             Call.analysis_status == "analysing",
                             Call.analysis_started_at < now - CLAIM_TIMEOUT,
@@ -122,7 +127,7 @@ async def _run_one(
                 llm, turns, capture, now, old_memory=old_memory, remember=remember
             )
         except (analysis.AnalysisError, httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-            await _mark_failed(factory, call_id, type(exc).__name__)
+            await _mark_failed(factory, call_id, type(exc).__name__, now)
             return
         async with factory() as session:  # write the result; the call row is locked only now
             call = await session.get(Call, call_id, with_for_update=True)
@@ -132,17 +137,25 @@ async def _run_one(
             await session.commit()
     except Exception as exc:  # a poison pill: this call fails, the rest of the batch goes on
         log.exception("analysis of call %s crashed", call_id)
-        await _mark_failed(factory, call_id, type(exc).__name__)
+        await _mark_failed(factory, call_id, type(exc).__name__, now)
 
 
-async def _mark_failed(factory: async_sessionmaker[AsyncSession], call_id: Any, error: str) -> None:
+async def _mark_failed(
+    factory: async_sessionmaker[AsyncSession], call_id: Any, error: str, now: datetime
+) -> None:
+    """A failed analysis (the LLM erred or answered nonsense) is tried again after each wait in
+    RETRY_AFTER, then left `failed` for a person to re-run."""
     log.warning("analysis of call %s failed: %s", call_id, error)
     async with factory() as session:
-        await session.execute(
-            update(Call)
-            .where(Call.id == call_id, Call.analysis_status == "analysing")
-            .values(analysis_status="failed", analysis_error=error[:200])
-        )
+        call = await session.get(Call, call_id, with_for_update=True)
+        if call is None or call.analysis_status != "analysing":
+            return
+        call.analysis_error, call.analysis_attempts = error[:200], call.analysis_attempts + 1
+        if call.analysis_attempts <= len(RETRY_AFTER):
+            call.analysis_status = "pending"
+            call.analysis_retry_at = now + RETRY_AFTER[call.analysis_attempts - 1]
+        else:
+            call.analysis_status, call.analysis_retry_at = "failed", None
         await session.commit()
 
 
@@ -279,6 +292,7 @@ async def reanalyze(session: AsyncSession, call: Call) -> bool:
     if call.analysis_status not in ("skipped", "failed") or not call.transcript:
         return False
     call.analysis_status, call.analysis_error = "pending", None
+    call.analysis_attempts, call.analysis_retry_at = 0, None  # a fresh start, retries included
     return True
 
 

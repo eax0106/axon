@@ -318,13 +318,14 @@ def test_unusable_output_and_vendor_errors_fail_the_analysis_visibly(
     broken = make_call(migrated_url, employee)
     fake.text = "I could not decide, sorry."
     process(migrated_url)
-    assert row(migrated_url, broken, "analysis_status") == "failed"
+    # Waiting for its retry (test_analysis_retry.py), with the error shown.
+    assert row(migrated_url, broken, "analysis_status") == "pending"
     assert row(migrated_url, broken, "analysis_error") == "AnalysisError"
     assert row(migrated_url, broken, "outcome") is None
     outage = make_call(migrated_url, employee, phone="+919876543211")
     fake.status = 500
     process(migrated_url)
-    assert row(migrated_url, outage, "analysis_status") == "failed"
+    assert row(migrated_url, outage, "analysis_status") == "pending"
     assert row(migrated_url, outage, "analysis_error") == "HTTPStatusError"
 
 
@@ -424,7 +425,7 @@ def test_one_crashing_call_does_not_take_the_batch_with_it(
     assert process(migrated_url) == 3
     assert [row(migrated_url, c, "analysis_status") for c in (good1, poison, good2)] == [
         "done",
-        "failed",
+        "pending",  # retried later, not straight away
         "done",
     ]
     assert row(migrated_url, poison, "analysis_error") == "AttributeError"
