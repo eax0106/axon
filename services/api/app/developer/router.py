@@ -184,7 +184,9 @@ async def _endpoint(
     return row
 
 
-@router.post("/webhooks", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/webhooks", status_code=status.HTTP_201_CREATED, dependencies=[Depends(not_impersonating)]
+)
 async def create_webhook(body: WebhookCreate, user: OwnerUser, session: Session) -> WebhookCreated:
     account_id = user.account_id
     count = await session.scalar(
@@ -221,7 +223,7 @@ async def get_webhook(endpoint_id: uuid.UUID, user: CurrentUser, session: Sessio
     return _webhook_out(await _endpoint(session, user.account_id, endpoint_id))
 
 
-@router.patch("/webhooks/{endpoint_id}")
+@router.patch("/webhooks/{endpoint_id}", dependencies=[Depends(not_impersonating)])
 async def update_webhook(
     endpoint_id: uuid.UUID, body: WebhookUpdate, user: OwnerUser, session: Session
 ) -> WebhookOut:

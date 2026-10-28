@@ -52,6 +52,16 @@ def test_a_call_is_billed_at_the_cheapest_tier_it_used() -> None:
     assert billed_tier([]) is None
 
 
+def test_the_cheapest_tier_follows_the_configured_rates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AXON_RATE_STANDARD_PER_MIN", "3")  # Standard now costs less than Value
+    assert billed_tier([VoiceTier.VALUE, VoiceTier.STANDARD]) is VoiceTier.STANDARD
+    assert billed_tier([VoiceTier.PREMIUM, VoiceTier.VALUE, VoiceTier.STANDARD]) is (
+        VoiceTier.STANDARD
+    )
+    monkeypatch.setenv("AXON_RATE_STANDARD_PER_MIN", "3.5")  # a tie keeps the list order
+    assert billed_tier([VoiceTier.STANDARD, VoiceTier.VALUE]) is VoiceTier.VALUE
+
+
 def test_a_vendor_that_cannot_be_built_is_skipped(
     keys: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -107,3 +107,44 @@ def test_a_support_session_cannot_change_the_password_or_make_an_api_key(
     key = db_client.post("/developer/keys", json={"name": "zapier"}, headers=support)
     assert key.status_code == 403
     assert sql(migrated_url, "SELECT count(*) FROM api_keys") == 0
+
+
+def test_a_support_session_cannot_take_a_credential_or_send_the_data_anywhere_new(
+    db_client: TestClient, migrated_url: str
+) -> None:
+    """The lead-intake secret, webhooks, an employee's result webhook and actions, and a Google
+    connection outlive the session and let calls be placed or carry the account's calls and leads
+    out, so only the account's own people take or set them."""
+    seed(migrated_url)
+    owner = signup(db_client)
+    staff(db_client, migrated_url)
+    support = support_session(migrated_url, "owner@example.com")
+    hook = {"url": "https://hooks.example.com/axon", "events": ["call.completed"]}
+    mine = db_client.post("/developer/webhooks", json=hook, headers=owner)
+    assert mine.status_code == 201
+    employee = db_client.post(
+        "/employees", json={"channel": "instant", "name": "Asha"}, headers=owner
+    )
+    eid = employee.json()["id"]
+    elsewhere = {"url": "https://collector.example.net/x"}
+    google = {"code": "c", "state": "s", "redirect_uri": "https://app.example.com/cb"}
+    reveal = f"/employees/{eid}/instant/secret/reveal"
+    secret = db_client.post(reveal, headers=owner).json()["secret"]
+    refused = [
+        db_client.post("/developer/webhooks", json={**hook, **elsewhere}, headers=support),
+        db_client.patch(
+            f"/developer/webhooks/{mine.json()['id']}", json=elsewhere, headers=support
+        ),
+        db_client.put(f"/employees/{eid}/webhook", json=elsewhere, headers=support),
+        db_client.put(f"/employees/{eid}/actions", json={"actions": []}, headers=support),
+        db_client.post("/integrations/google/connect", json=google, headers=support),
+        db_client.post(reveal, headers=support),
+        db_client.post(f"/employees/{eid}/instant/secret/rotate", headers=support),
+    ]
+    assert [r.status_code for r in refused] == [403] * 7
+    assert [r.json()["detail"] for r in refused] == ["not allowed in a support session"] * 7
+    assert sql(migrated_url, "SELECT string_agg(url, ',') FROM webhook_endpoints") == hook["url"]
+    assert db_client.get(f"/employees/{eid}/webhook", headers=owner).json() == {"webhook": None}
+    assert sql(migrated_url, "SELECT count(*) FROM google_connections") == 0
+    assert db_client.post(reveal, headers=owner).json()["secret"] == secret  # not rotated
+    assert db_client.get("/developer/webhooks", headers=support).status_code == 200  # reads stay

@@ -4,10 +4,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.auth import CurrentUser
+from app.auth import CurrentUser, not_impersonating
 from app.db import Session
 from app.developer import delivery, events, result_webhook
 from app.developer.result_webhook import ResultWebhook
@@ -27,7 +27,7 @@ async def get_webhook(
     return {"webhook": result_webhook.mask(service.bundle_of(employee).result_webhook)}
 
 
-@router.put("/employees/{employee_id}/webhook")
+@router.put("/employees/{employee_id}/webhook", dependencies=[Depends(not_impersonating)])
 async def put_webhook(
     employee_id: uuid.UUID, body: ResultWebhook, user: CurrentUser, session: Session
 ) -> dict[str, ResultWebhook | None]:

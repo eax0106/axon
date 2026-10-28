@@ -3,8 +3,9 @@
 Every leg (speech-to-text, LLM, text-to-speech) has a chain: the chosen vendor first, then the
 other vendors of that kind. A voice tier picks the first text-to-speech vendor; its fallbacks are
 the Value and then the Standard vendor, never Premium, so a call can only get cheaper on the way
-down. A call is billed at the cheapest tier it used (`billed_tier`). The engine builds the chain
-for each call (unhealthy vendors last) and moves to the next vendor when one fails mid-call.
+down. A call is billed at the cheapest tier it used, at the configured rates (`billed_tier`).
+The engine builds the chain for each call (unhealthy vendors last) and moves to the next vendor
+when one fails mid-call.
 """
 
 import uuid
@@ -14,6 +15,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing.config import rate_per_minute
 from app.models import Call, CallStatus, Employee, Voice, VoiceTier
 from app.providers import health
 from app.providers.base import ProviderKind
@@ -26,7 +28,7 @@ LEG_NAMES = {
     ProviderKind.LLM: "AI model",
     ProviderKind.TTS: "voice",
 }
-PRICE_ORDER = (VoiceTier.VALUE, VoiceTier.STANDARD, VoiceTier.PREMIUM)
+LIST_ORDER = (VoiceTier.VALUE, VoiceTier.STANDARD, VoiceTier.PREMIUM)  # breaks a tie in rate
 FALLBACK_TIERS = (VoiceTier.VALUE, VoiceTier.STANDARD)  # Premium is never a fallback
 TTS_TIER = {vendor: tier for tier, vendor in TIER_TTS.items()}
 IN_FLIGHT = (CallStatus.RINGING, CallStatus.IN_PROGRESS)
@@ -52,9 +54,10 @@ def ordered(kind: ProviderKind, vendors: list[str], down: frozenset[tuple[str, s
 
 
 def billed_tier(tiers: Iterable[VoiceTier | None]) -> VoiceTier | None:
-    """The cheapest tier among the voices a call used: what the minute is charged at."""
+    """The cheapest tier among the voices a call used, at the rates in force: what the minute is
+    charged at. A fallback never costs the caller more, whatever the rates are set to."""
     used = [t for t in tiers if t is not None]
-    return min(used, key=PRICE_ORDER.index) if used else None
+    return min(used, key=lambda t: (rate_per_minute(t), LIST_ORDER.index(t))) if used else None
 
 
 async def employee_voice(session: AsyncSession, employee: Employee) -> Voice | None:

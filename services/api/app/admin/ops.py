@@ -319,13 +319,16 @@ async def settle_purchase(
                 WalletEntry.ref_id == number.id.hex,
             )
         )
+        if charge is None:  # bought before charges named their number
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "charge not found: refund it with a credit adjustment"
+            )
         number.status = NumberStatus.RELEASED
-        if charge is not None:
-            await ledger.post(
-                session, number.account_id, LedgerKind.REFUND, -charge.amount,
-                ref_type="number_purchase_refund", ref_id=number.id.hex,
-                note=f"{number.e164} not bought",
-            )  # fmt: skip
+        await ledger.post(
+            session, number.account_id, LedgerKind.REFUND, -charge.amount,
+            ref_type="number_purchase_refund", ref_id=number.id.hex,
+            note=f"{number.e164} not bought",
+        )  # fmt: skip
         title = f"Your number {number.e164} could not be bought"
         text = "The carrier did not sell it. The credits are back in your wallet."
     session.add(

@@ -134,7 +134,9 @@ async def require_admin(user: CurrentUser, request: Request) -> User:
 
 
 async def not_impersonating(user: CurrentUser, request: Request) -> User:
-    """For what only the account's own people may do: change the password, make an API key."""
+    """For what only the account's own people may do: change the password, and anything that
+    outlives a support session or sends the account's data out (API keys, the lead-intake secret,
+    webhooks, actions, a Google connection)."""
     if request.state.impersonator is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not allowed in a support session")
     return user

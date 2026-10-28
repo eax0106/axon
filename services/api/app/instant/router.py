@@ -6,12 +6,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentUser
+from app.auth import CurrentUser, not_impersonating
 from app.db import Session
 from app.employees import tickets
 from app.employees.router import OwnerUser, load
@@ -79,7 +79,9 @@ async def overview(employee_id: uuid.UUID, user: CurrentUser, session: Session) 
     }
 
 
-@router.post("/employees/{employee_id}/instant/secret/reveal")
+@router.post(
+    "/employees/{employee_id}/instant/secret/reveal", dependencies=[Depends(not_impersonating)]
+)
 async def reveal_secret(
     employee_id: uuid.UUID, user: OwnerUser, session: Session
 ) -> dict[str, str]:
@@ -87,7 +89,9 @@ async def reveal_secret(
     return {"secret": (await connection_of(session, employee)).secret}
 
 
-@router.post("/employees/{employee_id}/instant/secret/rotate")
+@router.post(
+    "/employees/{employee_id}/instant/secret/rotate", dependencies=[Depends(not_impersonating)]
+)
 async def rotate_secret(
     employee_id: uuid.UUID, user: OwnerUser, session: Session
 ) -> dict[str, str]:

@@ -244,3 +244,30 @@ def test_carrier_capacity_and_purchases_settled_once(
     assert renews is not None
     told = "SELECT count(*) FROM notifications WHERE kind = 'number_purchase'"
     assert sql(migrated_url, told) == 2
+
+
+def test_a_refund_whose_charge_cannot_be_found_is_refused_and_changes_nothing(
+    db_client: TestClient, migrated_url: str, admin: dict[str, str]
+) -> None:
+    """A purchase made before charges named their number has no charge to find."""
+    owner = signup(db_client, email="owner@example.com")
+    account = account_id(db_client, owner)
+    db_client.post(
+        f"/admin/accounts/{account}/credits", json={"amount": "2000", "note": "test"}, headers=admin
+    )
+    number = number_in_reconcile(migrated_url, account, "+911400000012")
+    sql(migrated_url, "UPDATE wallet_ledger SET ref_id = :r WHERE ref_type = 'number_purchase'",
+        {"r": uuid.uuid4().hex})  # fmt: skip
+    balance = "SELECT credit_balance FROM accounts WHERE id = :a"
+    before = sql(migrated_url, balance, {"a": account})
+
+    back = {"outcome": "refunded", "note": "carrier says not sold"}
+    refused = db_client.post(f"/admin/numbers/{number}/settle", json=back, headers=admin)
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "charge not found: refund it with a credit adjustment"
+    assert sql(migrated_url, "SELECT status FROM numbers WHERE id = :n", {"n": number}) == (
+        "reconcile"
+    )
+    assert sql(migrated_url, balance, {"a": account}) == before
+    told = "SELECT count(*) FROM notifications WHERE kind = 'number_purchase'"
+    assert sql(migrated_url, told) == 0
