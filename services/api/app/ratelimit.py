@@ -23,6 +23,8 @@ PASSWORD_PER_USER = 5  # password changes tried per user per window
 
 
 def _enabled() -> bool:
+    # Read from the environment, not app.settings: the test suite switches it off for every test
+    # (root conftest.py) without clearing the settings cache.
     return os.environ.get(OFF_ENV, "").lower() != "off"
 
 

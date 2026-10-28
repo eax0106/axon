@@ -43,6 +43,7 @@ def dump(url: str, directory: Path, keep: int) -> Path:
     except BaseException:
         partial.unlink(missing_ok=True)  # a half-written dump must never look like a backup
         raise
+    partial.chmod(0o600)  # a dump holds every customer secret: owner only
     partial.replace(target)
     for old in sorted(directory.glob(f"{PREFIX}*{SUFFIX}"))[:-keep]:
         old.unlink()

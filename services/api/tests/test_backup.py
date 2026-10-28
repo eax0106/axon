@@ -51,6 +51,8 @@ def test_a_dump_restores_into_a_new_database_with_the_same_rows(
     file = backup.dump(source, tmp_path, keep=14)
     assert file.suffix == ".dump" and file.stat().st_size > 0
     assert list(tmp_path.glob("*.partial")) == []
+    if os.name != "nt":  # Windows has no owner-only mode bits
+        assert file.stat().st_mode & 0o077 == 0
     target: str = fresh_database()
     backup.restore(file, target)
     counts = table_counts(source)

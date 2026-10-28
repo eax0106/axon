@@ -19,6 +19,7 @@ Scope: the whole Track 1 backend (API, engine, worker, deploy files) as of B14, 
 | F11 | Sessions are one 12-hour JWT with no refresh and no server-side sign-out other than a password change | `app/auth.py` | accepted |
 | F12 | The API sets no CORS headers, so a browser app on another origin cannot call it | `app/main.py` | accepted |
 | F13 | The known-vulnerability scan of the dependencies could not run in the build sandbox (`api.osv.dev` is unreachable from it) | `.github/workflows/ci.yml` | fixed |
+| F14 | The per-email sign-in limit counts attempts from any address, so someone who knows an owner's or staff member's email can keep that person locked out with 11 requests every 15 minutes | `app/auth.py`, `app/ratelimit.py` | accepted |
 
 **F1.** Fixed-window counters in Redis: 10 sign-in tries per email and 100 per address per 15 minutes (a right password clears the email's count), 10 sign-ups per address per hour, 5 password-change tries per user per 15 minutes; the sixth answer is 429 with `Retry-After`. The count is taken before the check (one atomic step), so 30 parallel guesses get exactly 10 attempts, not 30; the lock is keyed on the typed email whether or not the account exists, and applies to the right password too, so it reveals nothing. With Redis down the attempt is still answered (Redis is already in the readiness probe). `test_auth_rate_limit.py`.
 
@@ -60,3 +61,5 @@ Scope: the whole Track 1 backend (API, engine, worker, deploy files) as of B14, 
 | Tenant scoping: another account's id answers 404 | each router's tests since B4 (reviewed per phase); not re-swept here |
 | Staff support sessions cannot reach `/admin`, change the password or set up anything that outlives them | B13 |
 | Error bodies do not leak internals | vendor errors name only the host; unhandled errors are a bare 500 |
+
+**F14.** The cost of F1's per-email lock: it holds for the right password too and counts attempts from every address, so a stranger who knows an email can lock that person out of sign-in. One address can do this to about nine people at once (its own limit is 100 per 15 minutes); more addresses reach anyone. Accepted because the alternative, counting per address only, lets a botnet guess far more passwords against one account. The lock lasts at most one window, and [incidents.md](../runbooks/incidents.md) says how to clear it. Upgrade paths if it is abused: a bucket per (email, address) pair so strangers cannot spend the real owner's tries, or a staff route that clears a lock.

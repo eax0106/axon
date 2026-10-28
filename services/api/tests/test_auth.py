@@ -1,3 +1,5 @@
+import threading
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -6,6 +8,7 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
+from app import auth
 from app.auth import TOKEN_TTL, issue_token
 from app.models import User
 from app.settings import get_settings
@@ -149,17 +152,12 @@ def test_missing_jwt_secret_answers_503_and_creates_nothing(
 def test_hashing_a_password_does_not_stall_other_requests(
     db_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import threading
-    import time
-
-    from app import auth
-
     _signup(db_client)
     real = auth._hasher
 
     class Slow:
         def verify(self, *args: Any) -> Any:
-            time.sleep(0.6)
+            time.sleep(1.5)
             return real.verify(*args)
 
         def __getattr__(self, name: str) -> Any:
@@ -175,4 +173,5 @@ def test_hashing_a_password_does_not_stall_other_requests(
     assert db_client.get("/healthz").status_code == 200
     answered_in = time.monotonic() - started
     signing_in.join()
-    assert answered_in < 0.3
+    # The verify takes 1.5 s: a probe stuck behind it would take about that long.
+    assert answered_in < 1.0
