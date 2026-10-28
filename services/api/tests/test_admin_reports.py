@@ -22,9 +22,9 @@ from .helpers import account_id, add_call, run_db, signup, staff
 @pytest.fixture
 def redis_url(monkeypatch: pytest.MonkeyPatch) -> str | None:
     """The API's Redis: the test one when set, else a port where nothing listens."""
-    url = os.environ.get("AXON_TEST_REDIS_URL") or "redis://127.0.0.1:1/0"
-    monkeypatch.setenv("REDIS_URL", url)
-    return os.environ.get("AXON_TEST_REDIS_URL")
+    test_url = os.environ.get("AXON_TEST_REDIS_URL") or None  # CI sets it empty where unused
+    monkeypatch.setenv("REDIS_URL", test_url or "redis://127.0.0.1:1/0")
+    return test_url
 
 
 def post(url: str, account: Any, kind: LedgerKind, amount: str, ago: timedelta) -> None:
