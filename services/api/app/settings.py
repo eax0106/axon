@@ -56,3 +56,16 @@ def api_public_url() -> str:
             f"{API_URL_ENV} must be the API's public https URL (Vobiz calls it when a call ends)",
         )
     return url
+
+
+MAX_CALLS_ENV = "AXON_MAX_CONCURRENT_CALLS"
+DEFAULT_MAX_CALLS = 100
+
+
+def max_concurrent_calls() -> int:
+    """How many calls the platform carries at once (the engines' capacity); new calls wait above
+    it. Set it to what the deployed engines were load-tested for."""
+    try:
+        return max(1, int(os.environ.get(MAX_CALLS_ENV, DEFAULT_MAX_CALLS)))
+    except ValueError:
+        return DEFAULT_MAX_CALLS

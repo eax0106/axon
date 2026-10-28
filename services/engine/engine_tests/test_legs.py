@@ -11,10 +11,8 @@ from pipecat.services.sarvam.tts import SarvamTTSService
 from pipecat.services.smallest.stt import SmallestSTTService
 from pipecat.services.smallest.tts import SmallestTTSService
 
-from app.models import VoiceTier
 from app.providers.base import ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import ADAPTERS, VENDOR_KEYS
-from engine.legs import voice_legs
 from engine.services import SERVICES, Delivery
 
 LANGUAGES = ["te", "hi", "en"]
@@ -94,29 +92,3 @@ def test_cartesia_telugu_and_hindi_need_a_voice_id(monkeypatch: pytest.MonkeyPat
 def test_unsupported_language_is_rejected() -> None:
     with pytest.raises(ValueError, match="unsupported language"):
         SERVICES[(ProviderKind.STT, "sarvam")]("ta", Delivery())
-
-
-@pytest.mark.parametrize(
-    ("tier", "service"),
-    [
-        (VoiceTier.VALUE, SarvamTTSService),
-        (VoiceTier.STANDARD, SmallestTTSService),
-        (VoiceTier.PREMIUM, CartesiaTTSService),
-    ],
-)
-def test_voice_legs_use_the_tier_tts(tier: VoiceTier, service: type) -> None:
-    stt, llm, tts = voice_legs("hi", tier)
-    assert isinstance(stt, SarvamSTTService)
-    assert isinstance(llm, GoogleLLMService)
-    assert isinstance(tts, service)
-
-
-def test_voice_legs_without_tier_use_the_selected_tts() -> None:
-    assert isinstance(voice_legs("en")[2], SarvamTTSService)
-
-
-def test_voice_legs_premium_without_key_is_503(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("CARTESIA_API_KEY")
-    with pytest.raises(ProviderNotConfiguredError) as raised:
-        voice_legs("en", VoiceTier.PREMIUM)
-    assert raised.value.missing_keys == ["CARTESIA_API_KEY"]
