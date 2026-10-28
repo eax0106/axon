@@ -63,6 +63,7 @@ class Analysis:
     do_not_call_quote: str | None = None  # the caller's words, so the owner can see why
     message: str | None = None  # what the caller asked us to pass on, if they said so
     memory: str | None = None
+    voicemail: bool = False  # the Caller side was a recorded greeting, quoted from the transcript
     struggles: list[Struggle] = field(default_factory=list)
 
 
@@ -145,11 +146,16 @@ SYSTEM = (
     ' "message": {"text": "what the Caller asked to pass on to the business, in one or two plain'
     ' sentences, or null", "quote": "their exact words, or null"},'
     ' "do_not_call": {"requested": true or false, "quote": "their exact words, or null"},'
+    ' "voicemail": {"detected": true or false, "quote": "the exact words of the recording, or'
+    ' null"},'
     ' "memory": "at most three short sentences of lasting facts about this person worth '
     'remembering for the next call, or null",'
     ' "struggles": [{"reason": "unanswered | conduct", "caller_quote": "the exact words of the'
     ' Caller", "agent_quote": "the exact words of the Agent, or null", "rule": "for conduct only:'
     ' one short rule that would have avoided it, or null"}]}\n'
+    "Voicemail means the Caller side was a recorded greeting or an answering machine (for example"
+    " asking to leave a message after a tone), not a person talking to the Agent; quote the"
+    " recording's words.\n"
     "A struggle is a moment where the Agent could not or would not answer a question the Caller"
     " asked (unanswered), or did something the business would not want, such as promising what"
     " was never offered, ignoring a request or pressing after a no (conduct). List at most 3 and"
@@ -222,6 +228,10 @@ def parse(
     )
     if result.do_not_call:
         result.do_not_call_quote = _clean(dnc.get("quote"), 200)
+    recorded = _entry(data.get("voicemail"))
+    result.voicemail = (
+        recorded.get("detected") is True and caller_quoted(recorded.get("quote"), turns) is not None
+    )
     if result.outcome == "do_not_call" and not result.do_not_call:
         result.outcome = None  # the model said so but nothing the caller said backs it
     if result.do_not_call:

@@ -14,7 +14,7 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [ ] Voice tiers Value / Standard / Premium, voice picker with preview, speed, ambience (Office, Call Center, Restaurant, Quiet Room, Retail Store) with volume, auto avatar — B4 part done: tiers, picker, preview, speed, placeholder avatar, ambience setting and mixer hook; rest: the five licensed ambience loops (WIRING_CHECKLIST #17)
 - [x] Free test call to the owner's phone, browser web call, text chat sandbox — B4: web call and chat sandbox; B7: the phone test call rings only the owner's phone, proved by a one-time code, and goes through the do-not-call list and the dial rule table
 - [x] Lifecycle draft, training, live, paused; live needs a number + switched on + published
-- [ ] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits — B4 part done: script publish gate, voice and capture instant, discard; B10: actions go through the publish gate with the script; B11: training applies instantly; rest: webhooks B12
+- [x] Publish gate ("Apply to live calls") for script, action and webhook edits; voice, capture and training apply instantly; discard pending edits — B4 part done: script publish gate, voice and capture instant, discard; B10: actions go through the publish gate with the script; B11: training applies instantly; B12: the employee's result webhook is part of the script bundle, so it is publish-gated with versions and restore
 - [x] Keep the last 3 published versions; restore any
 - [x] Switch channel (clears call history, offers a rewrite); start over (wipes script, training, history)
 - [x] Duplicate employee
@@ -82,10 +82,10 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Struggle detector on real calls, turned into one-tap suggestions quoting the call
 
 ## Developer platform [B12]
-- [ ] API keys (create, revoke); public REST API; OpenAPI spec; Postman collection; request log; API status
-- [ ] Signed account webhooks: call.completed, call.not_connected, call.inbound_answered, call.inbound_missed, lead.created, campaign.status_changed; delivery log, resend, rotate secret, test
-- [ ] Per-employee result webhook with a trigger: all connected / skip voicemail / voicemail only; test payload
-- [ ] n8n, Make and Zapier guides
+- [x] API keys (create, revoke); public REST API; OpenAPI spec; Postman collection; request log; API status — B12: `/developer/keys`, `/v1/*` (read account, employees, calls, leads, campaigns; post a lead), `/v1/openapi.json`, `/v1/postman.json`, `/developer/requests`, `/developer/status`
+- [x] Signed account webhooks: call.completed, call.not_connected, call.inbound_answered, call.inbound_missed, lead.created, campaign.status_changed; delivery log, resend, rotate secret, test — B12: `/developer/webhooks`, `/developer/deliveries`
+- [x] Per-employee result webhook with a trigger: all connected / skip voicemail / voicemail only; test payload — B12: `/employees/{id}/webhook`, voicemail comes from the post-call analysis
+- [ ] n8n, Make and Zapier guides — help-centre content (Track 2); the API, spec and webhooks they use are built (B12)
 
 ## Reliability, settings, admin [B13]
 - [ ] Per-leg failover (STT, LLM, TTS) mid-call; Premium falls back to Value at the Value price, never the other way

@@ -31,7 +31,7 @@ NONCE_TTL_S = 300.0
 _seen_nonces: dict[str, float] = {}  # ponytail: per process; shared store if the API scales out
 
 
-def _json_status(result: intake.Result) -> JSONResponse:
+def intake_response(result: intake.Result) -> JSONResponse:
     code = {
         IntakeStatus.ACCEPTED: status.HTTP_202_ACCEPTED,
         IntakeStatus.DEDUPLICATED: status.HTTP_200_OK,
@@ -135,7 +135,7 @@ async def website_intake(
     result = await intake.process(
         session, employee, payload, source="website", now=datetime.now(UTC)
     )
-    return _json_status(result)
+    return intake_response(result)
 
 
 def _fresh(nonce: str, now: float) -> bool:

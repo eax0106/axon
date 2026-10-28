@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.actions.schema import mask
 from app.auth import CurrentUser
 from app.db import Session
+from app.developer import result_webhook
 from app.employees import runtime, service
 from app.employees.limits import AiBudget, AiRate
 from app.employees.router import load
@@ -211,8 +212,9 @@ async def edit_flow(
     """A proposed edit of the draft script. Nothing is saved: the client shows it and PUTs it."""
     employee = await load(session, user, employee_id)
     current = service.bundle_of(employee)
-    # The actions hold secrets and are not the model's to edit: they stay out of the prompt.
-    script = current.model_dump_json(exclude={"actions"})
+    # The actions and the result webhook hold secrets and are not the model's to edit: they stay out
+    # of the prompt.
+    script = current.model_dump_json(exclude={"actions", "result_webhook"})
     data = await ask(EDIT_PROMPT, f"Current script:\n{script}\n\nInstruction:\n{body.instruction}")
     revised = _script_from(data)
     # The model only returns script fields; keep the ones it may not touch.
@@ -221,6 +223,7 @@ async def edit_flow(
             "strictness": current.strictness,
             "pre_call_variables": current.pre_call_variables,
             "actions": mask(current.actions),
+            "result_webhook": result_webhook.mask(current.result_webhook),
         }
     )
 

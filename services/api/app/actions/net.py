@@ -10,7 +10,7 @@ the address that was checked, so a name that changes its answer afterwards is no
 import asyncio
 import ipaddress
 import socket
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 # Tests only: lets the tool reach a server on this machine over plain http. Never set in the app.
 ALLOW_LOCAL = False
@@ -73,3 +73,14 @@ async def resolve(host: str, port: int) -> str:
     if not ALLOW_LOCAL and not all(_safe(a) for a in addresses):
         raise BlockedError("that address is not allowed")
     return addresses[0]
+
+
+async def pin(url: str) -> tuple[str, str, str]:
+    """Where to connect for `url` once its name is checked: the URL with the checked address in
+    place of the name, the Host header to send, and the name the certificate must match."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    address = await resolve(host, port)
+    shown = f"[{address}]" if ":" in address else address
+    return urlunsplit(parts._replace(netloc=f"{shown}:{port}")), parts.netloc, host

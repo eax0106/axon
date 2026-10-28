@@ -14,6 +14,7 @@ from app.actions import service as actions
 from app.actions.schema import mask
 from app.auth import CurrentUser
 from app.db import Session
+from app.developer import result_webhook
 from app.employees import ambience, runtime, service
 from app.employees.lifecycle import Action, TransitionError, next_status
 from app.employees.script import LANGUAGES, EmployeeSettings, ScriptBundle
@@ -121,8 +122,13 @@ def avatar(employee: Employee) -> dict[str, Any]:
 
 
 def _masked(bundle: ScriptBundle) -> ScriptBundle:
-    """The script as it may leave the server: an action's secret is never sent back."""
-    return bundle.model_copy(update={"actions": mask(bundle.actions)})
+    """The script as it may leave the server: no secret is ever sent back."""
+    return bundle.model_copy(
+        update={
+            "actions": mask(bundle.actions),
+            "result_webhook": result_webhook.mask(bundle.result_webhook),
+        }
+    )
 
 
 async def out(session: AsyncSession, employee: Employee) -> EmployeeOut:
@@ -254,13 +260,18 @@ async def put_script(
 ) -> EmployeeOut:
     """Replace the draft script. It reaches live calls only after publish."""
     employee = await load(session, user, employee_id)
-    stored = service.bundle_of(employee).actions
-    # A script sent without an `actions` field leaves the actions as they are, so an editor that
-    # does not know about them cannot wipe them.
-    kept = stored
+    stored = service.bundle_of(employee)
+    # A script sent without an `actions` (or `result_webhook`) field leaves it as it is, so an
+    # editor that does not know about them cannot wipe them.
+    kept, hook = stored.actions, stored.result_webhook
     if "actions" in body.model_fields_set:
-        kept = await actions.accept(session, user, list(body.actions), stored)
-    employee.draft = body.model_copy(update={"actions": kept}).model_dump()
+        kept = await actions.accept(session, user, list(body.actions), stored.actions)
+    if "result_webhook" in body.model_fields_set:
+        try:
+            hook = result_webhook.keep_secret(body.result_webhook, stored.result_webhook)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    employee.draft = body.model_copy(update={"actions": kept, "result_webhook": hook}).model_dump()
     await session.commit()
     return await out(session, employee)
 

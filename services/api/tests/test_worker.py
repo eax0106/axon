@@ -45,6 +45,8 @@ def test_the_cron_schedule_and_hooks() -> None:
         "cron:renewal_tick",
         "cron:sheets_tick",
         "cron:summary_tick",
+        "cron:webhook_prune_tick",
+        "cron:webhook_tick",
     }
     assert names["cron:summary_tick"].minute == set(
         range(5, 60, 10)
