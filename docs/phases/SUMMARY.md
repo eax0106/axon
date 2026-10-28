@@ -1,6 +1,6 @@
 # Track 1 summary — Axon backend, B0 to B14
 
-Status: Track 1 (the backend) is built, reviewed and merged phase by phase, B0 to B13 on `main`, B14 in [PR 16](https://github.com/eax0106/axon/pull/16). Next: the SEC phase (Strix), then Track 2 (the dashboard), then Track 3 (keys and real calls). Details per phase are in `docs/phases/bN.md`; the live status board is `docs/PLAN.md`.
+Status: Track 1 (the backend) is built, reviewed and merged phase by phase, B0 to B14 on `main` (B14 is [PR 16](https://github.com/eax0106/axon/pull/16) plus review follow-ups in [PR 17](https://github.com/eax0106/axon/pull/17)). Next: the SEC phase (Strix), then Track 2 (the dashboard), then Track 3 (keys and real calls). Details per phase are in `docs/phases/bN.md`; the live status board is `docs/PLAN.md`.
 
 ## What was built
 
@@ -20,7 +20,7 @@ Status: Track 1 (the backend) is built, reviewed and merged phase by phase, B0 t
 | B11 | Training and knowledge: facts and rules by text, voice or photo, documents, struggle detector | [#13](https://github.com/eax0106/axon/pull/13) | 1 |
 | B12 | Developer platform: API keys, public API, OpenAPI, Postman, signed webhooks, result webhook | [#14](https://github.com/eax0106/axon/pull/14) | 1 |
 | B13 | Reliability and admin: mid-call failover, health scoring, capacity, admin console APIs, support sessions, settings, DNC | [#15](https://github.com/eax0106/axon/pull/15) | 2 |
-| B14 | Hardening: auth rate limits, route security sweep, request limits, backups, load test, runbooks, security review, parity audit, terms acceptance | [#16](https://github.com/eax0106/axon/pull/16) | see the PR |
+| B14 | Hardening: auth rate limits, route security sweep, request limits, backups, load test, runbooks, security review, parity audit, terms acceptance | [#16](https://github.com/eax0106/axon/pull/16) | 1 |
 
 ## Numbers
 
