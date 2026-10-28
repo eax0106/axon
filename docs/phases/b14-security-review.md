@@ -42,7 +42,7 @@ Scope: the whole Track 1 backend (API, engine, worker, deploy files) as of B14, 
 
 **F12.** The dashboard (Track 2) will be same-origin or add an allow-list for its own origin; a wildcard must never be added.
 
-**F13.** CI has a non-blocking `audit` job running `uv audit --locked`; read its output on each PR.
+**F13.** CI has a non-blocking `audit` job running `uv audit --locked`; its first run (PR 16) found no known vulnerabilities and no adverse project statuses in 99 packages. Read its output on each PR.
 
 ## Checked, nothing found
 
