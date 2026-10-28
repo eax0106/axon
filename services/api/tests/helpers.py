@@ -169,3 +169,18 @@ def verified_holder(url: str, account: Any, name: str = "Asha Rao") -> Any:
         " VALUES (:a, :n, '234F', 'verified', 'h_1') RETURNING id",
         {"a": account, "n": name},
     )
+
+
+def staff(client: TestClient, url: str, email: str = "staff@alterx.in") -> dict[str, str]:
+    """A platform admin (ALTERX staff), in an account of their own."""
+    headers = signup(client, email=email, account="ALTERX")
+    sql(url, "UPDATE users SET is_platform_admin = true WHERE email = :e", {"e": email})
+    return headers
+
+
+def support_session(url: str, email: str, staff_email: str = "staff@alterx.in") -> dict[str, str]:
+    """A session for the user `email` opened by the staff member `staff_email`."""
+    user = sql(url, "SELECT id FROM users WHERE email = :e", {"e": email})
+    admin = sql(url, "SELECT id FROM users WHERE email = :e", {"e": staff_email})
+    token = issue_token(User(id=user), impersonator=User(id=admin))
+    return {"Authorization": f"Bearer {token}"}

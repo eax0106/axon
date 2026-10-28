@@ -11,12 +11,14 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.account.settings import router as account_router
 from app.actions.router import router as actions_router
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
 from app.billing.ledger import InsufficientCreditsError
 from app.billing.router import router as billing_router
 from app.calls.conversations import router as conversations_router
+from app.calls.dnc import router as dnc_router
 from app.calls.leads import router as leads_router
 from app.calls.memory import router as memory_router
 from app.calls.notifications import router as notifications_router
@@ -92,6 +94,8 @@ app.include_router(developer_router)
 app.include_router(result_webhook_router)
 app.include_router(public_api_router)
 app.include_router(public_docs_router)
+app.include_router(account_router)
+app.include_router(dnc_router)
 
 
 @app.exception_handler(AuthNotConfiguredError)

@@ -6,13 +6,13 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.actions import net
-from app.auth import CurrentUser
+from app.auth import CurrentUser, not_impersonating
 from app.db import Session
 from app.developer import delivery, events, keys, paging
 from app.developer.paging import Page
@@ -62,7 +62,9 @@ def _key_out(key: ApiKey) -> KeyOut:
     )
 
 
-@router.post("/keys", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/keys", status_code=status.HTTP_201_CREATED, dependencies=[Depends(not_impersonating)]
+)
 async def create_key(body: KeyCreate, user: OwnerUser, session: Session) -> KeyCreated:
     account_id = user.account_id
     active = await session.scalar(
