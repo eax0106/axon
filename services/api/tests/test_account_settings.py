@@ -175,6 +175,7 @@ def test_a_support_session_cannot_sign_as_the_account_spend_its_money_or_prove_w
         db_client.put(f"/employees/{eid}/instant/sheets", json={}, headers=support),
         db_client.post("/numbers/purchase", json={}, headers=support),
         db_client.delete(f"/numbers/{some_number}", headers=support),
+        db_client.put(f"/numbers/{some_number}/channels", json={}, headers=support),
         db_client.put(f"/employees/{eid}/number", json={}, headers=support),
         db_client.post("/numbers/kyc/verify-pan", json={}, headers=support),
         db_client.post("/numbers/kyc/digilocker/initiate", json={}, headers=support),
@@ -184,11 +185,35 @@ def test_a_support_session_cannot_sign_as_the_account_spend_its_money_or_prove_w
         db_client.post("/accounts/owner-phone", json={}, headers=support),
         db_client.post("/accounts/owner-phone/verify", json={}, headers=support),
     ]
-    assert [r.status_code for r in refused] == [403] * 14
+    assert [r.status_code for r in refused] == [403] * 15
     assert {r.json()["detail"] for r in refused} == {"not allowed in a support session"}
     assert sql(migrated_url, signing_key) == before
     rotated = db_client.post(f"/developer/webhooks/{endpoint}/rotate-secret", headers=owner)
     assert rotated.status_code == 200 and rotated.json()["secret"] != before  # the owner still can
+
+
+def test_a_support_session_fixes_invoice_details_but_not_the_spend_cap(
+    db_client: TestClient, migrated_url: str
+) -> None:
+    """Found in the SEC review: the hourly spend cap is what stops a runaway account, so only the
+    account's own people move or remove it."""
+    seed(migrated_url)
+    owner = signup(db_client)
+    staff(db_client, migrated_url)
+    support = support_session(migrated_url, "owner@example.com")
+    cap = {"spend_cap_per_hour": "500.00"}
+    assert db_client.put("/billing/settings", json=cap, headers=owner).status_code == 200
+    for change in ({"spend_cap_per_hour": None}, {"spend_cap_per_hour": "9000.00"}):
+        refused = db_client.put("/billing/settings", json=change, headers=support)
+        assert refused.status_code == 403
+        assert refused.json()["detail"] == "not allowed in a support session"
+    same = {"legal_name": "Acme Solar Pvt Ltd", **cap}  # an editor resending the cap unchanged
+    assert db_client.put("/billing/settings", json=same, headers=support).status_code == 200
+    stored = (
+        "SELECT spend_cap_per_hour::text || ' ' || (billing->>'legal_name') FROM accounts"
+        " WHERE id = (SELECT account_id FROM users WHERE email = 'owner@example.com')"
+    )
+    assert sql(migrated_url, stored) == "500.0000 Acme Solar Pvt Ltd"
 
 
 def test_a_support_session_edits_a_script_but_not_where_its_results_or_callers_go(

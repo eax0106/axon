@@ -262,7 +262,7 @@ class Channels(BaseModel):
     channels: Annotated[int, Field(ge=1, le=attaching.MAX_CHANNELS)]
 
 
-@router.put("/numbers/{number_id}/channels")
+@router.put("/numbers/{number_id}/channels", dependencies=[Depends(not_impersonating)])
 async def set_channels(
     number_id: uuid.UUID, body: Channels, user: OwnerUser, session: Session
 ) -> dict[str, Any]:

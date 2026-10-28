@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func, select
 
-from app.auth import CurrentUser, not_impersonating
+from app.auth import CurrentUser, not_impersonating, refuse_in_support_session
 from app.billing import invoices, ledger, payments
 from app.billing.config import (
     ai_use_fee,
@@ -372,9 +372,11 @@ class BillingSettings(BaseModel):
 
 
 @router.put("/billing/settings")
-async def put_settings(body: BillingSettings, user: OwnerUser, session: Session) -> dict[str, Any]:
+async def put_settings(
+    body: BillingSettings, request: Request, user: OwnerUser, session: Session
+) -> dict[str, Any]:
     """Invoice details and the hourly spend cap. Only what is sent changes; `null` for the cap
-    removes it."""
+    removes it. A support session may fix the invoice details but not the cap."""
     account = await _account(session, user)
     sent = body.model_fields_set
     details = dict(account.billing or {})
@@ -391,7 +393,8 @@ async def put_settings(body: BillingSettings, user: OwnerUser, session: Session)
     if gstin and details.get("state_code") and gstin[:2] != details["state_code"]:
         raise HTTPException(422, "the GSTIN starts with the state code, and they differ")
     account.billing = details
-    if "spend_cap_per_hour" in sent:
+    if "spend_cap_per_hour" in sent and body.spend_cap_per_hour != account.spend_cap_per_hour:
+        refuse_in_support_session(request)
         account.spend_cap_per_hour = body.spend_cap_per_hour
     await session.commit()
     return await get_settings(user, session)
