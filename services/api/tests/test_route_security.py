@@ -1,10 +1,12 @@
 """Every operation in the OpenAPI spec is swept: who may call it without proving who they are."""
 
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from app.main import app
 
@@ -30,6 +32,7 @@ PROOF = {
     "GET /public/otp/{token}": "the one-time page a phone owner opens: random token",
     "POST /public/otp/{token}": "the one-time page a phone owner opens: random token",
 }
+APP_DIR = Path(__file__).parents[1] / "app"
 SAMPLE_ID = "00000000-0000-0000-0000-000000000001"
 
 
@@ -94,6 +97,26 @@ def test_a_session_token_does_not_open_the_public_api_and_a_key_does_not_open_th
         if f"{m} {p}" not in OPEN | PROOF and call(db_client, m, p, key) not in (401, 403)
     ]
     assert accepted == []
+
+
+def test_a_websocket_without_a_token_is_closed_and_the_live_call_socket_is_swept(
+    db_client: TestClient,
+) -> None:
+    # WebSockets are not in the OpenAPI spec, so the operation sweep never sees them; find them in
+    # the source so a new one is swept too.
+    sockets = sorted(
+        {
+            path
+            for file in APP_DIR.rglob("*.py")
+            for path in re.findall(r"\.websocket\(\s*\"([^\"]+)\"", file.read_text("utf-8"))
+        }
+    )
+    assert "/calls/{call_id}/live" in sockets
+    for path in sockets:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            with db_client.websocket_connect(url_of(path)) as ws:
+                ws.receive_text()
+        assert closed.value.code in (1008, 4401, 403), f"{path} closed with {closed.value.code}"
 
 
 @pytest.mark.parametrize("name", sorted(PROOF))
