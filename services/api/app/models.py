@@ -417,11 +417,15 @@ class Call(Base):
         Index("ix_calls_queue", "status", "scheduled_for"),
         Index("ix_calls_account_created", "account_id", "created_at"),
         Index("ix_calls_analysis", "analysis_status"),
-        # The webhook job looks only at settled calls it has not announced yet.
+        # The webhook job looks only at settled calls it has not announced yet; test calls and
+        # calls that were cancelled are never announced, so they stay out of the index.
         Index(
             "ix_calls_unannounced",
             "ended_at",
-            postgresql_where=text("events_emitted_at IS NULL AND ended_at IS NOT NULL"),
+            postgresql_where=text(
+                "events_emitted_at IS NULL AND ended_at IS NOT NULL AND NOT is_test"
+                " AND status IN ('completed', 'no_answer', 'busy', 'failed')"
+            ),
         ),
     )
     id: Mapped[uuid.UUID] = _pk()

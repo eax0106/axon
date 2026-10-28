@@ -218,14 +218,19 @@ def _delivery(
     )
 
 
+async def published_hook(session: AsyncSession, employee_id: uuid.UUID) -> ResultWebhook | None:
+    """The result webhook of the employee's latest published version, if it has one."""
+    live = await service.latest_version(session, employee_id)
+    return ScriptBundle.model_validate(live.bundle).result_webhook if live else None
+
+
 async def _result_webhook(
     session: AsyncSession, event: WebhookEvent
 ) -> tuple[uuid.UUID, ResultWebhook] | None:
     """The employee's result webhook as published, if this call is one it wants."""
     if event.employee_id is None or event.type not in events.CONNECTED:
         return None
-    live = await service.latest_version(session, event.employee_id)
-    config = ScriptBundle.model_validate(live.bundle).result_webhook if live else None
+    config = await published_hook(session, event.employee_id)
     if config is None or not config.wants(voicemail=bool(event.data["call"]["voicemail"])):
         return None
     return event.employee_id, config
@@ -234,6 +239,8 @@ async def _result_webhook(
 async def deliver_due(factory: async_sessionmaker[AsyncSession], now: datetime) -> int:
     """Send the deliveries that are due. Each is first leased (pushed out by LEASE) so no other
     worker takes it and a worker that dies mid-send does not strand it."""
+    # shortcut: one queue for every account (BATCH sends per tick, each up to TIMEOUT_S), so a
+    # receiver that times out slows the others; cap the sends in flight per endpoint when it does.
     async with factory() as session:
         due = list(
             await session.scalars(
@@ -297,16 +304,19 @@ async def run_test(
     }
 
 
-def resend(delivery: WebhookDelivery, now: datetime) -> WebhookDelivery:
-    """The same event to the same place again, as a new row: the first attempt stays in the log."""
+def resend(
+    delivery: WebhookDelivery, now: datetime, hook: ResultWebhook | None = None
+) -> WebhookDelivery:
+    """The same event to the same place again, as a new row: the first attempt stays in the log.
+    A result webhook goes to where it points now (`hook`), like an account endpoint does."""
     return WebhookDelivery(
         id=uuid.uuid4(),
         account_id=delivery.account_id,
         event_id=delivery.event_id,
         endpoint_id=delivery.endpoint_id,
         employee_id=delivery.employee_id,
-        target_url=delivery.target_url,
-        target_secret=delivery.target_secret,
+        target_url=hook.url if hook else delivery.target_url,
+        target_secret=(hook.secret or None) if hook else delivery.target_secret,
         event=delivery.event,
         payload=delivery.payload,
         is_test=delivery.is_test,

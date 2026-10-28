@@ -378,7 +378,12 @@ async def resend_delivery(delivery_id: uuid.UUID, user: OwnerUser, session: Sess
     row = await _delivery(session, user.account_id, delivery_id)
     if row.status is DeliveryStatus.PENDING:
         raise HTTPException(409, "it is still being sent: wait for the result first")
-    again = delivery.resend(row, datetime.now(UTC))
+    hook = None
+    if row.endpoint_id is None and row.employee_id and not row.is_test:
+        hook = await delivery.published_hook(session, row.employee_id)
+        if hook is None:
+            raise HTTPException(409, "the employee has no result webhook any more")
+    again = delivery.resend(row, datetime.now(UTC), hook)
     session.add(again)
     await session.commit()
     return _delivery_out(again)

@@ -296,3 +296,28 @@ def test_another_account_cannot_touch_the_hook(api: TestClient, migrated_url: st
     assert api.delete(path, headers=stranger).status_code == 404
     assert api.post(path + "/test", headers=stranger).status_code == 404
     assert api.get(path, headers=owner).status_code == 200
+
+
+def test_a_resend_goes_to_where_the_published_hook_points_now(
+    api: TestClient, migrated_url: str, receiver: type[Receiver]
+) -> None:
+    owner, employee, account = setup(api, migrated_url)
+    set_hook(api, owner, employee, hook(receiver.base))
+    publish(api, owner, employee)
+    call_event(migrated_url, account, employee)
+    tick(migrated_url)
+    (first,) = result_sends(migrated_url, employee)
+    resend = f"/developer/deliveries/{first['id']}/resend"
+
+    set_hook(api, owner, employee, {"url": f"{receiver.base}/moved", "secret": SECRET})
+    publish(api, owner, employee)
+    assert api.post(resend, headers=owner).status_code == 201
+    tick(migrated_url)
+    assert [r["path"] for r in receiver.seen] == ["/result", "/moved"]
+    assert verify(SECRET, receiver.seen[1]["headers"]["X-Axon-Signature"], receiver.seen[1]["body"])
+
+    api.delete(f"/employees/{employee}/webhook", headers=owner)
+    publish(api, owner, employee)
+    assert api.post(resend, headers=owner).status_code == 409  # nothing to send it to
+    tick(migrated_url)
+    assert len(receiver.seen) == 2

@@ -107,7 +107,10 @@ def upgrade() -> None:
         "calls",
         ["ended_at"],
         unique=False,
-        postgresql_where=sa.text("events_emitted_at IS NULL AND ended_at IS NOT NULL"),
+        postgresql_where=sa.text(
+            "events_emitted_at IS NULL AND ended_at IS NOT NULL AND NOT is_test"
+            " AND status IN ('completed', 'no_answer', 'busy', 'failed')"
+        ),
     )
     # Calls that ended before webhooks existed are history, not news.
     op.execute("UPDATE calls SET events_emitted_at = now() WHERE ended_at IS NOT NULL")
@@ -220,7 +223,10 @@ def downgrade() -> None:
     op.drop_index(
         "ix_calls_unannounced",
         table_name="calls",
-        postgresql_where=sa.text("events_emitted_at IS NULL AND ended_at IS NOT NULL"),
+        postgresql_where=sa.text(
+            "events_emitted_at IS NULL AND ended_at IS NOT NULL AND NOT is_test"
+            " AND status IN ('completed', 'no_answer', 'busy', 'failed')"
+        ),
     )
     op.drop_column("calls", "events_emitted_at")
     op.drop_column("calls", "voicemail")

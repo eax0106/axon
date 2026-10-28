@@ -7,13 +7,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.campaigns import runner
+from app.providers.telephony.vobiz import VobizTelephony
 
 from . import dialing
 from .campaigning import NOW as CAMPAIGN_NOW
-from .campaigning import PHONES, make_campaign, setup_bulk
+from .campaigning import PHONES, Carrier, make_campaign, setup_bulk, tick
 from .conftest import sql
 from .developer_support import events_of
-from .helpers import live_employee, run_db, signup
+from .helpers import account_id, add_lead, live_employee, run_db, signup
 
 
 def test_a_lead_from_intake_is_announced_once_and_an_existing_lead_is_not(
@@ -34,6 +35,26 @@ def test_a_lead_from_intake_is_announced_once_and_an_existing_lead_is_not(
     assert len(events_of(migrated_url, "lead.created")) == 1
     dialing.lead_in(migrated_url, employee, "+919876500002")
     assert len(events_of(migrated_url, "lead.created")) == 2
+
+
+def test_a_lead_a_campaign_makes_is_announced_and_one_it_already_had_is_not(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    _, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    known, fresh = PHONES[:2]
+    add_lead(migrated_url, account_id(api, owner), f"+91{known}", "Asha")  # from before B12 hooks
+    make_campaign(api, owner, employee, [known, fresh], concurrency=2)
+    assert len(tick(migrated_url, adapter, CAMPAIGN_NOW)) == 2
+
+    (event,) = events_of(migrated_url, "lead.created")
+    lead = event["data"]["lead"]
+    assert lead["phone"] == f"+91{fresh}" and lead["id"] and lead["created_at"]
+    stored = sql(migrated_url, "SELECT id::text FROM leads WHERE phone = :p", {"p": lead["phone"]})
+    assert lead["id"] == stored
+
+    tick(migrated_url, adapter, CAMPAIGN_NOW + timedelta(minutes=5))  # nothing new is announced
+    assert len(events_of(migrated_url, "lead.created")) == 1
 
 
 def test_a_rejected_lead_announces_nothing(api: TestClient, migrated_url: str) -> None:

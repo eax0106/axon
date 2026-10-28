@@ -7,7 +7,7 @@ outcome are the point of the event; if the analysis never comes the call goes ou
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.developer import events, shapes
@@ -30,29 +30,32 @@ def event_type(call: Call) -> str:
     return events.INBOUND_MISSED if inbound else events.CALL_NOT_CONNECTED
 
 
+def ready(now: datetime) -> Select[Call]:
+    """The calls to announce. The first four conditions are the predicate of the partial index
+    `ix_calls_unannounced` (test and cancelled calls are never announced, so they are not in it)."""
+    answered = or_(Call.status == CallStatus.COMPLETED, Call.answered_at.is_not(None))
+    return (
+        select(Call)
+        .where(
+            Call.events_emitted_at.is_(None),
+            Call.ended_at.is_not(None),
+            ~Call.is_test,
+            Call.status.in_(FINAL),
+            or_(
+                ~answered,
+                Call.analysis_status.in_(ANALYSED),
+                Call.ended_at < now - WAIT_FOR_ANALYSIS,
+            ),
+        )
+        .order_by(Call.ended_at)
+        .limit(BATCH)
+    )
+
+
 async def settle_calls(factory: async_sessionmaker[AsyncSession], now: datetime) -> int:
     """Announce the calls that are ready. Returns how many were taken."""
-    answered = or_(Call.status == CallStatus.COMPLETED, Call.answered_at.is_not(None))
     async with factory() as session:
-        calls = list(
-            await session.scalars(
-                select(Call)
-                .where(
-                    Call.events_emitted_at.is_(None),
-                    Call.ended_at.is_not(None),
-                    Call.is_test.is_(False),
-                    Call.status.in_(FINAL),
-                    or_(
-                        ~answered,
-                        Call.analysis_status.in_(ANALYSED),
-                        Call.ended_at < now - WAIT_FOR_ANALYSIS,
-                    ),
-                )
-                .order_by(Call.ended_at)
-                .limit(BATCH)
-                .with_for_update(skip_locked=True)
-            )
-        )
+        calls = list(await session.scalars(ready(now).with_for_update(skip_locked=True)))
         await _announce(session, calls, now)
         await session.commit()
     return len(calls)

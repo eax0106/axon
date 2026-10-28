@@ -1,6 +1,9 @@
 """Announce a new lead and a campaign's change of status from the one place every path passes:
 the flush. A change made anywhere (an API request, the worker, a callback) is announced in the
-same transaction, and a path added later cannot forget to."""
+same transaction, and a path added later cannot forget to.
+
+A Core insert (`insert(Lead)`) never reaches the flush, so a path that makes leads that way has to
+announce them itself; the campaign runner does."""
 
 import uuid
 from datetime import UTC, datetime

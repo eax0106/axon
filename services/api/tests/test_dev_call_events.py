@@ -192,3 +192,38 @@ def test_a_real_dial_and_the_carriers_report_announce_the_attempt_that_did_not_c
     assert shown["id"] == str(result.call_id) and shown["status"] == "busy"
     assert shown["phone"] == "+919876500001" and shown["attempt"] == 1
     assert len(events_of(migrated_url, "call.not_connected")) == 1  # the retry is only queued
+
+
+def test_the_scan_reads_an_index_that_leaves_out_test_and_cancelled_calls(
+    api: TestClient, migrated_url: str
+) -> None:
+    import asyncio
+
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.developer import settle
+
+    def plan(query: str) -> str:
+        async def explain() -> str:
+            engine = create_async_engine(migrated_url)
+            try:
+                async with engine.connect() as conn:
+                    await conn.execute(text("SET enable_seqscan = off"))  # force a choice
+                    found = await conn.execute(text("EXPLAIN " + query))
+                    return "\n".join(row[0] for row in found)
+            finally:
+                await engine.dispose()
+
+        return asyncio.run(explain())
+
+    ready = settle.ready(NOW).compile(compile_kwargs={"literal_binds": True})
+    assert "ix_calls_unannounced" in plan(str(ready))
+    everything_ended = (
+        "SELECT * FROM calls WHERE events_emitted_at IS NULL AND ended_at IS NOT NULL"
+    )
+    assert "ix_calls_unannounced" not in plan(everything_ended)  # the index is narrower than that
+    definition = sql(
+        migrated_url, "SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_calls_unannounced'"
+    )
+    assert "NOT is_test" in definition and "canceled" not in definition

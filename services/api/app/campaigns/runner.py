@@ -19,6 +19,7 @@ from app.billing import policy as credit_policy
 from app.campaigns import contacts
 from app.campaigns import settings as schedule
 from app.campaigns.settings import CampaignSettings
+from app.developer import events, shapes
 from app.instant import dialer, policy, rules
 from app.models import (
     Call,
@@ -235,15 +236,19 @@ async def _skip_reason(
 
 async def _lead_of(session: AsyncSession, campaign: Campaign, contact: CampaignContact) -> Lead:
     """The account's lead for this number (the call row points at it), made if it is new."""
-    await session.execute(
+    made = await session.scalar(
         insert(Lead)
         .values(account_id=campaign.account_id, phone=contact.phone, name=contact.name)
         .on_conflict_do_nothing(index_elements=["account_id", "phone"])
+        .returning(Lead.id)
     )
     lead = await session.scalar(
         select(Lead).where(Lead.account_id == campaign.account_id, Lead.phone == contact.phone)
     )
     assert lead is not None  # just inserted or already there
+    if made is not None:  # a Core insert skips the flush hook, so a new lead is announced here
+        data = {"lead": shapes.lead_out(lead, lead.created_at).model_dump(mode="json")}
+        events.record(session, campaign.account_id, events.LEAD_CREATED, data)
     if contact.name and not lead.name:
         lead.name = contact.name
     return lead
