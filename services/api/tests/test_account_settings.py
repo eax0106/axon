@@ -148,3 +148,56 @@ def test_a_support_session_cannot_take_a_credential_or_send_the_data_anywhere_ne
     assert sql(migrated_url, "SELECT count(*) FROM google_connections") == 0
     assert db_client.post(reveal, headers=owner).json()["secret"] == secret  # not rotated
     assert db_client.get("/developer/webhooks", headers=support).status_code == 200  # reads stay
+
+
+def test_a_support_session_edits_a_script_but_not_where_its_results_or_callers_go(
+    db_client: TestClient, migrated_url: str
+) -> None:
+    """The script route carries the actions and the result webhook too, and the incoming-call
+    settings carry the transfer number: a support session may save the rest but not change those."""
+    seed(migrated_url)
+    owner = signup(db_client)
+    staff(db_client, migrated_url)
+    support = support_session(migrated_url, "owner@example.com")
+    created = db_client.post(
+        "/employees", json={"channel": "inbound", "name": "Asha"}, headers=owner
+    )
+    eid = created.json()["id"]
+    ours = {"url": "https://hooks.example.com/axon"}
+    assert db_client.put(f"/employees/{eid}/webhook", json=ours, headers=owner).status_code == 200
+    script = f"/employees/{eid}/script"
+    shown = db_client.get(f"/employees/{eid}", headers=owner).json()["script"]
+
+    whole = {**shown, "welcome_message": "Namaste, Acme Solar here"}  # as an editor sends it
+    assert db_client.put(script, json=whole, headers=support).status_code == 200
+    part = {"welcome_message": "Hello from Acme Solar"}
+    assert db_client.put(script, json=part, headers=support).status_code == 200
+    action = {
+        "kind": "http_api", "name": "send_lead", "description": "Send the lead on",
+        "method": "POST", "url": "https://collector.example.net/lead",
+    }  # fmt: skip
+    changes = [
+        {**part, "result_webhook": {"url": "https://collector.example.net/x"}},
+        {**part, "result_webhook": None},
+        {**part, "actions": [action]},
+    ]
+    refused = [db_client.put(script, json=body, headers=support) for body in changes]
+    assert [(r.status_code, r.json()["detail"]) for r in refused] == [
+        (403, "not allowed in a support session")
+    ] * 3
+    assert db_client.post(f"/employees/{eid}/publish", headers=support).status_code == 200
+    (live,) = db_client.get(f"/employees/{eid}/versions", headers=owner).json()
+    assert live["script"]["welcome_message"] == "Hello from Acme Solar"
+    assert live["script"]["result_webhook"]["url"] == ours["url"]
+    assert live["script"]["actions"] == []
+
+    inbound = f"/employees/{eid}/inbound-settings"
+    hours = {"greeting_new": "Welcome to Acme Solar"}
+    assert db_client.put(inbound, json=hours, headers=support).status_code == 200
+    transfer = {**hours, "transfer_number": "+919876543210", "transfer_when": "asks for a person"}
+    moved = db_client.put(inbound, json=transfer, headers=support)
+    assert moved.status_code == 403
+    assert db_client.get(inbound, headers=owner).json()["transfer_number"] is None
+    assert db_client.put(inbound, json=transfer, headers=owner).status_code == 200
+    kept = {**transfer, "greeting_new": "Hello"}  # the number as it is, other fields changed
+    assert db_client.put(inbound, json=kept, headers=support).status_code == 200

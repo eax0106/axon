@@ -133,12 +133,17 @@ async def require_admin(user: CurrentUser, request: Request) -> User:
     return user
 
 
-async def not_impersonating(user: CurrentUser, request: Request) -> User:
+def refuse_in_support_session(request: Request) -> None:
     """For what only the account's own people may do: change the password, and anything that
-    outlives a support session or sends the account's data out (API keys, the lead-intake secret,
-    webhooks, actions, a Google connection)."""
+    outlives a support session and lets calls be placed or sends the account's calls or data out
+    (API keys, the lead-intake secret, webhooks, actions, a Google connection, a transfer number).
+    Routes that also take other changes call it only when such a field changes."""
     if request.state.impersonator is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not allowed in a support session")
+
+
+async def not_impersonating(user: CurrentUser, request: Request) -> User:
+    refuse_in_support_session(request)
     return user
 
 

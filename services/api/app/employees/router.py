@@ -5,14 +5,14 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions import service as actions
 from app.actions.schema import mask
-from app.auth import CurrentUser
+from app.auth import CurrentUser, refuse_in_support_session
 from app.db import Session
 from app.developer import result_webhook
 from app.employees import ambience, runtime, service
@@ -256,9 +256,14 @@ async def duplicate(employee_id: uuid.UUID, user: CurrentUser, session: Session)
 
 @router.put("/{employee_id}/script")
 async def put_script(
-    employee_id: uuid.UUID, body: ScriptBundle, user: CurrentUser, session: Session
+    employee_id: uuid.UUID,
+    body: ScriptBundle,
+    request: Request,
+    user: CurrentUser,
+    session: Session,
 ) -> EmployeeOut:
-    """Replace the draft script. It reaches live calls only after publish."""
+    """Replace the draft script. It reaches live calls only after publish. A support session may
+    edit the script but not change the actions or the result webhook."""
     employee = await load(session, user, employee_id)
     stored = service.bundle_of(employee)
     # A script sent without an `actions` (or `result_webhook`) field leaves it as it is, so an
@@ -271,6 +276,8 @@ async def put_script(
             hook = result_webhook.keep_secret(body.result_webhook, stored.result_webhook)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+    if (kept, hook) != (stored.actions, stored.result_webhook):
+        refuse_in_support_session(request)
     employee.draft = body.model_copy(update={"actions": kept, "result_webhook": hook}).model_dump()
     await session.commit()
     return await out(session, employee)
