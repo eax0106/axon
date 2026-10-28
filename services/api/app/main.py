@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.account.settings import router as account_router
 from app.actions.router import router as actions_router
+from app.admin.accounts import router as admin_accounts_router
+from app.admin.ops import router as admin_ops_router
+from app.admin.reports import router as admin_reports_router
 from app.auth import AuthNotConfiguredError, require_admin
 from app.auth import router as auth_router
 from app.billing.ledger import InsufficientCreditsError
@@ -96,6 +99,9 @@ app.include_router(public_api_router)
 app.include_router(public_docs_router)
 app.include_router(account_router)
 app.include_router(dnc_router)
+app.include_router(admin_accounts_router)
+app.include_router(admin_ops_router)
+app.include_router(admin_reports_router)
 
 
 @app.exception_handler(AuthNotConfiguredError)

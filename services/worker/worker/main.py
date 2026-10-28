@@ -1,5 +1,5 @@
 """Arq worker: the Instant dialer, the campaign scheduler, post-call analysis, billing, the daily
-incoming-call summary, the Sheets lead poller and the developer webhooks.
+incoming-call summary, the Sheets lead poller, the developer webhooks and its own heartbeat.
 
 Run: `arq worker.main.WorkerSettings`. Health: `arq --check worker.main.WorkerSettings`.
 Every tick is a plain function of the database and `now` (app.instant), so the worker is only
@@ -15,6 +15,7 @@ from arq import cron
 from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.admin import reports
 from app.billing import alerts, metering
 from app.calls import postcall
 from app.campaigns import runner as campaigns
@@ -27,6 +28,7 @@ from app.inbound import summary
 from app.instant import dialer
 from app.instant.sheets import poll_all
 from app.numbers import renewals
+from app.providers import health
 from app.providers.base import (
     ProviderKind,
     ProviderNotConfiguredError,
@@ -153,6 +155,17 @@ async def webhook_prune_tick(ctx: dict[str, Any]) -> int:
     return await delivery.prune(_factory(ctx), datetime.now(UTC))
 
 
+async def heartbeat_tick(ctx: dict[str, Any]) -> int:
+    """Every minute: say the worker is alive (the admin console alerts when it goes quiet)."""
+    await reports.beat(_factory(ctx), datetime.now(UTC))
+    return 1
+
+
+async def health_prune_tick(ctx: dict[str, Any]) -> int:
+    """Every hour: forget vendor outcomes older than a week."""
+    return await health.prune(_factory(ctx), datetime.now(UTC))
+
+
 class WorkerSettings:
     functions = (ping,)
     cron_jobs = (
@@ -167,6 +180,8 @@ class WorkerSettings:
             renewal_tick, minute=set(range(0, 60, 10)), second=35, run_at_startup=False, timeout=240
         ),
         cron(reap_tick, second=15, run_at_startup=False, timeout=50),
+        cron(heartbeat_tick, second=5, run_at_startup=True, timeout=30),
+        cron(health_prune_tick, minute=23, second=30, run_at_startup=False, timeout=240),
         cron(sheets_tick, second=45, run_at_startup=False, timeout=50),
         cron(
             summary_tick, minute=set(range(5, 60, 10)), second=20, run_at_startup=False, timeout=240
