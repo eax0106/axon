@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.auth import CurrentUser
+from app.auth import CurrentUser, not_impersonating
 from app.billing import ledger
 from app.billing.config import number_monthly_fee, number_setup_fee
 from app.db import Session
@@ -156,7 +156,11 @@ def _carrier_refused(exc: Exception) -> bool:
     )
 
 
-@router.post("/numbers/purchase", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/numbers/purchase",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(not_impersonating)],
+)
 async def purchase(
     body: Purchase, user: OwnerUser, session: Session, response: Response
 ) -> dict[str, Any]:
@@ -240,7 +244,7 @@ async def purchase(
     return _number_out(bought)
 
 
-@router.delete("/numbers/{number_id}")
+@router.delete("/numbers/{number_id}", dependencies=[Depends(not_impersonating)])
 async def release(number_id: uuid.UUID, user: OwnerUser, session: Session) -> dict[str, str]:
     """Give a number back. Its employee is detached (and paused if it was live); the rent already
     paid is not refunded."""
@@ -293,7 +297,7 @@ class Attach(BaseModel):
     number_id: uuid.UUID
 
 
-@router.put("/employees/{employee_id}/number")
+@router.put("/employees/{employee_id}/number", dependencies=[Depends(not_impersonating)])
 async def attach_number(
     employee_id: uuid.UUID, body: Attach, user: OwnerUser, session: Session
 ) -> dict[str, Any]:
@@ -345,7 +349,11 @@ class PanBody(BaseModel):
         return value.strip().upper() if isinstance(value, str) else value
 
 
-@router.post("/numbers/kyc/verify-pan", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/numbers/kyc/verify-pan",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(not_impersonating)],
+)
 async def verify_pan(body: PanBody, user: OwnerUser, session: Session) -> dict[str, Any]:
     """Step one. The PAN goes to the verifier; only its last four characters are kept."""
     result = await _kyc().verify_pan(body.pan, body.name)
@@ -377,7 +385,7 @@ class DigilockerStart(BaseModel):
     redirect_url: Annotated[str, StringConstraints(pattern=r"^https://", max_length=500)]
 
 
-@router.post("/numbers/kyc/digilocker/initiate")
+@router.post("/numbers/kyc/digilocker/initiate", dependencies=[Depends(not_impersonating)])
 async def digilocker_initiate(
     body: DigilockerStart, user: OwnerUser, session: Session
 ) -> dict[str, str]:
@@ -395,7 +403,7 @@ class DigilockerCheck(BaseModel):
     holder_id: uuid.UUID
 
 
-@router.post("/numbers/kyc/digilocker/verify")
+@router.post("/numbers/kyc/digilocker/verify", dependencies=[Depends(not_impersonating)])
 async def digilocker_verify(
     body: DigilockerCheck, user: OwnerUser, session: Session
 ) -> dict[str, Any]:

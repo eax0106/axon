@@ -7,11 +7,11 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func, select
 
-from app.auth import CurrentUser
+from app.auth import CurrentUser, not_impersonating
 from app.billing import invoices, ledger, payments
 from app.billing.config import (
     ai_use_fee,
@@ -92,7 +92,11 @@ class OrderRequest(BaseModel):
     amount_inr: Annotated[Decimal, Field(max_digits=9, decimal_places=2)]
 
 
-@router.post("/wallet/topup/order", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/wallet/topup/order",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(not_impersonating)],
+)
 async def topup_order(body: OrderRequest, user: OwnerUser, session: Session) -> dict[str, Any]:
     low, high = topup_limits()
     if not low <= body.amount_inr <= high:
@@ -122,7 +126,7 @@ class Checkout(BaseModel):
     razorpay_signature: str = Field(max_length=200)
 
 
-@router.post("/wallet/topup/verify")
+@router.post("/wallet/topup/verify", dependencies=[Depends(not_impersonating)])
 async def topup_verify(
     body: Checkout, user: OwnerUser, session: Session, response: Response
 ) -> dict[str, Any]:

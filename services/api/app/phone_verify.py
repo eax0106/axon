@@ -14,11 +14,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from xml.sax.saxutils import escape
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, StringConstraints
 from sqlalchemy import delete, select
 
-from app.auth import CurrentUser, jwt_secret
+from app.auth import CurrentUser, jwt_secret, not_impersonating
 from app.db import Session
 from app.employees.limits import take
 from app.employees.router import OwnerUser
@@ -48,7 +48,11 @@ class PhoneBody(BaseModel):
     phone: Annotated[str, StringConstraints(pattern=INDIAN_MOBILE.pattern)]
 
 
-@router.post("/accounts/owner-phone", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/accounts/owner-phone",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(not_impersonating)],
+)
 async def send_code(body: PhoneBody, user: OwnerUser, session: Session) -> dict[str, int]:
     """Ring `phone` and read out a six-digit code."""
     telephony = require(ProviderKind.TELEPHONY)
@@ -104,7 +108,7 @@ class CodeBody(BaseModel):
     code: Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
 
 
-@router.post("/accounts/owner-phone/verify")
+@router.post("/accounts/owner-phone/verify", dependencies=[Depends(not_impersonating)])
 async def verify_code(body: CodeBody, user: CurrentUser, session: Session) -> dict[str, str]:
     otp = await session.scalar(
         select(PhoneOtp)

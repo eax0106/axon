@@ -170,19 +170,9 @@ async def vobiz_inbound(request: Request) -> Response:
     telephony = _telephony()
     engine_public_url()  # 503 now, rather than an answer the carrier cannot follow
     form = parse_qs((await request.body()).decode("utf-8", "replace"))
-
-    def field(name: str) -> str:
-        return (form.get(name) or [""])[0]
-
     factory = async_sessionmaker(request.app.state.db, expire_on_commit=False)
-    routed = await route(
-        factory,
-        telephony,
-        to=field("To"),
-        caller=field("From"),
-        carrier_id=field("CallUUID"),
-        now=datetime.now(UTC),
-    )
+    carrier_id = (form.get("CallUUID") or [""])[0]
+    routed = await route(factory, telephony, carrier_id=carrier_id, now=datetime.now(UTC))
     if routed.kind != "answer":
         return _xml(REJECT_XML)
     return _stream_response(
