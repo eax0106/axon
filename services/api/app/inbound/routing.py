@@ -38,6 +38,7 @@ from app.models import (
     PhoneNumber,
 )
 from app.numbers import channels
+from app.providers import failover
 from app.providers.base import TelephonyProvider
 
 ANSWERABLE = (NumberStatus.ACTIVE, NumberStatus.GRACE)  # a number in grace is still rented
@@ -211,6 +212,10 @@ async def _refusal(
     held = await credit_policy.blocked_reason(session, number.account_id, now)
     if held is not None:
         return "credits", held
+    tier = await failover.employee_tier(session, employee)
+    down = await failover.blocked_reason(session, tier, now, outbound=False)
+    if down is not None:
+        return "unavailable", down
     verdict = await policy.check_dial(session, employee, number, "inbound")
     if not verdict.allowed:
         return "rule", verdict.reason

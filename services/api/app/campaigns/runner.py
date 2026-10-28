@@ -38,6 +38,7 @@ from app.models import (
     PhoneNumber,
 )
 from app.numbers import channels
+from app.providers import failover
 from app.providers.base import TelephonyProvider
 from app.settings import api_public_url, engine_public_url
 
@@ -131,6 +132,10 @@ async def _gate(
         return None
     if held := await credit_policy.blocked_reason(session, campaign.account_id, now):
         campaign.note = held
+        return None
+    tier = await failover.employee_tier(session, employee)
+    if down := await failover.blocked_reason(session, tier, now):
+        campaign.note = down
         return None
     verdict = await policy.check_dial(session, employee, number, "outbound", campaign.purpose)
     if not verdict.allowed:

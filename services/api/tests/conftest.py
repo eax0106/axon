@@ -164,6 +164,7 @@ def vobiz(monkeypatch: pytest.MonkeyPatch) -> Iterator[VobizAccount]:
     """Vobiz's number store and KYC with keys set; every adapter talks to this fake account."""
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     fake = VobizAccount()
     transport = httpx.MockTransport(fake.handler)
 
@@ -198,6 +199,7 @@ def carrier(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, VobizTelepho
 
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     fake = Carrier()
     yield fake, VobizTelephony(transport=httpx.MockTransport(fake.handler))
 

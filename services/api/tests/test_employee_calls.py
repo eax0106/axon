@@ -43,6 +43,7 @@ class Carrier:
 def carrier(monkeypatch: pytest.MonkeyPatch) -> Iterator[Carrier]:
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     fake = Carrier()
     transport = httpx.MockTransport(fake.handler)
     monkeypatch.setattr(
@@ -130,6 +131,7 @@ def test_test_call_is_503_without_carrier_keys_or_public_url(
     ]
     monkeypatch.setenv("VOBIZ_AUTH_ID", "MA_TEST")
     monkeypatch.setenv("VOBIZ_AUTH_TOKEN", "token")
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")  # the speech legs: no call starts without them
     monkeypatch.delenv("AXON_ENGINE_PUBLIC_URL")
     response = api.post(path, json={"phone": PHONE}, headers=owner)
     assert response.status_code == 503 and response.json()["missing_keys"] == [

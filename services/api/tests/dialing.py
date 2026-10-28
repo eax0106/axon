@@ -25,6 +25,7 @@ class Carrier:
         self.placed: list[dict[str, Any]] = []
         self.cdr: dict[str, dict[str, Any] | None] = {}
         self.fail_next = False
+        self.refuse_with = 0  # answer every dial request with this status, if set
         self.timeout_next = False
         self.same_ids = False
         self.live: set[str] = set()
@@ -62,6 +63,8 @@ class Carrier:
             if self.fail_next:
                 self.fail_next = False
                 return httpx.Response(402, json={"error": "low balance"})
+            if self.refuse_with:
+                return httpx.Response(self.refuse_with, json={"error": "carrier trouble"})
             self.placed.append(json.loads(request.content))
             return httpx.Response(
                 200, json={"message": "Call fired", "request_uuid": f"req-{len(self.placed)}"}
