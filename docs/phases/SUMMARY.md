@@ -26,7 +26,7 @@ Status: Track 1 (the backend) is built, reviewed and merged phase by phase, B0 t
 
 - **Parity:** `docs/PARITY.md` has 73 backend rows, all ticked, each mapped to routes and tests in `docs/phases/b14-parity-audit.md` (a test enforces it). Three items are outside the backend and not counted: the five licensed ambience sound files (an asset), the n8n, Make and Zapier guides (Track 2 content) and the admin and dashboard UI (Track 2).
 - **API:** 234 operations. Every one is swept by a test for anonymous access, and every `/admin` one for non-staff access.
-- **Tests:** SUITE_COUNT. Everything that needs a vendor key is tagged `requires_keys` and is the only thing skipped.
+- **Tests:** 1,251 pass and 65 are skipped on purpose (B14 run). Everything that needs a vendor key is tagged `requires_keys` and is the only thing skipped.
 - **Gates:** each phase has a gate ledger of runnable checks (B8: 18, B9: 19 with its CI gates, B10: 19, B11: 19, B12: 21, B13: 20, B14: 16); a phase merged only with every gate met, CI green on Ubuntu, macOS and Windows plus the Compose job, and a reviewer's approval. Earlier ledgers were not kept in the repository.
 - **Load:** 50 simultaneous users, 12,000 requests, no errors (`docs/runbooks/capacity.md`; the call side waits for vendor keys).
 
