@@ -29,6 +29,7 @@ class Carrier:
         self.timeout_next = False
         self.same_ids = False
         self.live: set[str] = set()
+        self.parties: dict[str, tuple[str, str]] = {}  # live call -> (from, to) as Vobiz has it
         self.routed: dict[str, str] = {}  # number -> application it was attached to
         self.applications: list[dict[str, Any]] = []
         self.transfers: list[dict[str, Any]] = []
@@ -70,8 +71,11 @@ class Carrier:
                 200, json={"message": "Call fired", "request_uuid": f"req-{len(self.placed)}"}
             )
         carrier_id = request.url.path.rsplit("/", 1)[-1]
-        if "/cdr/" not in request.url.path:  # is_live
-            return httpx.Response(200 if carrier_id in self.live else 404)
+        if "/cdr/" not in request.url.path:  # a live call (is_live, live_parties)
+            if carrier_id not in self.live:
+                return httpx.Response(404)
+            caller, called = self.parties.get(carrier_id, ("", ""))
+            return httpx.Response(200, json={"call_uuid": carrier_id, "from": caller, "to": called})
         if carrier_id.startswith("req-") and not self.same_ids:
             return httpx.Response(404)
         record = self.cdr.get(carrier_id, self.default_cdr)

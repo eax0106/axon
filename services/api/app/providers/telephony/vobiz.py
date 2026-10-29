@@ -92,6 +92,16 @@ class VobizTelephony(TelephonyProvider, NumberStore):
             response.raise_for_status()
             return True
 
+    async def live_parties(self, call_uuid: str) -> tuple[str, str] | None:
+        """From the live-call record (docs: /call/retrieve-live-call), not from a request."""
+        async with self._client() as client:
+            response = await client.get(f"/Call/{call_uuid}", params={"status": "live"})
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            record = response.json()
+            return str(record.get("from") or ""), str(record.get("to") or "")
+
     async def hang_up(self, call_uuid: str) -> None:
         """End a live or queued call. 404 means it already ended, which is fine."""
         async with self._client() as client:

@@ -177,13 +177,11 @@ def test_two_fetches_of_the_answer_url_for_one_carrier_call_are_one_call(
     fake, _ = carrier
     inbound_employee(api, migrated_url)
     fake.live.add("leg-1")
+    fake.parties["leg-1"] = (CALLER, NUMBER)
 
     async def both(factory: Any) -> list[routing.Routed]:
         asked = [
-            routing.route(
-                factory, adapter(fake), to=NUMBER, caller=CALLER, carrier_id="leg-1", now=NOW
-            )
-            for _ in range(4)
+            routing.route(factory, adapter(fake), carrier_id="leg-1", now=NOW) for _ in range(4)
         ]
         return list(await asyncio.gather(*asked))
 

@@ -73,15 +73,14 @@ def ring(
     now: datetime = NOW,
     live: bool = True,
 ) -> routing.Routed:
-    """A call arrives on `to`. The carrier has it live unless `live` is False."""
+    """A call from `caller` arrives on `to`. The carrier has it live unless `live` is False."""
     carrier_id = carrier_id or f"leg-{uuid.uuid4().hex[:8]}"
     if live:
         fake.live.add(carrier_id)
+        fake.parties[carrier_id] = (caller, to)
 
     async def work(factory: Any) -> routing.Routed:
-        return await routing.route(
-            factory, adapter(fake), to=to, caller=caller, carrier_id=carrier_id, now=now
-        )
+        return await routing.route(factory, adapter(fake), carrier_id=carrier_id, now=now)
 
     out: routing.Routed = run_db(url, work)
     return out

@@ -1,15 +1,16 @@
 import base64
 import hashlib
 import hmac
-import itertools
+import os
+import uuid as uuid_
 from collections.abc import Iterator
 from typing import Any
 
 import httpx
 import pytest
+import redis
 from fastapi.testclient import TestClient
 
-from app.instant import public
 from app.providers.telephony.vobiz import BASE_URL, VobizTelephony
 
 from .conftest import sql
@@ -17,11 +18,10 @@ from .helpers import live_employee, seed, signup
 
 URL = "https://api.example.in/vobiz/events"
 TOKEN = "vobiz-token"  # noqa: S105 - test credential
-_nonces = itertools.count(10_000_000_000_000_000_000)
 
 
 def sign(url: str = URL, nonce: str | None = None, token: str = TOKEN) -> dict[str, str]:
-    nonce = nonce or str(next(_nonces))
+    nonce = nonce or uuid_.uuid4().hex  # unique across runs: seen nonces live in Redis
     digest = hmac.new(token.encode(), f"{url}.{nonce}".encode(), hashlib.sha256).digest()
     return {
         "X-Vobiz-Signature-V3": base64.b64encode(digest).decode(),
@@ -66,7 +66,6 @@ def api(
             base_url=f"{BASE_URL}/Account/MA_TEST", headers=self._headers, transport=transport
         ),
     )
-    public._seen_nonces.clear()
     yield db_client, cdr
 
 
@@ -154,12 +153,28 @@ def test_a_callback_without_a_valid_signature_is_refused_before_anything_is_read
     assert cdr.asked == [] and statuses(migrated_url) == ["ringing"]
 
 
-def test_a_replayed_nonce_is_refused(api: tuple[TestClient, Cdr], migrated_url: str) -> None:
+@pytest.fixture
+def shared_redis(monkeypatch: pytest.MonkeyPatch) -> str:
+    url = os.environ.get("AXON_TEST_REDIS_URL")
+    if not url:
+        pytest.skip("AXON_TEST_REDIS_URL not set; the nonce store needs a real Redis")
+    monkeypatch.setenv("REDIS_URL", url)
+    return url
+
+
+def test_a_replayed_nonce_is_refused_by_every_api_process(
+    shared_redis: str, api: tuple[TestClient, Cdr], migrated_url: str
+) -> None:
+    """Found by the SEC test: the nonces were remembered per process for five minutes, so a
+    replay to another replica, after a restart or later on was believed."""
     client, _ = api
     ringing_call(client, migrated_url)
     headers = sign()
     assert hangup(client, headers).status_code == 200
     assert hangup(client, headers).status_code == 409
+    with redis.Redis.from_url(shared_redis) as store:  # shared by every process, for a week
+        ttl = store.ttl("vobiz-nonce:" + headers["X-Vobiz-Signature-V3-Nonce"])
+    assert 6 * 24 * 3600 < ttl <= 7 * 24 * 3600
 
 
 def test_vobiz_retrying_with_a_fresh_nonce_does_not_double_retry_the_lead(

@@ -77,14 +77,16 @@ async def route(
     factory: async_sessionmaker[AsyncSession],
     telephony: TelephonyProvider,
     *,
-    to: str,
-    caller: str,
     carrier_id: str,
     now: datetime,
 ) -> Routed:
-    """Decide an incoming call. Asking twice about the same carrier call gives the same answer."""
-    if not carrier_id or not await telephony.is_live(carrier_id):
+    """Decide an incoming call. Asking twice about the same carrier call gives the same answer.
+    The answer-URL request is unsigned, so only its call id is taken from it: who called and
+    which number they dialled come from the carrier's own record of the live call."""
+    parties = await telephony.live_parties(carrier_id) if carrier_id else None
+    if parties is None:
         return Routed("unknown")  # a request for a call the carrier does not have is not believed
+    caller, to = parties
     async with factory() as session:
         # One decision per carrier call: a retry of the fetch waits here and then finds the row.
         await session.execute(

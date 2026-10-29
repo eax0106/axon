@@ -62,6 +62,10 @@ def _leg(kind: ProviderKind) -> type[Provider]:
 class _Carrier(TelephonyProvider):
     name = "testcarrier"
     live = True
+    parties = (
+        "+919876543210",
+        "+919100000001",
+    )  # (from, to) of the live call, as the carrier has it
     failures = 0  # hang-ups to fail before succeeding
     hangups: ClassVar[list[str]] = []
 
@@ -81,6 +85,9 @@ class _Carrier(TelephonyProvider):
 
     async def is_live(self, call_uuid: str) -> bool:
         return self.live
+
+    async def live_parties(self, call_uuid: str) -> tuple[str, str] | None:
+        return self.parties if self.live else None
 
     async def ensure_application(self, name: str, answer_url: str, hangup_url: str) -> str:
         return "app"

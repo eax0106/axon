@@ -82,6 +82,11 @@ class TelephonyProvider(Provider):
         """Whether the carrier has this call up right now."""
 
     @abstractmethod
+    async def live_parties(self, call_uuid: str) -> tuple[str, str] | None:
+        """The caller's and the called number of a call the carrier has up right now, as the
+        carrier itself records them, or None when it has no such live call."""
+
+    @abstractmethod
     async def hang_up(self, call_uuid: str) -> None:
         """End the call; a call that already ended is not an error."""
 

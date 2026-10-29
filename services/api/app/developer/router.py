@@ -242,7 +242,7 @@ async def delete_webhook(endpoint_id: uuid.UUID, user: OwnerUser, session: Sessi
     await session.commit()
 
 
-@router.post("/webhooks/{endpoint_id}/rotate-secret")
+@router.post("/webhooks/{endpoint_id}/rotate-secret", dependencies=[Depends(not_impersonating)])
 async def rotate_secret(
     endpoint_id: uuid.UUID, user: OwnerUser, session: Session
 ) -> dict[str, str]:

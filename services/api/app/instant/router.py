@@ -353,7 +353,7 @@ class MetaBody(BaseModel):
     page_access_token: str = Field(min_length=1, max_length=2000)
 
 
-@router.put("/employees/{employee_id}/instant/meta")
+@router.put("/employees/{employee_id}/instant/meta", dependencies=[Depends(not_impersonating)])
 async def connect_meta(
     employee_id: uuid.UUID, body: MetaBody, user: OwnerUser, session: Session
 ) -> dict[str, str]:
@@ -405,7 +405,9 @@ class SheetsConnect(BaseModel):
     redirect_uri: str = Field(min_length=8, max_length=500)
 
 
-@router.post("/employees/{employee_id}/instant/sheets/connect")
+@router.post(
+    "/employees/{employee_id}/instant/sheets/connect", dependencies=[Depends(not_impersonating)]
+)
 async def sheets_connect(
     employee_id: uuid.UUID, body: SheetsConnect, user: OwnerUser, session: Session
 ) -> dict[str, bool]:
@@ -426,7 +428,7 @@ class SheetBody(BaseModel):
     range: str = Field(default="A:Z", min_length=1, max_length=100)
 
 
-@router.put("/employees/{employee_id}/instant/sheets")
+@router.put("/employees/{employee_id}/instant/sheets", dependencies=[Depends(not_impersonating)])
 async def sheets_choose(
     employee_id: uuid.UUID, body: SheetBody, user: OwnerUser, session: Session
 ) -> dict[str, Any]:

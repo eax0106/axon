@@ -92,6 +92,29 @@ def test_a_call_the_carrier_does_not_have_is_rejected_and_leaves_nothing(
     assert calls(migrated_url) == []
 
 
+def test_who_called_and_which_number_come_from_the_carrier_not_the_request(
+    api: TestClient,
+    migrated_url: str,
+    providers: None,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Found by the SEC test: the answer URL is unsigned, so a request naming a live call id must
+    not choose the caller or the number dialled."""
+    employee, _owner = inbound_employee(api, migrated_url)
+    monkeypatch.setattr(_Carrier, "parties", ("+919811112222", "+919100000001"))
+    forged = form(From="+910000000000", To="+919100000099")
+    with TestClient(app) as client:
+        response = client.post("/vobiz/inbound", data=forged)
+    _path, query = stream_of(response.text)
+    (call,) = calls(migrated_url)
+    assert query["employee"] == [employee] and call["caller_phone"] == "+919811112222"
+
+    monkeypatch.setattr(_Carrier, "parties", ("+919811112222", "+919100000099"))  # not ours
+    with TestClient(app) as client:
+        response = client.post("/vobiz/inbound", data=form(CallUUID="other-live-call"))
+    assert '<Hangup reason="rejected"/>' in response.text and len(calls(migrated_url)) == 1
+
+
 def test_the_answer_needs_the_carrier_and_the_public_address(
     api: TestClient,
     migrated_url: str,

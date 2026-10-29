@@ -4,7 +4,6 @@
 
 import hmac
 import logging
-import time
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -12,6 +11,7 @@ from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, PlainTextResponse
+from redis.exceptions import RedisError
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -27,8 +27,10 @@ router = APIRouter()
 log = logging.getLogger("axon.instant")
 
 SECRET_HEADER = "X-Axon-Lead-Secret"  # noqa: S105 - a header name
-NONCE_TTL_S = 300.0
-_seen_nonces: dict[str, float] = {}  # ponytail: per process; shared store if the API scales out
+# Vobiz's signature carries no time, so a nonce is remembered in Redis (shared by every API
+# replica, kept across restarts) for a week. ponytail: a replay after that only re-runs a settle
+# from the carrier's own record, which changes nothing; a longer memory is only Redis space.
+NONCE_TTL_S = 7 * 24 * 3600
 
 
 def intake_response(result: intake.Result) -> JSONResponse:
@@ -138,13 +140,16 @@ async def website_intake(
     return intake_response(result)
 
 
-def _fresh(nonce: str, now: float) -> bool:
-    for old in [n for n, expiry in _seen_nonces.items() if expiry < now]:
-        del _seen_nonces[old]
-    if nonce in _seen_nonces:
-        return False
-    _seen_nonces[nonce] = now + NONCE_TTL_S
-    return True
+async def _fresh(request: Request, nonce: str) -> bool:
+    """False for a nonce seen before. With Redis down the callback is let through (logged), as a
+    replay is harmless and a lost call-end is not."""
+    try:
+        return bool(
+            await request.app.state.redis.set(f"vobiz-nonce:{nonce}", 1, nx=True, ex=NONCE_TTL_S)
+        )
+    except (RedisError, OSError):
+        log.warning("vobiz nonce check skipped: redis unavailable")
+        return True
 
 
 @router.post("/vobiz/events")
@@ -158,7 +163,7 @@ async def vobiz_events(request: Request) -> Response:
     if not telephony.callback_is_authentic(url, request.headers):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad signature")
     nonce = request.headers.get("x-vobiz-signature-v3-nonce", "")
-    if not _fresh(nonce, time.time()):
+    if not await _fresh(request, nonce):
         raise HTTPException(status.HTTP_409_CONFLICT, "nonce already used")
     form = parse_qs((await request.body()).decode("utf-8", "replace"))
     leg_id = (form.get("CallUUID") or [""])[0]
