@@ -15,6 +15,7 @@ from typing import Any
 COMPOSE = ["docker", "compose", "-f", str(Path(__file__).parents[1] / "deploy/docker-compose.yml")]
 API = f"http://localhost:{os.environ.get('AXON_API_PORT', '8000')}"
 ENGINE = f"http://localhost:{os.environ.get('AXON_ENGINE_PORT', '8001')}"
+WEB = f"http://localhost:{os.environ.get('AXON_WEB_PORT', '8080')}"
 MAX_IMAGE_BYTES = 1_000_000_000
 
 
@@ -84,6 +85,12 @@ def main() -> None:
         refused = http_error(ENGINE + "/vobiz/answer", "POST")
         assert refused.code == 503
         assert json.load(refused)["error"] == "provider_not_configured"
+        # The dashboard is served, client routes fall back to it, and /api reaches the API.
+        for path in ("/", "/some/client/route"):
+            with urllib.request.urlopen(WEB + path, timeout=5) as response:
+                assert '<div id="root">' in response.read().decode(), f"web did not serve {path}"
+        assert get_json("/api/readyz", WEB) == {"status": "ready"}
+        print("web serves the dashboard and proxies /api")
         for image in ("axon-api:dev", "axon-engine:dev", "axon-worker:dev"):
             # Unpacked size of the image's filesystem. `docker image inspect` reports compressed
             # size on some Docker setups and unpacked on others, so it can't be compared.

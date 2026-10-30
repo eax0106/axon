@@ -29,3 +29,7 @@ Thumbs.db
 # Database dumps (they hold every customer secret)
 backups/
 *.dump
+
+# playwright
+test-results/
+playwright-report/

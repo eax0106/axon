@@ -1,0 +1,11 @@
+{
+  "name": "axon",
+  "private": true,
+  "packageManager": "pnpm@10.34.9",
+  "engines": { "node": ">=20.19 <21 || >=22.12" },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "build": "pnpm --filter web build"
+  }
+}

@@ -27,11 +27,11 @@ Legend: `todo` · `building` · `in review` · `changes` · `merged` · `blocked
 
 ## Track 2 — Frontend (after Track 1 + SEC)
 
-Opus builder only (medium effort for UI and UX work, owner rule 2026-10-30). Plan drafted 2026-10-30, **waiting for the owner's approval**; nothing is built until then.
+Opus builder only (medium effort for UI and UX work, owner rule 2026-10-30). Plan approved by the owner on 2026-10-30, with the dependency list, team invites left out of F11, and an "Axon" wordmark until a logo exists.
 
 | Phase | Title | Status | PR | Notes |
 |---|---|---|---|---|
-| F1 | Foundation, contracts, app shell | todo | | |
+| F1 | Foundation, contracts, app shell | in review | | |
 | F2 | Sign-up, sign-in, account basics | todo | | |
 | F3 | AI employee builder | todo | | |
 | F4 | Test calls and the live-call view | todo | | |
