@@ -2,7 +2,7 @@ import type { paths } from "@axon/contracts";
 import createClient from "openapi-fetch";
 
 const TOKEN_KEY = "axon.token";
-export const SIGNED_OUT = "axon:signed-out";
+const CHANGED = "axon:session";
 
 // Storage can throw (private mode, blocked site data); the app then works for the tab's life.
 let memoryToken: string | null = null;
@@ -14,6 +14,7 @@ export const session = {
       return memoryToken;
     }
   },
+  /** Sign in (a token) or out (null); everything subscribed re-renders. */
   set(token: string | null): void {
     memoryToken = token;
     try {
@@ -22,6 +23,15 @@ export const session = {
     } catch {
       /* memoryToken holds it */
     }
+    window.dispatchEvent(new Event(CHANGED));
+  },
+  subscribe(onChange: () => void): () => void {
+    window.addEventListener(CHANGED, onChange);
+    window.addEventListener("storage", onChange); // signed in or out in another tab
+    return () => {
+      window.removeEventListener(CHANGED, onChange);
+      window.removeEventListener("storage", onChange);
+    };
   },
 };
 
@@ -67,22 +77,19 @@ api.use({
   },
   onResponse({ response }) {
     // An expired or revoked session: drop it and let the app send the user to sign in.
-    if (response.status === 401 && session.token()) {
-      session.set(null);
-      window.dispatchEvent(new Event(SIGNED_OUT));
-    }
+    if (response.status === 401 && session.token()) session.set(null);
     return response;
   },
 });
 
 /**
- * Most API responses are declared as plain objects in the schema, so callers name the shape
- * they read. Throws ApiError on any non-2xx answer.
+ * The response body, or ApiError on any non-2xx answer. Typed from the schema; most responses
+ * are declared there as plain objects, so for those the caller names the shape it reads (T).
  */
-export async function unwrap<T>(
-  request: Promise<{ data?: unknown; error?: unknown; response: Response }>,
-): Promise<T> {
+export async function unwrap<T = never, D = unknown>(
+  request: Promise<{ data?: D; error?: unknown; response: Response }>,
+): Promise<[T] extends [never] ? D : T> {
   const { data, error, response } = await request;
   if (!response.ok) throw new ApiError(response.status, error);
-  return data as T;
+  return data as [T] extends [never] ? D : T;
 }

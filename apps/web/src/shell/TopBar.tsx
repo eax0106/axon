@@ -1,10 +1,9 @@
 import * as Popover from "@radix-ui/react-popover";
 
+import { ago, credits } from "../lib/format";
 import { type Notification, useLiveCalls, useMarkRead, useNotifications, useWallet } from "../lib/queries";
 import { Skeleton } from "../ui/states";
 
-export const credits = (value: string) =>
-  Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 export function CreditChip() {
   const wallet = useWallet();
@@ -34,14 +33,6 @@ export function LiveIndicator() {
       <span className="num">{live}</span> live
     </span>
   );
-}
-
-const ago = new Intl.RelativeTimeFormat("en-IN", { numeric: "auto" });
-function when(iso: string) {
-  const minutes = Math.round((Date.parse(iso) - Date.now()) / 60_000);
-  if (Math.abs(minutes) < 60) return ago.format(minutes, "minute");
-  if (Math.abs(minutes) < 1440) return ago.format(Math.round(minutes / 60), "hour");
-  return ago.format(Math.round(minutes / 1440), "day");
 }
 
 export function Bell() {
@@ -119,7 +110,7 @@ function Item({ n, onRead }: { n: Notification; onRead: () => void }) {
           <span className={`block text-sm ${n.read ? "text-ink-muted" : "text-ink-strong"}`}>{n.title}</span>
           {n.body && <span className="mt-0.5 block text-sm text-ink-muted">{n.body}</span>}
           <span className="mt-1 block text-xs text-ink-muted">
-            {when(n.created_at)}
+            {ago(n.created_at)}
             {!n.read && <span className="sr-only">, unread, select to mark read</span>}
           </span>
         </span>

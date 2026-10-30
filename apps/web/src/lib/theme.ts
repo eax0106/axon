@@ -3,7 +3,7 @@ import { useSyncExternalStore } from "react";
 export type Theme = "dark" | "light";
 const KEY = "axon.theme"; // index.html reads the same key before first paint
 
-export const currentTheme = (): Theme =>
+const currentTheme = (): Theme =>
   document.documentElement.dataset.theme === "light" ? "light" : "dark";
 
 export function setTheme(theme: Theme): void {

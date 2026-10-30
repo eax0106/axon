@@ -1,42 +1,36 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 
-import { currentTheme, setTheme } from "../lib/theme";
+import { session } from "../lib/api";
+import { setTheme, useTheme } from "../lib/theme";
 import { NAV } from "./nav";
 
 type Command = { id: string; label: string; hint: string; keywords: string; run: () => void };
 
-export function CommandPalette(props: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSignOut: () => void;
-}) {
+export function CommandPalette(props: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
 
-  const commands = useMemo<Command[]>(
-    () => [
-      ...NAV.map((n) => ({
-        id: `go:${n.to}`,
-        label: n.label,
-        hint: "Go to",
-        keywords: n.keywords,
-        run: () => navigate(n.to),
-      })),
-      {
-        id: "theme",
-        label: currentTheme() === "dark" ? "Switch to light theme" : "Switch to dark theme",
-        hint: "Theme",
-        keywords: "appearance light dark mode colour color",
-        run: () => setTheme(currentTheme() === "dark" ? "light" : "dark"),
-      },
-      { id: "signout", label: "Sign out", hint: "Account", keywords: "logout log out", run: props.onSignOut },
-    ],
-    // Rebuilt on every open so the theme label is current.
-    [props.open, props.onSignOut, navigate],
-  );
+  const theme = useTheme();
+  const commands: Command[] = [
+    ...NAV.map((n) => ({
+      id: `go:${n.to}`,
+      label: n.label,
+      hint: "Go to",
+      keywords: n.keywords,
+      run: () => navigate(n.to),
+    })),
+    {
+      id: "theme",
+      label: theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
+      hint: "Theme",
+      keywords: "appearance light dark mode colour color",
+      run: () => setTheme(theme === "dark" ? "light" : "dark"),
+    },
+    { id: "signout", label: "Sign out", hint: "Account", keywords: "logout log out", run: () => session.set(null) },
+  ];
 
   const q = query.trim().toLowerCase();
   const shown = q

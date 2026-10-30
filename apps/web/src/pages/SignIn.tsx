@@ -25,7 +25,7 @@ export default function SignIn() {
     setBusy(true);
     setError(null);
     try {
-      const { access_token } = await unwrap<{ access_token: string }>(
+      const { access_token } = await unwrap(
         api.POST("/auth/login", {
           body: { email: String(form.get("email")), password: String(form.get("password")) },
         }),

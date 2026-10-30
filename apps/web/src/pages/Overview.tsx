@@ -1,5 +1,5 @@
+import { credits } from "../lib/format";
 import { useMe, useWallet } from "../lib/queries";
-import { credits } from "../shell/TopBar";
 import { ErrorState, Skeleton } from "../ui/states";
 
 function greeting(hour = new Date().getHours()) {

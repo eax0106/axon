@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Suspense, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 
+import { session } from "../lib/api";
 import { useMe } from "../lib/queries";
 import { setTheme, useTheme } from "../lib/theme";
 import { CommandPalette } from "./CommandPalette";
@@ -11,7 +12,7 @@ import { Bell, CreditChip, LiveIndicator } from "./TopBar";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
-export function Shell({ onSignOut }: { onSignOut: () => void }) {
+export function Shell() {
   const { pathname } = useLocation();
   const [palette, setPalette] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -38,7 +39,7 @@ export function Shell({ onSignOut }: { onSignOut: () => void }) {
         Skip to content
       </a>
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-line bg-bg-deep md:flex">
-        <Rail onSignOut={onSignOut} />
+        <Rail />
       </aside>
 
       <div className="min-w-0">
@@ -59,7 +60,7 @@ export function Shell({ onSignOut }: { onSignOut: () => void }) {
                 className="fixed inset-y-0 left-0 z-50 flex w-[min(280px,85vw)] flex-col border-r border-line bg-bg-deep md:hidden"
               >
                 <Dialog.Title className="sr-only">Menu</Dialog.Title>
-                <Rail onSignOut={onSignOut} />
+                <Rail />
               </Dialog.Content>
             </Dialog.Portal>
           </Dialog.Root>
@@ -91,12 +92,12 @@ export function Shell({ onSignOut }: { onSignOut: () => void }) {
         </main>
       </div>
 
-      <CommandPalette open={palette} onOpenChange={setPalette} onSignOut={onSignOut} />
+      <CommandPalette open={palette} onOpenChange={setPalette} />
     </div>
   );
 }
 
-function Rail({ onSignOut }: { onSignOut: () => void }) {
+function Rail() {
   const me = useMe().data;
   const theme = useTheme();
   return (
@@ -147,7 +148,7 @@ function Rail({ onSignOut }: { onSignOut: () => void }) {
           </span>
           <button
             type="button"
-            onClick={onSignOut}
+            onClick={() => session.set(null)}
             className="shrink-0 text-xs text-ink-muted transition-colors duration-150 hover:text-accent"
           >
             Sign out
