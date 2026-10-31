@@ -12,6 +12,8 @@ dependencies = [
     "redis",
     "sqlalchemy[asyncio]",
     "uvicorn",
+    # uvicorn serves WebSockets (GET /calls/{id}/live) only with a WebSocket library installed.
+    "websockets",
 ]
 
 [build-system]

@@ -28,7 +28,9 @@ export function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  useEffect(() => setMenu(false), [pathname]);
+  useEffect(() => {
+    setMenu(false);
+  }, [pathname]);
 
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[232px_1fr]">
