@@ -19,6 +19,10 @@ const VersionsTab = lazy(() => import("./pages/employees/VersionsTab"));
 const TryTab = lazy(() => import("./pages/employees/TryTab"));
 const LivePage = lazy(() => import("./pages/calls/LivePage"));
 const Billing = lazy(() => import("./pages/billing/Billing"));
+const Conversations = lazy(() => import("./pages/calls/Conversations"));
+const CallDetail = lazy(() => import("./pages/calls/CallDetail"));
+const Leads = lazy(() => import("./pages/leads/Leads"));
+const LeadDetail = lazy(() => import("./pages/leads/LeadDetail"));
 const Numbers = lazy(() => import("./pages/numbers/Numbers"));
 const Overview = lazy(() => import("./pages/Overview"));
 
@@ -47,7 +51,11 @@ export function App() {
               <Route path="account" element={<Account />} />
               <Route path="employees" element={<Employees />} />
               <Route path="employees/new" element={<Hire />} />
+              <Route path="calls" element={<Conversations />} />
+              <Route path="calls/:id" element={<CallDetail />} />
               <Route path="calls/:id/live" element={<LivePage />} />
+              <Route path="leads" element={<Leads />} />
+              <Route path="leads/:id" element={<LeadDetail />} />
               <Route path="billing" element={<Billing />} />
               <Route path="numbers" element={<Numbers />} />
               <Route path="employees/:id" element={<Employee />}>
