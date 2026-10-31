@@ -156,6 +156,10 @@
   .pop-in[data-state="open"] {
     animation: pop-in 200ms var(--ease-panel) both;
   }
+  /* The caret after the employee's words while they are still being spoken. */
+  .live-caret {
+    animation: caret 1s steps(2, start) infinite;
+  }
   /* "On a call" pulse: a ring that scales and fades (transform and opacity only). */
   .live-dot {
     position: relative;
@@ -199,6 +203,11 @@
   from {
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes caret {
+  to {
+    opacity: 0;
   }
 }
 @keyframes live {

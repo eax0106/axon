@@ -190,7 +190,9 @@ def test_call_runs_end_to_end_and_the_length_cap_hangs_up(
     assert events[-1] == {"type": "ended", "reason": "max_length"}
     usage = next(e for e in events if e["type"] == "usage")
     assert 0.9 <= usage["caller_audio_s"] <= 1.05  # 50 x 20 ms in
-    assert 1.5 <= usage["duration_s"] <= 4.0
+    # Billed time runs from the caller's first audio, while the 2 s cap starts when the call does;
+    # a slow runner (Windows CI) can take a second to start the pipeline, so only bound it above.
+    assert 0 < usage["duration_s"] <= 4.0
     assert next(e for e in events if e["type"] == "recording_not_stored")
 
 

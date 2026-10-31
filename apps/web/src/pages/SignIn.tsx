@@ -55,7 +55,7 @@ export default function SignIn() {
       </form>
       <p className="mt-6 text-sm text-ink-muted">
         New to Axon?{" "}
-        <Link to="/sign-up" className="text-accent underline-offset-4 hover:underline">
+        <Link to="/sign-up" className="text-accent underline underline-offset-4">
           Create an account
         </Link>
       </p>

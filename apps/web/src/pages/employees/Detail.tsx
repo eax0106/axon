@@ -18,6 +18,7 @@ export const useDetail = () => useOutletContext<DetailContext>();
 
 const TABS = [
   ["script", "Script"],
+  ["try", "Try it"],
   ["voice", "Voice"],
   ["behaviour", "Behaviour"],
   ["versions", "Versions"],

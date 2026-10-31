@@ -276,6 +276,7 @@ dependencies = [
     { name = "redis" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -289,6 +290,7 @@ requires-dist = [
     { name = "redis" },
     { name = "sqlalchemy", extras = ["asyncio"] },
     { name = "uvicorn" },
+    { name = "websockets" },
 ]
 
 [[package]]

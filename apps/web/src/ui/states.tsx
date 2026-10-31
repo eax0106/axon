@@ -48,7 +48,7 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
         <button
           type="button"
           onClick={retry}
-          className="ml-3 text-accent underline-offset-4 hover:underline"
+          className="ml-3 text-accent underline underline-offset-4"
         >
           Try again
         </button>
