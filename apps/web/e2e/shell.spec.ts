@@ -1,16 +1,7 @@
-import AxeBuilder from "@axe-core/playwright";
-import { type Page, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-async function seriousA11yIssues(page: Page) {
-  // Measure the settled page: mid-fade text is dimmer than it ends up.
-  await page.waitForFunction(() =>
-    document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity),
-  );
-  const { violations } = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
-  return violations
-    .filter((v) => v.impact === "serious" || v.impact === "critical")
-    .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
-}
+import { seriousA11yIssues } from "./a11y";
+
 
 test("a real account signs in and the shell shows its real data", async ({ page, request }) => {
   const email = `f1-${Date.now()}@example.com`;

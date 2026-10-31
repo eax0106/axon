@@ -2,6 +2,7 @@ import { type FormEvent, useState } from "react";
 
 import { ApiError, api, unwrap } from "../lib/api";
 import { queryClient, useMe } from "../lib/queries";
+import { useAction } from "../lib/useAction";
 import { Field, SubmitButton } from "../ui/Field";
 import { ErrorState, Skeleton } from "../ui/states";
 
@@ -58,27 +59,20 @@ function OwnerPhone({ verified }: { verified: string }) {
   const [step, setStep] = useState<"show" | "number" | "code">(verified ? "show" : "number");
   const [phone, setPhone] = useState("");
   const [minutes, setMinutes] = useState(10);
-  const [error, setError] = useState<{ field?: string; api?: unknown }>({});
-  const [busy, setBusy] = useState(false);
-
-  async function run(action: () => Promise<unknown>) {
-    setBusy(true);
-    setError({});
-    try {
-      await action();
-    } catch (err) {
-      // A refusal the owner can act on (wrong code, buy a number first) belongs next to the field.
-      const inline = err instanceof ApiError && (err.status === 400 || err.status === 409 || err.status === 429);
-      setError(inline ? { field: err.message } : { api: err });
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { busy, error: failure, run } = useAction();
+  const [invalid, setInvalid] = useState<string>();
+  // A refusal the owner can act on (wrong code, buy a number first) belongs next to the field.
+  const inline = failure instanceof ApiError && [400, 409, 429].includes(failure.status);
+  const fieldError = invalid ?? (inline ? failure.message : undefined);
+  const check = (ok: boolean, message: string) => {
+    setInvalid(ok ? undefined : message);
+    return ok;
+  };
 
   function sendCode(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const digits = String(new FormData(e.currentTarget).get("phone")).replace(/\D/g, "").slice(-10);
-    if (!MOBILE.test(digits)) return setError({ field: "Enter a 10-digit Indian mobile number." });
+    if (!check(MOBILE.test(digits), "Enter a 10-digit Indian mobile number.")) return;
     setPhone(digits);
     void run(async () => {
       const sent = await unwrap(api.POST("/accounts/owner-phone", { body: { phone: `+91${digits}` } }));
@@ -90,7 +84,7 @@ function OwnerPhone({ verified }: { verified: string }) {
   function verify(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const code = String(new FormData(e.currentTarget).get("code")).trim();
-    if (!/^\d{6}$/.test(code)) return setError({ field: "The code is 6 digits." });
+    if (!check(/^\d{6}$/.test(code), "The code is 6 digits.")) return;
     void run(async () => {
       await unwrap(api.POST("/accounts/owner-phone/verify", { body: { code } }));
       await queryClient.invalidateQueries({ queryKey: ["me"] });
@@ -123,7 +117,7 @@ function OwnerPhone({ verified }: { verified: string }) {
             autoComplete="tel-national"
             prefix="+91"
             defaultValue={phone}
-            error={error.field}
+            error={fieldError}
           />
           <SubmitButton busy={busy} busyText="Calling…">
             Call me with a code
@@ -138,7 +132,7 @@ function OwnerPhone({ verified }: { verified: string }) {
             autoComplete="one-time-code"
             maxLength={6}
             autoFocus
-            error={error.field}
+            error={fieldError}
             hint={`Pick up the call; the code is read twice. It works for ${minutes} minutes.`}
           />
           <SubmitButton busy={busy} busyText="Checking…">
@@ -149,7 +143,7 @@ function OwnerPhone({ verified }: { verified: string }) {
           </button>
         </form>
       )}
-      {error.api !== undefined && <ErrorState error={error.api} />}
+      {failure !== null && !inline && <ErrorState error={failure} />}
     </div>
   );
 }

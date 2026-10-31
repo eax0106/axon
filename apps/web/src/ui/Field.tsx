@@ -46,3 +46,30 @@ export function SubmitButton({ busy, children, busyText }: { busy: boolean; chil
     </button>
   );
 }
+
+/** A labelled native select in the same style as Field. */
+export function Select(props: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: [string, string][];
+  hint?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm text-ink">{props.label}</span>
+      <select
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+        className="mt-1.5 h-12 w-full rounded-ctl border border-line-accent bg-surface px-3 text-ink-strong outline-none focus:border-accent"
+      >
+        {props.options.map(([v, l]) => (
+          <option key={v} value={v}>
+            {l}
+          </option>
+        ))}
+      </select>
+      {props.hint && <span className="mt-1.5 block text-xs text-ink-muted">{props.hint}</span>}
+    </label>
+  );
+}

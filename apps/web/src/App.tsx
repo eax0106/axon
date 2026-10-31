@@ -9,6 +9,13 @@ import { Shell } from "./shell/Shell";
 const SignIn = lazy(() => import("./pages/SignIn"));
 const SignUp = lazy(() => import("./pages/SignUp"));
 const Account = lazy(() => import("./pages/Account"));
+const Employees = lazy(() => import("./pages/employees/List"));
+const Hire = lazy(() => import("./pages/employees/Hire"));
+const Employee = lazy(() => import("./pages/employees/Detail"));
+const ScriptTab = lazy(() => import("./pages/employees/ScriptTab"));
+const VoiceTab = lazy(() => import("./pages/employees/VoiceTab"));
+const BehaviourTab = lazy(() => import("./pages/employees/BehaviourTab"));
+const VersionsTab = lazy(() => import("./pages/employees/VersionsTab"));
 const Overview = lazy(() => import("./pages/Overview"));
 
 function Gate() {
@@ -34,6 +41,15 @@ export function App() {
             <Route element={<Gate />}>
               <Route index element={<Overview />} />
               <Route path="account" element={<Account />} />
+              <Route path="employees" element={<Employees />} />
+              <Route path="employees/new" element={<Hire />} />
+              <Route path="employees/:id" element={<Employee />}>
+                <Route index element={<Navigate to="script" replace />} />
+                <Route path="script" element={<ScriptTab />} />
+                <Route path="voice" element={<VoiceTab />} />
+                <Route path="behaviour" element={<BehaviourTab />} />
+                <Route path="versions" element={<VersionsTab />} />
+              </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
