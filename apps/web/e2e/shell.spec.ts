@@ -22,6 +22,7 @@ test("a real account signs in and the shell shows its real data", async ({ page,
 
   await page.goto("/");
   await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   expect(await seriousA11yIssues(page)).toEqual([]);
 
   await page.getByLabel("Password").fill("wrong password!");

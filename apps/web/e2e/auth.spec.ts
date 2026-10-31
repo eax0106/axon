@@ -16,6 +16,8 @@ test("sign up, sign out, sign back in to the page asked for, and start a phone c
   const business = "శ్రీ లక్ష్మి Traders";
 
   await page.goto("/sign-up");
+  // The page is a lazy chunk: measure it once it has rendered, not the blank frame before.
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   expect(await seriousA11yIssues(page)).toEqual([]);
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByText("Enter your business name.")).toBeVisible();
