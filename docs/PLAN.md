@@ -35,8 +35,8 @@ Opus builder only (medium effort for UI and UX work, owner rule 2026-10-30). Pla
 | F2 | Sign-up, sign-in, account basics | merged | [#20](https://github.com/eax0106/axon/pull/20) c351f04 | |
 | F3 | AI employee builder | merged | [#23](https://github.com/eax0106/axon/pull/23) d9aeed7 | |
 | F4 | Test calls and the live-call view | merged | [#24](https://github.com/eax0106/axon/pull/24) bfe35f6 | |
-| F5 | Credits, billing, numbers, KYC, go live | in review | | completes the guided first run |
-| F6 | Dashboard, conversations, leads | todo | | |
+| F5 | Credits, billing, numbers, KYC, go live | merged | [#25](https://github.com/eax0106/axon/pull/25) da680c5 | completes the guided first run |
+| F6 | Dashboard, conversations, leads | in review | | |
 | F7 | Instant | todo | | |
 | F8 | Bulk campaigns | todo | | |
 | F9 | Inbound | todo | | |
