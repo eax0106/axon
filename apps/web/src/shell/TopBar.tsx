@@ -1,4 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
+import { Link } from "react-router";
 
 import { ago, credits } from "../lib/format";
 import { type Notification, useLiveCalls, useMarkRead, useNotifications, useWallet } from "../lib/queries";
@@ -10,9 +11,10 @@ export function CreditChip() {
   if (!wallet.data) return <Skeleton className="h-8 w-24 rounded-ctl" />;
   const { balance, low } = wallet.data;
   return (
-    <span
+    <Link
+      to="/billing"
       title={low ? "Credits are running low" : "Credit balance (1 credit = ₹1)"}
-      className={`inline-flex h-8 items-center gap-2 rounded-ctl border px-3 text-sm ${
+      className={`inline-flex h-8 items-center gap-2 rounded-ctl border px-3 text-sm transition-colors duration-150 hover:border-line-accent ${
         low ? "border-warn/40 text-warn" : "border-line text-ink"
       }`}
     >
@@ -20,7 +22,7 @@ export function CreditChip() {
       <span className="num">{credits(balance)}</span>
       <span className="text-ink-muted">credits</span>
       {low && <span className="sr-only">, running low</span>}
-    </span>
+    </Link>
   );
 }
 

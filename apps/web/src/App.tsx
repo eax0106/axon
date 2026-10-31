@@ -18,6 +18,8 @@ const BehaviourTab = lazy(() => import("./pages/employees/BehaviourTab"));
 const VersionsTab = lazy(() => import("./pages/employees/VersionsTab"));
 const TryTab = lazy(() => import("./pages/employees/TryTab"));
 const LivePage = lazy(() => import("./pages/calls/LivePage"));
+const Billing = lazy(() => import("./pages/billing/Billing"));
+const Numbers = lazy(() => import("./pages/numbers/Numbers"));
 const Overview = lazy(() => import("./pages/Overview"));
 
 function Gate() {
@@ -46,6 +48,8 @@ export function App() {
               <Route path="employees" element={<Employees />} />
               <Route path="employees/new" element={<Hire />} />
               <Route path="calls/:id/live" element={<LivePage />} />
+              <Route path="billing" element={<Billing />} />
+              <Route path="numbers" element={<Numbers />} />
               <Route path="employees/:id" element={<Employee />}>
                 <Route index element={<Navigate to="script" replace />} />
                 <Route path="script" element={<ScriptTab />} />
