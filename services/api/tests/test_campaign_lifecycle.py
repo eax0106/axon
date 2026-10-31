@@ -77,8 +77,10 @@ def test_a_campaign_does_not_start_without_the_owners_consent(
     campaign = make_campaign(api, owner, employee, ["9876543210"], start=False, consent=False)
     refused = api.post(f"/campaigns/{campaign}/start", headers=owner)
     assert refused.status_code == 409 and "consent" in refused.json()["detail"]
+    shown = get(api, owner, campaign)["consent_statement"]  # what the owner reads before confirming
     given = api.post(f"/campaigns/{campaign}/consent", json={"confirm": True}, headers=owner)
     assert given.status_code == 201 and "agreed to receive calls" in given.json()["statement"]
+    assert given.json()["statement"] == shown  # stored word for word as shown
     recorded = api.get(f"/campaigns/{campaign}/consent", headers=owner).json()
     assert len(recorded) == 1 and recorded[0]["statement"] == given.json()["statement"]
     assert sql(migrated_url, "SELECT scope::text FROM consent_attestations") == "campaign"

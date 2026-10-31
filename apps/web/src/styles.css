@@ -156,6 +156,10 @@
   .pop-in[data-state="open"] {
     animation: pop-in 200ms var(--ease-panel) both;
   }
+  /* A contact dot while its call is on: breathes (opacity only). */
+  .constellation-live {
+    animation: breathe 1.4s var(--ease-std) infinite alternate;
+  }
   /* The caret after the employee's words while they are still being spoken. */
   .live-caret {
     animation: caret 1s steps(2, start) infinite;
@@ -203,6 +207,11 @@
   from {
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes breathe {
+  to {
+    opacity: 0.35;
   }
 }
 @keyframes caret {

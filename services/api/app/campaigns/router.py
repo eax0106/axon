@@ -89,6 +89,8 @@ class CampaignOut(BaseModel):
     created_at: datetime
     contacts: dict[str, int]
     consent_given: bool
+    # The exact words the owner confirms; shown before they confirm and stored word for word after.
+    consent_statement: str = CONSENT_STATEMENT
 
 
 async def consent_current(session: AsyncSession, campaign_id: uuid.UUID) -> bool:
