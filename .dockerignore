@@ -1,0 +1,10 @@
+# Keep the build context small and free of secrets and host-built artefacts.
+.git
+.env
+.env.*
+**/node_modules
+**/dist
+**/.venv
+.unlazy
+backups
+*.dump

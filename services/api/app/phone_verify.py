@@ -131,7 +131,9 @@ async def verify_code(body: CodeBody, user: CurrentUser, session: Session) -> di
     return {"owner_phone": account.owner_phone}
 
 
-@router.api_route("/public/otp/{token}", methods=["GET", "POST"])
+# Two decorators, not api_route(methods=[...]): that gives both methods one operation id.
+@router.get("/public/otp/{token}", operation_id="speak_code_get")
+@router.post("/public/otp/{token}", operation_id="speak_code_post")
 async def speak_code(token: str, session: Session) -> Response:
     """What the carrier asks for when the owner picks up: read the code twice."""
     otp = await session.scalar(

@@ -82,5 +82,17 @@ services:
       retries: 10
       start_period: 15s
 
+  web:
+    image: axon-web:dev
+    build: { context: .., dockerfile: deploy/web.Dockerfile }
+    ports: ["${AXON_WEB_PORT:-8080}:80"]
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   pgdata:

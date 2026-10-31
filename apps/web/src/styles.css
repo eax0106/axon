@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/*
+ * Every colour in the app comes from this file. Dark values are alterx.co.in's, measured in
+ * docs/DESIGN_DIRECTION.md §2; light values and the status and chart colours are that doc's
+ * proposals, darkened where needed to pass contrast (see src/lib/contrast.test.ts).
+ */
+:root {
+  --bg: #030806;
+  --bg-deep: #020504;
+  --surface: #06110b;
+  --ink: #e8f7ee;
+  --ink-strong: #f4fff8;
+  --ink-muted: #91a89b;
+  --accent: #9fffc0;
+  --accent-ink: #d8ffe7;
+  --btn: #123d27;
+  --danger: #ff8a80;
+  --warn: #ffd27a;
+  --info: #8fd3ff;
+  --chart-1: #9fffc0;
+  --chart-2: #5bea99;
+  --chart-3: #91a89b;
+  --chart-4: #8fd3ff;
+  --chart-5: #ffd27a;
+  --accent-soft: rgb(159 255 192 / 0.14);
+  --line: rgb(159 255 192 / 0.12);
+  --line-accent: rgb(91 234 153 / 0.2);
+  --glow: rgb(159 255 192 / 0.07);
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: #f4fff8;
+  --bg-deep: #e8f7ee;
+  --surface: #ffffff;
+  --ink: #06110b;
+  --ink-strong: #020504;
+  --ink-muted: #4a5f53;
+  --accent: #107c44; /* doc proposes #138a4b; that is 4.0:1 on bg-deep */
+  --accent-ink: #f4fff8;
+  --btn: #0f6e3c;
+  --danger: #b42318;
+  --warn: #8a5300;
+  --info: #0b62a3;
+  --chart-1: #107c44;
+  --chart-2: #0f766e;
+  --chart-3: #4a5f53;
+  --chart-4: #0b62a3;
+  --chart-5: #8a5300;
+  --accent-soft: rgb(19 138 75 / 0.1);
+  --line: rgb(6 17 11 / 0.1);
+  --line-accent: rgb(19 138 75 / 0.3);
+  --glow: rgb(19 138 75 / 0.06);
+  color-scheme: light;
+}
+
+/* Only our tokens exist as utilities: no stray Tailwind palette colour can slip in. */
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --font-display: "Manrope Variable", "Inter Variable", "Noto Sans Telugu Variable",
+    "Noto Sans Devanagari Variable", system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Noto Sans Telugu Variable", "Noto Sans Devanagari Variable",
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-tag: 4px;
+  --radius-ctl: 6px;
+  --radius-card: 10px;
+  --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-panel: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-reveal: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-deep: var(--bg-deep);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-strong: var(--ink-strong);
+  --color-ink-muted: var(--ink-muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-btn: var(--btn);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-info: var(--info);
+  --color-line: var(--line);
+  --color-line-accent: var(--line-accent);
+  --color-transparent: transparent;
+}
+
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100dvh;
+  }
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--ink-strong);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-ctl);
+  }
+}
+
+@layer components {
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .display {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    color: var(--ink-strong);
+  }
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  /* The site's soft radial glow, top-left of a hero area. */
+  .glow {
+    background: radial-gradient(640px circle at 0% 0%, var(--glow), transparent 70%);
+  }
+  .skeleton {
+    background: linear-gradient(90deg, var(--line) 0%, var(--accent-soft) 50%, var(--line) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+    border-radius: var(--radius-tag);
+  }
+  /* Page cross-fade: 300 ms, on enter only, so nothing ever waits for an exit. */
+  .page-in {
+    animation: page-in 300ms var(--ease-panel) both;
+  }
+  .pop-in[data-state="open"] {
+    animation: pop-in 200ms var(--ease-panel) both;
+  }
+  /* "On a call" pulse: a ring that scales and fades (transform and opacity only). */
+  .live-dot {
+    position: relative;
+  }
+  .live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--accent);
+    animation: live 1.6s var(--ease-std) infinite;
+  }
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes live {
+  from {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+
+/* Calm fallback: every animation ends at once, nothing loops. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
