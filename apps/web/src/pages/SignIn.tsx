@@ -1,18 +1,19 @@
 import { type FormEvent, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 
-import { ApiError, api, session, unwrap } from "../lib/api";
-import { queryClient } from "../lib/queries";
+import { ApiError, api, unwrap } from "../lib/api";
+import { signIn } from "../lib/queries";
+import { Field, SubmitButton } from "../ui/Field";
+import { AuthLayout } from "./AuthLayout";
 
 function reason(error: unknown): string {
   if (!(error instanceof ApiError)) return "Couldn't reach Axon. Check your connection and try again.";
   if (error.status === 401) return "That email and password don't match an account.";
-  if (error.status === 429) return "Too many tries. Wait a few minutes, then sign in again.";
+  if (error.status === 429) return "Too many tries. Wait 15 minutes, then sign in again.";
   if (error.status === 422) return "Enter your email and a password of at least 8 characters.";
   return error.message;
 }
 
-// ponytail: the plain sign-in the shell needs; F2 adds sign-up, terms and phone verification.
 export default function SignIn() {
   const navigate = useNavigate();
   const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
@@ -30,8 +31,7 @@ export default function SignIn() {
           body: { email: String(form.get("email")), password: String(form.get("password")) },
         }),
       );
-      queryClient.clear();
-      session.set(access_token);
+      signIn(access_token);
       navigate(from, { replace: true });
     } catch (err) {
       setError(reason(err));
@@ -40,43 +40,25 @@ export default function SignIn() {
   }
 
   return (
-    <main className="glow grid min-h-dvh place-items-center px-4">
-      <div className="page-in w-full max-w-sm">
-        <p className="eyebrow">Axon · Sign in</p>
-        <h1 className="display mt-3 text-4xl">Welcome back.</h1>
-        <p className="mt-2 text-ink-muted">Your AI employees kept working while you were away.</p>
-        <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
-          <Field label="Email" name="email" type="email" autoComplete="email" />
-          <Field label="Password" name="password" type="password" autoComplete="current-password" />
-          {error && (
-            <p role="alert" className="text-sm text-danger">
-              {error}
-            </p>
-          )}
-          <button
-            type="submit"
-            disabled={busy}
-            className="h-12 w-full rounded-ctl bg-btn font-medium text-accent-ink transition-[transform,opacity] duration-150 active:scale-[0.98] disabled:opacity-60"
-          >
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-      </div>
-    </main>
-  );
-}
-
-function Field(props: { label: string; name: string; type: string; autoComplete: string }) {
-  return (
-    <label className="block">
-      <span className="text-sm text-ink">{props.label}</span>
-      <input
-        required
-        name={props.name}
-        type={props.type}
-        autoComplete={props.autoComplete}
-        className="mt-1.5 h-12 w-full rounded-ctl border border-line-accent bg-surface px-3.5 text-ink-strong transition-colors duration-150 outline-none focus:border-accent"
-      />
-    </label>
+    <AuthLayout eyebrow="Sign in" title="Welcome back." sub="Your AI employees kept working while you were away.">
+      <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
+        <Field label="Email" name="email" type="email" autoComplete="email" required />
+        <Field label="Password" name="password" type="password" autoComplete="current-password" required />
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        )}
+        <SubmitButton busy={busy} busyText="Signing in…">
+          Sign in
+        </SubmitButton>
+      </form>
+      <p className="mt-6 text-sm text-ink-muted">
+        New to Axon?{" "}
+        <Link to="/sign-up" className="text-accent underline-offset-4 hover:underline">
+          Create an account
+        </Link>
+      </p>
+    </AuthLayout>
   );
 }

@@ -31,8 +31,8 @@ Opus builder only (medium effort for UI and UX work, owner rule 2026-10-30). Pla
 
 | Phase | Title | Status | PR | Notes |
 |---|---|---|---|---|
-| F1 | Foundation, contracts, app shell | in review | | |
-| F2 | Sign-up, sign-in, account basics | todo | | |
+| F1 | Foundation, contracts, app shell | merged | [#19](https://github.com/eax0106/axon/pull/19) 8898cca | |
+| F2 | Sign-up, sign-in, account basics | in review | | |
 | F3 | AI employee builder | todo | | |
 | F4 | Test calls and the live-call view | todo | | |
 | F5 | Credits, billing, numbers, KYC, go live | todo | | completes the guided first run |
