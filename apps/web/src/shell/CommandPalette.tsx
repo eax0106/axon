@@ -1,8 +1,11 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
-import { session } from "../lib/api";
+import { api, session, unwrap } from "../lib/api";
+import type { CallRow, LeadRow } from "../lib/data";
+import { useEmployees } from "../lib/employees";
 import { setTheme, useTheme } from "../lib/theme";
 import { NAV } from "./nav";
 
@@ -14,6 +17,25 @@ export function CommandPalette(props: { open: boolean; onOpenChange: (open: bool
   const [active, setActive] = useState(0);
 
   const theme = useTheme();
+  const q = query.trim().toLowerCase();
+  // People and calls come from the API, 250 ms after typing stops; employees are already cached.
+  const [term, setTerm] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setTerm(q.length >= 2 ? q : ""), 250);
+    return () => clearTimeout(t);
+  }, [q]);
+  const found = useQuery({
+    queryKey: ["palette", term],
+    enabled: props.open && term !== "",
+    queryFn: async () => {
+      const [leads, calls] = await Promise.all([
+        unwrap<{ items: LeadRow[] }>(api.GET("/leads", { params: { query: { q: term, limit: 5 } } })),
+        unwrap<{ items: CallRow[] }>(api.GET("/calls", { params: { query: { q: term, limit: 5 } } })),
+      ]);
+      return { leads: leads.items, calls: calls.items };
+    },
+  });
+  const employees = useEmployees().data ?? [];
   const commands: Command[] = [
     ...NAV.map((n) => ({
       id: `go:${n.to}`,
@@ -30,9 +52,11 @@ export function CommandPalette(props: { open: boolean; onOpenChange: (open: bool
       run: () => setTheme(theme === "dark" ? "light" : "dark"),
     },
     { id: "signout", label: "Sign out", hint: "Account", keywords: "logout log out", run: () => session.set(null) },
+    ...employees.map((e) => ({ id: `emp:${e.id}`, label: e.name, hint: "Employee", keywords: `${e.role_title ?? ""} employee`, run: () => navigate(`/employees/${e.id}`) })),
+    ...(found.data?.leads ?? []).map((l) => ({ id: `lead:${l.id}`, label: l.name || l.phone, hint: "Lead", keywords: `${term} ${l.phone}`, run: () => navigate(`/leads/${l.id}`) })),
+    ...(found.data?.calls ?? []).map((c) => ({ id: `call:${c.id}`, label: `${c.name || c.phone || "Call"} · ${new Date(c.created_at).toLocaleDateString("en-IN")}`, hint: "Call", keywords: `${term} ${c.summary ?? ""}`, run: () => navigate(`/calls/${c.id}`) })),
   ];
 
-  const q = query.trim().toLowerCase();
   const shown = q
     ? commands.filter((c) => `${c.label} ${c.keywords}`.toLowerCase().includes(q))
     : commands;
