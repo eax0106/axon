@@ -33,3 +33,6 @@ backups/
 # playwright
 test-results/
 playwright-report/
+
+# Copies made by Finder/iCloud sync ("name 2.ext"); never ours
+* 2.*
