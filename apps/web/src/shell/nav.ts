@@ -4,6 +4,7 @@ export const NAV = [
   { to: "/employees", label: "Employees", keywords: "agents team ai staff hire script voice" },
   { to: "/employees/new", label: "Hire", keywords: "new employee create agent brief" },
   { to: "/campaigns", label: "Campaigns", keywords: "bulk list csv dialer outbound" },
+  { to: "/inbox", label: "Inbox", keywords: "messages missed callbacks inbound incoming" },
   { to: "/calls", label: "Conversations", keywords: "calls history transcripts recordings log" },
   { to: "/leads", label: "Leads", keywords: "contacts customers crm kanban export" },
   { to: "/numbers", label: "Numbers", keywords: "phone number buy kyc channels rent" },

@@ -20,6 +20,7 @@ const TABS = [
   ["script", "Script"],
   ["try", "Try it"],
   ["instant", "Instant"],
+  ["incoming", "Incoming calls"],
   ["voice", "Voice"],
   ["behaviour", "Behaviour"],
   ["versions", "Versions"],

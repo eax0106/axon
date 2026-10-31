@@ -18,8 +18,10 @@ const BehaviourTab = lazy(() => import("./pages/employees/BehaviourTab"));
 const VersionsTab = lazy(() => import("./pages/employees/VersionsTab"));
 const TryTab = lazy(() => import("./pages/employees/TryTab"));
 const InstantTab = lazy(() => import("./pages/employees/instant/InstantTab"));
+const IncomingTab = lazy(() => import("./pages/employees/IncomingTab"));
 const LivePage = lazy(() => import("./pages/calls/LivePage"));
 const Billing = lazy(() => import("./pages/billing/Billing"));
+const Inbox = lazy(() => import("./pages/inbox/Inbox"));
 const Campaigns = lazy(() => import("./pages/campaigns/List"));
 const Campaign = lazy(() => import("./pages/campaigns/Detail"));
 const Conversations = lazy(() => import("./pages/calls/Conversations"));
@@ -60,6 +62,7 @@ export function App() {
               <Route path="leads" element={<Leads />} />
               <Route path="leads/:id" element={<LeadDetail />} />
               <Route path="billing" element={<Billing />} />
+              <Route path="inbox" element={<Inbox />} />
               <Route path="campaigns" element={<Campaigns />} />
               <Route path="campaigns/:id" element={<Campaign />} />
               <Route path="numbers" element={<Numbers />} />
@@ -71,6 +74,7 @@ export function App() {
                 <Route path="versions" element={<VersionsTab />} />
                 <Route path="try" element={<TryTab />} />
                 <Route path="instant" element={<InstantTab />} />
+                <Route path="incoming" element={<IncomingTab />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
