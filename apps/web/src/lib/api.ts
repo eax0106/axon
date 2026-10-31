@@ -88,8 +88,9 @@ api.use({
  */
 export async function unwrap<T = never, D = unknown>(
   request: Promise<{ data?: D; error?: unknown; response: Response }>,
-): Promise<[T] extends [never] ? D : T> {
+): Promise<[NoInfer<T>] extends [never] ? NoInfer<D> : NoInfer<T>> {
+  // NoInfer: the type comes from the request or the caller, never from where the result is assigned.
   const { data, error, response } = await request;
   if (!response.ok) throw new ApiError(response.status, error);
-  return data as [T] extends [never] ? D : T;
+  return data as [NoInfer<T>] extends [never] ? NoInfer<D> : NoInfer<T>;
 }

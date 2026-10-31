@@ -145,6 +145,10 @@
   .page-in {
     animation: page-in 300ms var(--ease-panel) both;
   }
+  /* Content reveal for rare moments (a draft materialising): fade up out of a soft blur. */
+  .reveal {
+    animation: reveal 700ms var(--ease-reveal) both;
+  }
   /* One letter of a cycling headline: rises out of a soft blur. */
   .letter-in {
     animation: letter-in 420ms var(--ease-reveal) both;
@@ -174,6 +178,13 @@
 @keyframes page-in {
   from {
     opacity: 0;
+    filter: blur(6px);
+  }
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
     filter: blur(6px);
   }
 }
