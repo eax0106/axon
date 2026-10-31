@@ -10,6 +10,7 @@ import { Confirm } from "../../ui/Confirm";
 import { Field } from "../../ui/Field";
 import { ErrorState } from "../../ui/states";
 import { useDetail } from "./Detail";
+import { NumberPicker } from "./NumberPicker";
 
 const TOGGLES: [keyof Settings, string, string][] = [
   ["ai_acknowledgement", "Say it's an AI up front", "Early in every call the employee says it is an AI assistant. It always tells the truth if asked, either way."],
@@ -62,6 +63,8 @@ export default function BehaviourTab() {
         ))}
         <p className="pt-2 text-xs text-ink-muted">These apply to the next call at once.</p>
       </section>
+
+      <NumberPicker />
 
       <section aria-labelledby="status" className="space-y-3">
         <h2 id="status" className="eyebrow">On or off</h2>

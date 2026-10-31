@@ -1,6 +1,7 @@
 import { credits } from "../lib/format";
 import { useMe, useWallet } from "../lib/queries";
 import { ErrorState, Skeleton } from "../ui/states";
+import { FirstRun } from "./FirstRun";
 
 function greeting(hour = new Date().getHours()) {
   if (hour < 12) return "Good morning";
@@ -26,6 +27,7 @@ export default function Overview() {
         )}
       </h1>
       <p className="mt-2 max-w-xl text-ink-muted">Your account at a glance.</p>
+      <FirstRun />
 
       <section aria-label="Account" className="mt-10 max-w-2xl">
         {error ? (

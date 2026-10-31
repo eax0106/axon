@@ -210,8 +210,23 @@ def test_the_scan_reads_an_index_that_leaves_out_test_and_cancelled_calls(
             try:
                 async with engine.connect() as conn:
                     await conn.execute(text("SET enable_seqscan = off"))  # force a choice
+                    # On a near-empty table the planner may pick any other index whose costs
+                    # tie (it did on CI). Drop the others for this transaction only, so the plan
+                    # shows whether this index can serve the query at all.
+                    others = await conn.execute(
+                        text(
+                            "SELECT indexname FROM pg_indexes WHERE tablename = 'calls'"
+                            " AND indexname <> 'ix_calls_unannounced' AND indexname NOT IN"
+                            " (SELECT conname FROM pg_constraint"
+                            " WHERE conrelid = 'calls'::regclass)"
+                        )
+                    )
+                    for (name,) in list(others):
+                        await conn.execute(text(f'DROP INDEX "{name}"'))
                     found = await conn.execute(text("EXPLAIN " + query))
-                    return "\n".join(row[0] for row in found)
+                    lines = "\n".join(row[0] for row in found)
+                    await conn.rollback()
+                    return lines
             finally:
                 await engine.dispose()
 
