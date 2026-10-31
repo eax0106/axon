@@ -5581,6 +5581,11 @@ export interface components {
             completed_at: string | null;
             /** Consent Given */
             consent_given: boolean;
+            /**
+             * Consent Statement
+             * @default I confirm that the people on this list agreed to receive calls from my business, or that I may lawfully call them, and that I will honour the do-not-call list.
+             */
+            consent_statement: string;
             /** Contacts */
             contacts: {
                 [key: string]: number;

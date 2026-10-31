@@ -5016,6 +5016,11 @@
             "title": "Consent Given",
             "type": "boolean"
           },
+          "consent_statement": {
+            "default": "I confirm that the people on this list agreed to receive calls from my business, or that I may lawfully call them, and that I will honour the do-not-call list.",
+            "title": "Consent Statement",
+            "type": "string"
+          },
           "contacts": {
             "additionalProperties": {
               "type": "integer"
