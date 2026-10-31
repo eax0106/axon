@@ -17,6 +17,7 @@ const VoiceTab = lazy(() => import("./pages/employees/VoiceTab"));
 const BehaviourTab = lazy(() => import("./pages/employees/BehaviourTab"));
 const VersionsTab = lazy(() => import("./pages/employees/VersionsTab"));
 const TryTab = lazy(() => import("./pages/employees/TryTab"));
+const InstantTab = lazy(() => import("./pages/employees/instant/InstantTab"));
 const LivePage = lazy(() => import("./pages/calls/LivePage"));
 const Billing = lazy(() => import("./pages/billing/Billing"));
 const Conversations = lazy(() => import("./pages/calls/Conversations"));
@@ -65,6 +66,7 @@ export function App() {
                 <Route path="behaviour" element={<BehaviourTab />} />
                 <Route path="versions" element={<VersionsTab />} />
                 <Route path="try" element={<TryTab />} />
+                <Route path="instant" element={<InstantTab />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

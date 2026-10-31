@@ -19,6 +19,7 @@ export const useDetail = () => useOutletContext<DetailContext>();
 const TABS = [
   ["script", "Script"],
   ["try", "Try it"],
+  ["instant", "Instant"],
   ["voice", "Voice"],
   ["behaviour", "Behaviour"],
   ["versions", "Versions"],
@@ -69,7 +70,7 @@ export default function EmployeeDetail() {
       )}
 
       <nav aria-label="Employee sections" className="mt-8 flex gap-1 overflow-x-auto border-b border-line">
-        {TABS.map(([to, label]) => (
+        {TABS.filter(([to]) => to !== "instant" || employee.channel === "instant").map(([to, label]) => (
           <NavLink
             key={to}
             to={to}
