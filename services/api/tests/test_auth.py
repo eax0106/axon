@@ -37,6 +37,7 @@ def test_signup_creates_owner_and_account_and_returns_a_working_token(
     assert me["user"]["email"] == "owner@example.com"
     assert me["user"]["role"] == "owner"
     assert me["account"]["name"] == "Acme Realty"
+    assert me["account"]["owner_phone"] == ""  # not verified yet
 
 
 def test_password_is_stored_as_an_argon2id_hash(db_client: TestClient, migrated_url: str) -> None:

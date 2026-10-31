@@ -7,6 +7,8 @@ import { queryClient } from "./lib/queries";
 import { Shell } from "./shell/Shell";
 
 const SignIn = lazy(() => import("./pages/SignIn"));
+const SignUp = lazy(() => import("./pages/SignUp"));
+const Account = lazy(() => import("./pages/Account"));
 const Overview = lazy(() => import("./pages/Overview"));
 
 function Gate() {
@@ -28,8 +30,10 @@ export function App() {
         <Suspense fallback={null}>
           <Routes>
             <Route path="/sign-in" element={<SignIn />} />
+            <Route path="/sign-up" element={<SignUp />} />
             <Route element={<Gate />}>
               <Route index element={<Overview />} />
+              <Route path="account" element={<Account />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

@@ -1,20 +1,27 @@
 import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, api, unwrap } from "./api";
+import { ApiError, api, session, unwrap } from "./api";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 15_000,
       // Retrying a 4xx or a missing provider only delays the message the user needs to see.
-      retry: (count, error) => !(error instanceof ApiError && error.status < 500) && count < 2,
+      retry: (count, error) =>
+        !(error instanceof ApiError && (error.status < 500 || error.provider)) && count < 2,
     },
   },
 });
 
+/** Start a session with a fresh cache, so nothing from a previous user is ever shown. */
+export function signIn(token: string): void {
+  queryClient.clear();
+  session.set(token);
+}
+
 export type Me = {
   user: { id: string; email: string; role: "owner" | "member" };
-  account: { id: string; name: string };
+  account: { id: string; name: string; owner_phone: string }; // "" until verified
 };
 export type Wallet = {
   balance: string;

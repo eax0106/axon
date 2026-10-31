@@ -145,6 +145,10 @@
   .page-in {
     animation: page-in 300ms var(--ease-panel) both;
   }
+  /* One letter of a cycling headline: rises out of a soft blur. */
+  .letter-in {
+    animation: letter-in 420ms var(--ease-reveal) both;
+  }
   .pop-in[data-state="open"] {
     animation: pop-in 200ms var(--ease-panel) both;
   }
@@ -171,6 +175,13 @@
   from {
     opacity: 0;
     filter: blur(6px);
+  }
+}
+@keyframes letter-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25em);
+    filter: blur(4px);
   }
 }
 @keyframes pop-in {

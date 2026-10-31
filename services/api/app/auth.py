@@ -260,5 +260,10 @@ async def me(user: CurrentUser, session: Session) -> dict[str, dict[str, str]]:
     assert account is not None  # FK guarantees it
     return {
         "user": {"id": str(user.id), "email": user.email, "role": user.role.value},
-        "account": {"id": str(account.id), "name": account.name},
+        # The verified owner phone ("" until verified): free test calls ring only this number.
+        "account": {
+            "id": str(account.id),
+            "name": account.name,
+            "owner_phone": account.owner_phone or "",
+        },
     }
