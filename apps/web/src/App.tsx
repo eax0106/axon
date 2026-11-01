@@ -19,6 +19,8 @@ const VersionsTab = lazy(() => import("./pages/employees/VersionsTab"));
 const TryTab = lazy(() => import("./pages/employees/TryTab"));
 const InstantTab = lazy(() => import("./pages/employees/instant/InstantTab"));
 const IncomingTab = lazy(() => import("./pages/employees/IncomingTab"));
+const TrainingTab = lazy(() => import("./pages/employees/training/TrainingTab"));
+const ActionsTab = lazy(() => import("./pages/employees/actions/ActionsTab"));
 const LivePage = lazy(() => import("./pages/calls/LivePage"));
 const Billing = lazy(() => import("./pages/billing/Billing"));
 const Inbox = lazy(() => import("./pages/inbox/Inbox"));
@@ -75,6 +77,8 @@ export function App() {
                 <Route path="try" element={<TryTab />} />
                 <Route path="instant" element={<InstantTab />} />
                 <Route path="incoming" element={<IncomingTab />} />
+                <Route path="training" element={<TrainingTab />} />
+                <Route path="actions" element={<ActionsTab />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

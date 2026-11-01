@@ -21,6 +21,8 @@ const TABS = [
   ["try", "Try it"],
   ["instant", "Instant"],
   ["incoming", "Incoming calls"],
+  ["training", "Training"],
+  ["actions", "Actions"],
   ["voice", "Voice"],
   ["behaviour", "Behaviour"],
   ["versions", "Versions"],
