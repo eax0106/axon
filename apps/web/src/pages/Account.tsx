@@ -5,6 +5,8 @@ import { queryClient, useMe } from "../lib/queries";
 import { useAction } from "../lib/useAction";
 import { Field, SubmitButton } from "../ui/Field";
 import { ErrorState, Skeleton } from "../ui/states";
+import { Dnc } from "./account/Dnc";
+import { Business, Password } from "./account/Settings";
 
 export default function Account() {
   const me = useMe();
@@ -12,7 +14,7 @@ export default function Account() {
     <>
       <p className="eyebrow">Account</p>
       <h1 className="display mt-3 text-4xl">Your account</h1>
-      <p className="mt-2 max-w-xl text-ink-muted">Who you are to Axon, and the phone your test calls ring.</p>
+      <p className="mt-2 max-w-xl text-ink-muted">Who you are to Axon, your business details, your password and the numbers nobody calls.</p>
 
       <div className="mt-10 grid max-w-4xl gap-6 lg:grid-cols-2">
         <section aria-labelledby="who" className="rounded-card border border-line bg-surface p-6">
@@ -48,6 +50,11 @@ export default function Account() {
           </p>
           {me.data ? <OwnerPhone verified={me.data.account.owner_phone} /> : <Skeleton className="mt-6 h-12" />}
         </section>
+        <Business />
+        <Password />
+      </div>
+      <div className="mt-6 max-w-4xl">
+        <Dnc />
       </div>
     </>
   );

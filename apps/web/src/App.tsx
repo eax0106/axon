@@ -32,6 +32,8 @@ const Leads = lazy(() => import("./pages/leads/Leads"));
 const LeadDetail = lazy(() => import("./pages/leads/LeadDetail"));
 const Numbers = lazy(() => import("./pages/numbers/Numbers"));
 const Overview = lazy(() => import("./pages/Overview"));
+const Developers = lazy(() => import("./pages/developers/Developers"));
+const Support = lazy(() => import("./pages/support/Support"));
 
 function Gate() {
   const signedIn = useSyncExternalStore(session.subscribe, () => session.token() !== null);
@@ -68,6 +70,8 @@ export function App() {
               <Route path="campaigns" element={<Campaigns />} />
               <Route path="campaigns/:id" element={<Campaign />} />
               <Route path="numbers" element={<Numbers />} />
+              <Route path="developers" element={<Developers />} />
+              <Route path="support" element={<Support />} />
               <Route path="employees/:id" element={<Employee />}>
                 <Route index element={<Navigate to="script" replace />} />
                 <Route path="script" element={<ScriptTab />} />
