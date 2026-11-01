@@ -1,8 +1,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Suspense, useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
-import { session } from "../lib/api";
+import { session, supportSession } from "../lib/api";
 import { useMe } from "../lib/queries";
 import { setTheme, useTheme } from "../lib/theme";
 import { CommandPalette } from "./CommandPalette";
@@ -45,47 +45,50 @@ export function Shell() {
       </aside>
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-bg/85 px-4 backdrop-blur-md md:px-8">
-          <Dialog.Root open={menu} onOpenChange={setMenu}>
-            <Dialog.Trigger
-              aria-label="Open menu"
-              className="grid size-8 place-items-center rounded-ctl text-ink-muted hover:text-ink-strong md:hidden"
-            >
-              <svg aria-hidden viewBox="0 0 20 20" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M3 6h14M3 10h14M3 14h14" />
-              </svg>
-            </Dialog.Trigger>
-            <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 z-40 bg-bg-deep/70 md:hidden" />
-              <Dialog.Content
-                aria-describedby={undefined}
-                className="fixed inset-y-0 left-0 z-50 flex w-[min(280px,85vw)] flex-col border-r border-line bg-bg-deep md:hidden"
+        <div className="sticky top-0 z-20">
+          <SupportBanner />
+          <header className="flex h-14 items-center gap-3 border-b border-line bg-bg/85 px-4 backdrop-blur-md md:px-8">
+            <Dialog.Root open={menu} onOpenChange={setMenu}>
+              <Dialog.Trigger
+                aria-label="Open menu"
+                className="grid size-8 place-items-center rounded-ctl text-ink-muted hover:text-ink-strong md:hidden"
               >
-                <Dialog.Title className="sr-only">Menu</Dialog.Title>
-                <Rail />
-              </Dialog.Content>
-            </Dialog.Portal>
-          </Dialog.Root>
+                <svg aria-hidden viewBox="0 0 20 20" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M3 6h14M3 10h14M3 14h14" />
+                </svg>
+              </Dialog.Trigger>
+              <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 z-40 bg-bg-deep/70 md:hidden" />
+                <Dialog.Content
+                  aria-describedby={undefined}
+                  className="fixed inset-y-0 left-0 z-50 flex w-[min(280px,85vw)] flex-col border-r border-line bg-bg-deep md:hidden"
+                >
+                  <Dialog.Title className="sr-only">Menu</Dialog.Title>
+                  <Rail />
+                </Dialog.Content>
+              </Dialog.Portal>
+            </Dialog.Root>
 
-          <button
-            type="button"
-            onClick={() => setPalette(true)}
-            className="flex h-8 min-w-0 flex-1 items-center gap-3 rounded-ctl border border-line px-3 text-sm text-ink-muted transition-colors duration-150 hover:border-line-accent hover:text-ink sm:max-w-80"
-          >
-            <svg aria-hidden viewBox="0 0 20 20" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="9" cy="9" r="5.5" />
-              <path d="m13 13 4 4" />
-            </svg>
-            <span className="truncate">Jump to…</span>
-            <kbd className="num ml-auto hidden text-xs sm:inline">{isMac ? "⌘K" : "Ctrl K"}</kbd>
-          </button>
+            <button
+              type="button"
+              onClick={() => setPalette(true)}
+              className="flex h-8 min-w-0 flex-1 items-center gap-3 rounded-ctl border border-line px-3 text-sm text-ink-muted transition-colors duration-150 hover:border-line-accent hover:text-ink sm:max-w-80"
+            >
+              <svg aria-hidden viewBox="0 0 20 20" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="9" cy="9" r="5.5" />
+                <path d="m13 13 4 4" />
+              </svg>
+              <span className="truncate">Jump to…</span>
+              <kbd className="num ml-auto hidden text-xs sm:inline">{isMac ? "⌘K" : "Ctrl K"}</kbd>
+            </button>
 
-          <div className="ml-auto flex items-center gap-3">
-            <LiveIndicator />
-            <CreditChip />
-            <Bell />
-          </div>
-        </header>
+            <div className="ml-auto flex items-center gap-3">
+              <LiveIndicator />
+              <CreditChip />
+              <Bell />
+            </div>
+          </header>
+        </div>
 
         <main id="main" key={pathname} className="page-in mx-auto max-w-6xl px-4 py-8 md:px-8 md:py-12">
           <Suspense fallback={<Skeleton className="h-10 w-64" />}>
@@ -111,11 +114,11 @@ function Rail() {
       </div>
       <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-0.5">
-          {NAV.map((n) => (
+          {[...NAV, ...(me?.user.staff ? [{ to: "/admin", label: "Staff console" }] : [])].map((n) => (
             <li key={n.to}>
               <NavLink
                 to={n.to}
-                end
+                end={n.to !== "/admin"}
                 className={({ isActive }) =>
                   `flex h-9 items-center gap-3 rounded-ctl px-3 text-sm transition-colors duration-150 ${
                     isActive
@@ -158,5 +161,30 @@ function Rail() {
         </div>
       </div>
     </>
+  );
+}
+
+/** Always on screen while staff act as an account's owner; every change is logged under them. */
+function SupportBanner() {
+  const me = useMe().data;
+  const navigate = useNavigate();
+  if (!me?.user.support_session) return null;
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-warn/40 bg-bg-deep px-4 py-2 text-sm md:px-8">
+      <span className="text-warn">● Support session</span>
+      <span className="min-w-0 text-ink">
+        Acting as {me.user.email} of {me.account.name}. Every change is logged under your name.
+      </span>
+      <button
+        type="button"
+        className="ml-auto text-ink-muted underline hover:text-ink-strong"
+        onClick={() => {
+          supportSession.end();
+          navigate(`/admin/accounts/${me.account.id}`);
+        }}
+      >
+        End support session
+      </button>
+    </div>
   );
 }

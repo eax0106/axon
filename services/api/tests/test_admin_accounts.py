@@ -73,6 +73,9 @@ def test_a_support_session_needs_a_reason_and_logs_everything_it_changes(
 
     me = db_client.get("/accounts/me", headers=support).json()
     assert me["user"]["email"] == "owner@example.com" and me["account"]["id"] == acme
+    assert me["user"]["support_session"] is True and me["user"]["staff"] is False
+    staff_me = db_client.get("/accounts/me", headers=admin).json()["user"]
+    assert staff_me["staff"] is True and staff_me["support_session"] is False
     change = {"name": "Acme", "business_name": "Acme Solar", "max_call_s": 120}
     assert db_client.put("/account/settings", json=change, headers=support).status_code == 200
     staff_id = sql(migrated_url, "SELECT id FROM users WHERE email = 'staff@alterx.in'")

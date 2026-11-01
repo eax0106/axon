@@ -3,7 +3,7 @@ import { Suspense, lazy, useEffect, useSyncExternalStore } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
 
 import { session } from "./lib/api";
-import { queryClient } from "./lib/queries";
+import { queryClient, useMe } from "./lib/queries";
 import { Shell } from "./shell/Shell";
 
 const SignIn = lazy(() => import("./pages/SignIn"));
@@ -34,17 +34,25 @@ const Numbers = lazy(() => import("./pages/numbers/Numbers"));
 const Overview = lazy(() => import("./pages/Overview"));
 const Developers = lazy(() => import("./pages/developers/Developers"));
 const Support = lazy(() => import("./pages/support/Support"));
+const Admin = lazy(() => import("./pages/admin/Admin"));
 
 function Gate() {
-  const signedIn = useSyncExternalStore(session.subscribe, () => session.token() !== null);
+  const token = useSyncExternalStore(session.subscribe, () => session.token());
+  const signedIn = token !== null;
   const location = useLocation();
 
-  useEffect(() => {
-    if (!signedIn) queryClient.clear();
-  }, [signedIn]);
+  // A different session (signed out, or a support session starting or ending) sees none of the last one's data.
+  useEffect(() => () => queryClient.clear(), [token]);
 
   if (!signedIn) return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
   return <Shell />;
+}
+
+/** Only platform staff ever load the admin chunk; everyone else is sent home. */
+function StaffOnly() {
+  const me = useMe();
+  if (!me.data) return null;
+  return me.data.user.staff && !me.data.user.support_session ? <Admin /> : <Navigate to="/" replace />;
 }
 
 export function App() {
@@ -72,6 +80,7 @@ export function App() {
               <Route path="numbers" element={<Numbers />} />
               <Route path="developers" element={<Developers />} />
               <Route path="support" element={<Support />} />
+              <Route path="admin/*" element={<StaffOnly />} />
               <Route path="employees/:id" element={<Employee />}>
                 <Route index element={<Navigate to="script" replace />} />
                 <Route path="script" element={<ScriptTab />} />

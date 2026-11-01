@@ -23,6 +23,7 @@ export const session = {
     } catch {
       /* memoryToken holds it */
     }
+    if (!token) store(STAFF_KEY, null);
     window.dispatchEvent(new Event(CHANGED));
   },
   subscribe(onChange: () => void): () => void {
@@ -32,6 +33,36 @@ export const session = {
       window.removeEventListener(CHANGED, onChange);
       window.removeEventListener("storage", onChange);
     };
+  },
+};
+
+const STAFF_KEY = "axon.staff-token";
+function store(key: string, value: string | null): void {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    /* storage blocked: a support session then can't hand back the staff session */
+  }
+}
+
+/** A staff member acting as an account's owner: the staff session waits aside until it ends. */
+export const supportSession = {
+  start(token: string): void {
+    const staff = session.token();
+    session.set(token);
+    store(STAFF_KEY, staff);
+  },
+  /** Back to the staff session (or signed out if there is none). */
+  end(): void {
+    let staff: string | null = null;
+    try {
+      staff = localStorage.getItem(STAFF_KEY);
+    } catch {
+      /* none kept */
+    }
+    store(STAFF_KEY, null);
+    session.set(staff);
   },
 };
 
@@ -77,7 +108,8 @@ api.use({
   },
   onResponse({ response }) {
     // An expired or revoked session: drop it and let the app send the user to sign in.
-    if (response.status === 401 && session.token()) session.set(null);
+    // A support session that ran out hands back to the staff session.
+    if (response.status === 401 && session.token()) supportSession.end();
     return response;
   },
 });

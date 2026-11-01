@@ -20,7 +20,7 @@ export function signIn(token: string): void {
 }
 
 export type Me = {
-  user: { id: string; email: string; role: "owner" | "member" };
+  user: { id: string; email: string; role: "owner" | "member"; staff: boolean; support_session: boolean };
   account: { id: string; name: string; owner_phone: string }; // "" until verified
 };
 export type Wallet = {
