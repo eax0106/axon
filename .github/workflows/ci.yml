@@ -99,8 +99,10 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      # Sign-up needs a JWT secret; a throwaway one for this run only, never committed.
-      - run: echo "AXON_JWT_SECRET=$(openssl rand -hex 32)" > .env
+      # Sign-up needs a JWT secret; a throwaway one for this run only, never committed. The e2e
+      # flows sign up more accounts from one address than the 10-an-hour limit allows, so this
+      # throwaway stack runs with the auth limits off (they have their own backend tests).
+      - run: printf 'AXON_JWT_SECRET=%s\nAXON_AUTH_RATE_LIMIT=off\n' "$(openssl rand -hex 32)" > .env
       - run: uv run python scripts/compose_smoke.py
       # End-to-end through the served dashboard, against the stack the smoke test just started.
       - run: pnpm install --frozen-lockfile --filter web...

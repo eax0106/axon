@@ -39,8 +39,8 @@ Opus builder only (medium effort for UI and UX work, owner rule 2026-10-30). Pla
 | F6 | Dashboard, conversations, leads | merged | [#26](https://github.com/eax0106/axon/pull/26) 27f11f3 | |
 | F7 | Instant | merged | [#27](https://github.com/eax0106/axon/pull/27) 2dd3029 | |
 | F8 | Bulk campaigns | merged | [#28](https://github.com/eax0106/axon/pull/28) a260299 | |
-| F9 | Inbound | in review | | |
-| F10 | Training, knowledge, in-call actions | todo | | |
+| F9 | Inbound | merged | [#29](https://github.com/eax0106/axon/pull/29) 91495d2 | |
+| F10 | Training, knowledge, in-call actions | in review | | |
 | F11 | Developers, settings, support | todo | | |
 | F12 | Staff admin console | todo | | |
 | F13 | Help centre, integration guides, final parity and quality pass | todo | | |
