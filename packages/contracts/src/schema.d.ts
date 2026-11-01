@@ -5953,7 +5953,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: {
-                            [key: string]: string;
+                            [key: string]: string | boolean;
                         };
                     };
                 };

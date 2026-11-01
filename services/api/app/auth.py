@@ -255,11 +255,20 @@ async def change_password(
 
 
 @router.get("/accounts/me")
-async def me(user: CurrentUser, session: Session) -> dict[str, dict[str, str]]:
+async def me(
+    user: CurrentUser, session: Session, request: Request
+) -> dict[str, dict[str, str | bool]]:
     account = await session.get(Account, user.account_id)
     assert account is not None  # FK guarantees it
     return {
-        "user": {"id": str(user.id), "email": user.email, "role": user.role.value},
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "role": user.role.value,
+            # Staff see the admin console; a support session (staff acting as this user) never does.
+            "staff": user.is_platform_admin,
+            "support_session": request.state.impersonator is not None,
+        },
         # The verified owner phone ("" until verified): free test calls ring only this number.
         "account": {
             "id": str(account.id),
