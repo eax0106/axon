@@ -9,5 +9,7 @@ export const NAV = [
   { to: "/leads", label: "Leads", keywords: "contacts customers crm kanban export" },
   { to: "/numbers", label: "Numbers", keywords: "phone number buy kyc channels rent" },
   { to: "/billing", label: "Billing", keywords: "credits wallet top up invoice gst statement spend" },
-  { to: "/account", label: "Account", keywords: "profile phone verify settings me" },
+  { to: "/account", label: "Account", keywords: "profile phone verify settings me password business do not call dnc terms" },
+  { to: "/developers", label: "Developers", keywords: "api keys webhooks logs openapi postman integrations" },
+  { to: "/support", label: "Support", keywords: "help chat feedback contact" },
 ] as const;

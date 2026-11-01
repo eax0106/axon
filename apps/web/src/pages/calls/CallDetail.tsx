@@ -9,6 +9,7 @@ import { useAction } from "../../lib/useAction";
 import { btn } from "../../ui/buttons";
 import { ErrorState, Skeleton } from "../../ui/states";
 import { Notes } from "./Notes";
+import { Rate } from "./Rate";
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", second: "2-digit" }) : "");
 const LIVE = new Set(["queued", "ringing", "in_progress"]);
@@ -88,6 +89,7 @@ export default function CallDetail() {
       <aside className="space-y-8">
         <Actions callId={c.id} />
         <Notes notes={c.notes} refresh={["calls", c.id]} add={(body) => unwrap(api.POST("/calls/{call_id}/notes", { ...path, body: { body } }))} />
+        {!LIVE.has(c.status) && <Rate callId={c.id} />}
         <section aria-labelledby="timeline">
           <h2 id="timeline" className="eyebrow">Timeline</h2>
           <ol className="mt-3 space-y-2 border-l border-line pl-4 text-sm">
