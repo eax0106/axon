@@ -2,6 +2,7 @@ import { Link } from "react-router";
 
 import { type Employee, LANGUAGES, type Language, useEmployees } from "../../lib/employees";
 import { btn } from "../../ui/buttons";
+import { CyclingLine } from "../../ui/CyclingLine";
 import { ErrorState, Skeleton } from "../../ui/states";
 import { Avatar, StatusTag, channelLabel } from "./parts";
 
@@ -82,11 +83,11 @@ function Empty() {
     <div className="glow relative overflow-hidden rounded-card border border-line-accent bg-surface px-6 py-16 text-center md:py-24">
       <p className="eyebrow">Your first hire</p>
       <h2 className="display mx-auto mt-4 max-w-xl text-4xl md:text-5xl">
-        Describe the job. <span className="text-accent">Axon drafts the employee.</span>
+        <CyclingLine lead="Your AI employee never" words={["sleeps.", "forgets a lead.", "keeps a caller waiting."]} sentence="Your AI employee never sleeps, forgets a lead or keeps a caller waiting." />
       </h2>
       <p className="mx-auto mt-4 max-w-md text-ink-muted">
-        Tell it what your business does and who it should call, in your own words or out loud. You review every line
-        before it speaks to anyone.
+        Describe the job and Axon drafts the employee: what your business does and who it should call, in your own words
+        or out loud. You review every line before it speaks to anyone.
       </p>
       <Link to="/employees/new" className={`${btn.primary} mt-8 h-11 px-6`}>
         Hire your first AI employee

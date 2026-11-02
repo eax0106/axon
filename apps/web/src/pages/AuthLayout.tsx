@@ -1,4 +1,6 @@
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
+
+import { CyclingLine } from "../ui/CyclingLine";
 
 const WORDS = ["sleeps.", "forgets a lead.", "keeps a caller waiting."];
 const FACTS = [
@@ -6,25 +8,6 @@ const FACTS = [
   ["Speaks", "Telugu · Hindi · English"],
   ["Billed", "from pickup, per second"],
 ] as const;
-
-/** The mint word that rebuilds letter by letter (the site's cycling headline). Static under reduced motion. */
-function CyclingWord() {
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const id = setInterval(() => setIndex((i) => (i + 1) % WORDS.length), 2800);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <span key={index} aria-hidden className="text-accent">
-      {[...(WORDS[index] ?? "")].map((ch, i) => (
-        <span key={i} className="letter-in inline-block whitespace-pre" style={{ animationDelay: `${i * 24}ms` }}>
-          {ch}
-        </span>
-      ))}
-    </span>
-  );
-}
 
 /** Sign-in and sign-up: the brand story on the left, the form on the right (stacked on a phone). */
 export function AuthLayout({ eyebrow, title, sub, children }: { eyebrow: string; title: string; sub: string; children: ReactNode }) {
@@ -39,9 +22,7 @@ export function AuthLayout({ eyebrow, title, sub, children }: { eyebrow: string;
         <div className="hidden lg:block">
           <p className="eyebrow">AI phone employees</p>
           <p className="display mt-4 max-w-xl text-[60px] leading-[1.05] tracking-[-0.03em]">
-            <span className="sr-only">Your AI employee never sleeps, forgets a lead or keeps a caller waiting.</span>
-            <span aria-hidden>Your AI employee never </span>
-            <CyclingWord />
+            <CyclingLine lead="Your AI employee never" words={WORDS} sentence="Your AI employee never sleeps, forgets a lead or keeps a caller waiting." />
           </p>
           <dl className="mt-12 max-w-md divide-y divide-line border-y border-line">
             {FACTS.map(([label, value]) => (

@@ -3,13 +3,25 @@ import { Link } from "react-router";
 import { useNumbers } from "../lib/billing";
 import { useEmployees } from "../lib/employees";
 import { useMe } from "../lib/queries";
+import { Skeleton } from "../ui/states";
+
+// Once every step is done the checklist never comes back, so later visits reserve no room for it.
+const DONE_KEY = "axon.first-run-done";
+const doneBefore = () => {
+  try {
+    return localStorage.getItem(DONE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
 
 /** From sign-up to a working AI employee, as one checklist read from the account's real state. */
 export function FirstRun() {
   const employees = useEmployees().data;
   const numbers = useNumbers().data;
   const me = useMe().data;
-  if (!employees || !numbers || !me) return null;
+  // Hold the card's room while loading, so the dashboard below doesn't jump when it appears.
+  if (!employees || !numbers || !me) return doneBefore() ? null : <Skeleton className="mt-10 h-[330px] max-w-2xl rounded-card" />;
 
   const first = employees[0];
   const steps = [
@@ -20,7 +32,14 @@ export function FirstRun() {
     { done: employees.some((e) => e.status === "live"), label: "Attach the number and go live", to: first ? `/employees/${first.id}/behaviour` : "/employees/new" },
   ];
   const left = steps.filter((s) => !s.done).length;
-  if (left === 0) return null;
+  if (left === 0) {
+    try {
+      localStorage.setItem(DONE_KEY, "1");
+    } catch {
+      /* the skeleton shows briefly on the next visit; harmless */
+    }
+    return null;
+  }
   const next = steps.find((s) => !s.done);
 
   return (

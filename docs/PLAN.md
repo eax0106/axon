@@ -42,8 +42,8 @@ Opus builder only (medium effort for UI and UX work, owner rule 2026-10-30). Pla
 | F9 | Inbound | merged | [#29](https://github.com/eax0106/axon/pull/29) 91495d2 | |
 | F10 | Training, knowledge, in-call actions | merged | [#30](https://github.com/eax0106/axon/pull/30) a699ca9 | |
 | F11 | Developers, settings, support | merged | [#31](https://github.com/eax0106/axon/pull/31) 1420631 | |
-| F12 | Staff admin console | in review | | |
-| F13 | Help centre, integration guides, final parity and quality pass | todo | | |
+| F12 | Staff admin console | merged | [#32](https://github.com/eax0106/axon/pull/32) bbf3da9 | |
+| F13 | Help centre, integration guides, final parity and quality pass | in review | | |
 
 ### Rules that hold in every F phase
 

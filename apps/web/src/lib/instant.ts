@@ -35,7 +35,7 @@ export type IntakeEntry = {
 const path = (id: string) => ({ params: { path: { employee_id: id } } });
 
 export const useInstant = (id: string) =>
-  useQuery({ queryKey: ["instant", id], queryFn: () => unwrap<InstantInfo>(api.GET("/employees/{employee_id}/instant", path(id))) });
+  useQuery({ queryKey: ["instant", id], enabled: id !== "", queryFn: () => unwrap<InstantInfo>(api.GET("/employees/{employee_id}/instant", path(id))) });
 
 export const useQueue = (id: string) =>
   useQuery({

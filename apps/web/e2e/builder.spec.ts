@@ -12,7 +12,7 @@ test("hire, write and publish a script, keep versions, tune the voice and behavi
 
   // Empty team: the one showpiece, then the hire flow.
   await page.goto("/employees");
-  await expect(page.getByRole("heading", { name: /Describe the job/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Your AI employee never sleeps/ })).toBeVisible();
   expect(await seriousA11yIssues(page)).toEqual([]);
   await page.getByRole("link", { name: "Hire your first AI employee" }).click();
   await page.getByText("Bulk", { exact: true }).click();
