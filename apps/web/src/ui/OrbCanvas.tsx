@@ -46,7 +46,7 @@ function Blob({ level, colour }: OrbProps & { colour: Color }) {
   });
   return (
     <mesh ref={mesh}>
-      <icosahedronGeometry args={[1, 48]} />
+      <icosahedronGeometry args={[1, 24]} />
       <shaderMaterial vertexShader={vertex} fragmentShader={fragment} uniforms={uniforms} transparent />
     </mesh>
   );

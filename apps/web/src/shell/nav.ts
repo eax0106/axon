@@ -11,5 +11,6 @@ export const NAV = [
   { to: "/billing", label: "Billing", keywords: "credits wallet top up invoice gst statement spend" },
   { to: "/account", label: "Account", keywords: "profile phone verify settings me password business do not call dnc terms" },
   { to: "/developers", label: "Developers", keywords: "api keys webhooks logs openapi postman integrations" },
+  { to: "/help", label: "Help", keywords: "guides how to zapier make n8n pabbly meta sheets website webhooks api docs" },
   { to: "/support", label: "Support", keywords: "help chat feedback contact" },
 ] as const;

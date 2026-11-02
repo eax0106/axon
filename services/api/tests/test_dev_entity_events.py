@@ -1,6 +1,6 @@
 """lead.created and campaign.status_changed, from the real paths that cause them."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -97,14 +97,16 @@ def test_the_workers_starting_pausing_and_completing_of_campaigns_are_announced_
 ) -> None:
     employee, owner = setup_bulk(api, migrated_url)
     campaign = make_campaign(api, owner, employee, PHONES[:1], start=False)
-    start_at = (CAMPAIGN_NOW + timedelta(hours=1)).isoformat()
+    # The API checks start_at against its real clock, so anchor on whichever is later.
+    base = max(CAMPAIGN_NOW, datetime.now(UTC))
+    start_at = (base + timedelta(hours=1)).isoformat()
     scheduled = api.post(f"/campaigns/{campaign}/start", json={"start_at": start_at}, headers=owner)
     assert scheduled.status_code in (200, 202)
     assert statuses(migrated_url) == [("draft", "scheduled")]
 
     async def activate(factory: Any) -> int:
         async with factory() as session:
-            n = await runner.activate_due(session, CAMPAIGN_NOW + timedelta(hours=2))
+            n = await runner.activate_due(session, base + timedelta(hours=2))
             await session.commit()
             return n
 
@@ -114,7 +116,7 @@ def test_the_workers_starting_pausing_and_completing_of_campaigns_are_announced_
     async def finish(factory: Any) -> int:
         async with factory() as session:
             await session.execute(text("DELETE FROM campaign_contacts"))  # nothing left to call
-            n = await runner.finish_done(session, CAMPAIGN_NOW + timedelta(hours=3))
+            n = await runner.finish_done(session, base + timedelta(hours=3))
             await session.commit()
             return n
 

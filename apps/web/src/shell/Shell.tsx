@@ -118,7 +118,7 @@ function Rail() {
             <li key={n.to}>
               <NavLink
                 to={n.to}
-                end={n.to !== "/admin"}
+                end={n.to !== "/admin" && n.to !== "/help"}
                 className={({ isActive }) =>
                   `flex h-9 items-center gap-3 rounded-ctl px-3 text-sm transition-colors duration-150 ${
                     isActive

@@ -6,6 +6,7 @@ import { type Campaign, useCampaigns } from "../../lib/campaigns";
 import { useEmployees } from "../../lib/employees";
 import { useAction } from "../../lib/useAction";
 import { btn } from "../../ui/buttons";
+import { CyclingLine } from "../../ui/CyclingLine";
 import { Field, Select } from "../../ui/Field";
 import { ErrorState, Skeleton } from "../../ui/states";
 
@@ -34,7 +35,13 @@ export default function Campaigns() {
         ) : !campaigns.data ? (
           <Skeleton className="h-40 rounded-card" />
         ) : campaigns.data.length === 0 ? (
-          <p className="rounded-card border border-dashed border-line p-10 text-center text-ink-muted">No campaigns yet.</p>
+          <div className="glow rounded-card border border-line-accent bg-surface px-6 py-14 text-center">
+            <p className="eyebrow">No campaigns yet</p>
+            <h2 className="display mx-auto mt-4 max-w-xl text-3xl md:text-4xl">
+              <CyclingLine lead="A list that never" words={["gets tired.", "skips a number.", "calls after 9 PM."]} sentence="A list that never gets tired, skips a number or calls after 9 PM." />
+            </h2>
+            <p className="mx-auto mt-4 max-w-md text-ink-muted">Upload contacts, pick the hours, and your Bulk employee works through them while you watch.</p>
+          </div>
         ) : (
           <ul className="grid gap-3 md:grid-cols-2">
             {campaigns.data.map((c) => {

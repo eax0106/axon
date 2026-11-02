@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router";
 
 import { api, unwrap } from "../../lib/api";
 import { btn } from "../../ui/buttons";
@@ -18,7 +19,7 @@ export default function Developers() {
     <>
       <p className="eyebrow">Developers</p>
       <h1 className="display mt-3 text-4xl">Connect your systems</h1>
-      <p className="mt-2 max-w-2xl text-ink-muted">A read-only REST API (plus posting leads), signed webhooks for six events, and the logs of both.</p>
+      <p className="mt-2 max-w-2xl text-ink-muted">A read-only REST API (plus posting leads), signed webhooks for six events, and the logs of both. Step-by-step guides are in <Link to="/help/api" className="text-accent underline">Help</Link>.</p>
       <div className="mt-8 grid gap-4 sm:grid-cols-[1fr_auto]">
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-4">
           {[["API", s ? `${s.api.version} · ${s.api.status}` : "…"], ["Requests, 24 h", s ? String(s.requests_24h) : "…"], ["Server errors, 24 h", s ? String(s.server_errors_24h) : "…"], ["Webhooks, 24 h", s ? `${s.webhooks_24h.delivered} sent · ${s.webhooks_24h.failed} failed` : "…"]].map(([k, v]) => (

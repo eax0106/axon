@@ -101,5 +101,5 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 Each of these needs an owner-supplied asset or Track 2 content, not backend code.
 
 - [ ] The five licensed ambience loops (Office, Call Center, Restaurant, Quiet Room, Retail Store) — WIRING_CHECKLIST #17; the mixer and the setting are built (B4)
-- [ ] n8n, Make and Zapier guides — help-centre content (Track 2); the API, spec and webhooks they use are built (B12)
-- [ ] The admin console and the whole dashboard UI — Track 2; every API behind them is built (B13)
+- [x] n8n, Make and Zapier guides — help-centre content (Track 2); the API, spec and webhooks they use are built (B12) — F13: `/help` with website POST, Meta, Sheets, Zapier, Make, n8n, Pabbly, API and webhook guides that show the reader's own lead URL
+- [x] The admin console and the whole dashboard UI — Track 2; every API behind them is built (B13) — F1–F13 (`apps/web`); staff console in F12

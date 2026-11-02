@@ -35,6 +35,7 @@ const Overview = lazy(() => import("./pages/Overview"));
 const Developers = lazy(() => import("./pages/developers/Developers"));
 const Support = lazy(() => import("./pages/support/Support"));
 const Admin = lazy(() => import("./pages/admin/Admin"));
+const Help = lazy(() => import("./pages/help/Help"));
 
 function Gate() {
   const token = useSyncExternalStore(session.subscribe, () => session.token());
@@ -81,6 +82,8 @@ export function App() {
               <Route path="developers" element={<Developers />} />
               <Route path="support" element={<Support />} />
               <Route path="admin/*" element={<StaffOnly />} />
+              <Route path="help" element={<Help />} />
+              <Route path="help/:slug" element={<Help />} />
               <Route path="employees/:id" element={<Employee />}>
                 <Route index element={<Navigate to="script" replace />} />
                 <Route path="script" element={<ScriptTab />} />
