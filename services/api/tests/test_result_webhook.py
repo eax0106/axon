@@ -3,6 +3,7 @@ trigger wants, signed when it has a secret, and its secret never read back."""
 
 import copy
 import json
+from datetime import datetime
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -11,7 +12,7 @@ from app.actions.schema import MASK
 from app.developer import events
 
 from .conftest import sql
-from .developer_support import Receiver, announce, deliveries, tick, verify
+from .developer_support import NOW, Receiver, announce, deliveries, tick, verify
 from .helpers import account_id, live_employee, signup
 from .test_ai_builder import Vendor, vendor  # noqa: F401
 
@@ -311,8 +312,10 @@ def test_a_resend_goes_to_where_the_published_hook_points_now(
 
     set_hook(api, owner, employee, {"url": f"{receiver.base}/moved", "secret": SECRET})
     publish(api, owner, employee)
-    assert api.post(resend, headers=owner).status_code == 201
-    tick(migrated_url)
+    again = api.post(resend, headers=owner)
+    assert again.status_code == 201
+    # The resend is due at the API's real clock, which may be past the suite's fixed NOW.
+    tick(migrated_url, max(NOW, datetime.fromisoformat(again.json()["next_attempt_at"])))
     assert [r["path"] for r in receiver.seen] == ["/result", "/moved"]
     assert verify(SECRET, receiver.seen[1]["headers"]["X-Axon-Signature"], receiver.seen[1]["body"])
 

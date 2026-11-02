@@ -1,8 +1,9 @@
 import json
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 
-from .developer_support import Receiver, announce, deliveries, make_webhook, tick, verify
+from .developer_support import NOW, Receiver, announce, deliveries, make_webhook, tick, verify
 from .helpers import account_id, add_member, signup
 
 
@@ -66,8 +67,12 @@ def test_a_resend_is_a_new_delivery_of_the_same_event_and_a_pending_one_cannot_b
     assert again.status_code == 201 and again.json()["id"] != done["id"]
     assert again.json()["event_id"] == done["event_id"] and again.json()["status"] == "pending"
     before = len(receiver.seen)
-    tick(migrated_url)
-    sent = receiver.seen[before:]
+    # The resend is due at the API's real clock, which may be past the suite's fixed NOW.
+    tick(migrated_url, max(NOW, datetime.fromisoformat(again.json()["next_attempt_at"])))
+    # At that time the still-pending delivery may be due for its retry too: look at the resend only.
+    sent = [
+        r for r in receiver.seen[before:] if r["headers"]["X-Axon-Delivery"] == again.json()["id"]
+    ]
     assert len(sent) == 1 and json.loads(sent[0]["body"])["id"] == done["event_id"]
     assert verify(secret, sent[0]["headers"]["X-Axon-Signature"], sent[0]["body"])
     assert sent[0]["headers"]["X-Axon-Delivery"] == again.json()["id"]
