@@ -31,8 +31,9 @@ from app.models import (
     WalletEntry,
 )
 from app.numbers.renewals import next_month, today_ist
-from app.providers import costs, failover, health
-from app.providers.registry import TIER_TTS, VENDOR_KEYS
+from app.providers import costs, failover, health, stack
+from app.providers.base import ProviderKind
+from app.providers.registry import TIER_TTS, VENDOR_KEYS, missing_keys
 from app.settings import max_concurrent_calls
 from app.voices import VoiceOut, voice_out
 
@@ -143,6 +144,74 @@ async def provider_health(session: Session) -> dict[str, Any]:
                 }
             )
     return {"window_minutes": int(health.WINDOW.total_seconds() // 60), "providers": rows}
+
+
+class StackVendor(BaseModel):
+    vendor: str
+    models: list[str]
+    missing_keys: list[str]  # empty when the vendor's keys are set
+
+
+class StackLeg(BaseModel):
+    kind: Literal["stt", "llm", "tts"]
+    vendor: str = Field(max_length=50)
+    model: str = Field(max_length=100)
+
+
+class StackLegOut(StackLeg):
+    options: list[StackVendor]
+
+
+class CallStack(BaseModel):
+    legs: list[StackLeg] = Field(min_length=3, max_length=3)
+
+
+@router.get("/call-stack")
+async def get_call_stack(session: Session) -> list[StackLegOut]:
+    """The vendor and model each AI leg of a call starts on, and what else it could be."""
+    saved = await stack.load(session)
+    current = {kind: saved.get(kind) or stack.default(kind) for kind in stack.LEGS}
+    return [
+        StackLegOut(
+            kind=str(kind),  # type: ignore[arg-type]
+            vendor=current[kind].vendor,
+            model=current[kind].model,
+            options=[
+                StackVendor(vendor=v, models=list(models), missing_keys=missing_keys(kind, v))
+                for v, models in stack.MODELS[kind].items()
+            ],
+        )
+        for kind in stack.LEGS
+    ]
+
+
+@router.put("/call-stack")
+async def set_call_stack(body: CallStack, staff: Staff, session: Session) -> list[StackLegOut]:
+    """Switch the call stack; calls that start from now on use it. A vendor whose keys are not
+    set is refused rather than saved, so a call never starts on a vendor that cannot answer."""
+    picked = {ProviderKind(leg.kind): stack.Choice(leg.vendor, leg.model) for leg in body.legs}
+    if set(picked) != set(stack.LEGS):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "one choice per leg")
+    for kind, choice in picked.items():
+        if not stack.valid(kind, choice):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, f"unknown {kind} model {choice.model!r}"
+            )
+        if missing := missing_keys(kind, choice.vendor):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                f"{choice.vendor} needs {', '.join(missing)} before it can run calls",
+            )
+    await stack.save(session, picked)
+    audit(
+        session,
+        staff,
+        None,
+        "call_stack_set",
+        **{str(k): f"{c.vendor}/{c.model}" for k, c in picked.items()},
+    )
+    await session.commit()
+    return await get_call_stack(session)
 
 
 class RateIn(BaseModel):

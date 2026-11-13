@@ -258,6 +258,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/call-stack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Call Stack
+         * @description The vendor and model each AI leg of a call starts on, and what else it could be.
+         */
+        get: operations["get_call_stack_admin_call_stack_get"];
+        /**
+         * Set Call Stack
+         * @description Switch the call stack; calls that start from now on use it. A vendor whose keys are not
+         *     set is refused rather than saved, so a call never starts on a vendor that cannot answer.
+         */
+        put: operations["set_call_stack_admin_call_stack_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/capacity": {
         parameters: {
             query?: never;
@@ -4047,6 +4072,11 @@ export interface components {
             /** Voicemail */
             voicemail: boolean;
         };
+        /** CallStack */
+        CallStack: {
+            /** Legs */
+            legs: components["schemas"]["StackLeg"][];
+        };
         /**
          * CallStatus
          * @enum {string}
@@ -5328,6 +5358,41 @@ export interface components {
             /** Transcript */
             transcript: string;
         };
+        /** StackLeg */
+        StackLeg: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "stt" | "llm" | "tts";
+            /** Model */
+            model: string;
+            /** Vendor */
+            vendor: string;
+        };
+        /** StackLegOut */
+        StackLegOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "stt" | "llm" | "tts";
+            /** Model */
+            model: string;
+            /** Options */
+            options: components["schemas"]["StackVendor"][];
+            /** Vendor */
+            vendor: string;
+        };
+        /** StackVendor */
+        StackVendor: {
+            /** Missing Keys */
+            missing_keys: string[];
+            /** Models */
+            models: string[];
+            /** Vendor */
+            vendor: string;
+        };
         /** StartBody */
         StartBody: {
             /**
@@ -6251,6 +6316,59 @@ export interface operations {
                     "application/json": {
                         [key: string]: number;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_call_stack_admin_call_stack_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackLegOut"][];
+                };
+            };
+        };
+    };
+    set_call_stack_admin_call_stack_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CallStack"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackLegOut"][];
                 };
             };
             /** @description Validation Error */

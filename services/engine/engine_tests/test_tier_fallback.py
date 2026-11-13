@@ -13,6 +13,7 @@ from app.models import VoiceTier
 from app.providers.base import ProviderKind, ProviderNotConfiguredError
 from app.providers.failover import billed_tier, chain
 from app.providers.registry import VENDOR_KEYS
+from app.providers.stack import Choice
 from engine.legs import ServiceLeg, voice_legs
 
 from .test_call import events
@@ -124,3 +125,20 @@ def test_a_premium_call_that_fell_back_to_value_is_billed_at_value(
         "tts:badtts:false",
         "tts:goodtts:true",
     ]
+
+
+def test_the_call_stack_picks_the_vendor_and_model_each_leg_starts_on(
+    keys: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CARTESIA_VOICE_TE", "voice-te")
+    picked = {
+        ProviderKind.LLM: Choice("sarvam", "sarvam-105b-conversations"),
+        ProviderKind.TTS: Choice("cartesia", "sonic-3.6"),
+    }
+    # A Value voice (Sarvam) still loses the lead to the stack's Cartesia; it stays as backup.
+    stt, llm, tts = voice_legs("te", VoiceTier.VALUE, stack=picked)
+    assert order(tts) == ["cartesia", "sarvam", "smallest"]
+    assert order(llm) == ["sarvam", "gemini"] and order(stt) == ["sarvam", "smallest"]
+    models = [getattr(s, "_settings").model for s in llm.services]  # noqa: B009
+    assert models[0] == "sarvam-105b-conversations"
+    assert models[1] != "sarvam-105b-conversations"  # the backup keeps its own default

@@ -271,3 +271,45 @@ def test_a_refund_whose_charge_cannot_be_found_is_refused_and_changes_nothing(
     assert sql(migrated_url, balance, {"a": account}) == before
     told = "SELECT count(*) FROM notifications WHERE kind = 'number_purchase'"
     assert sql(migrated_url, told) == 0
+
+
+def test_the_call_stack_is_switched_by_staff_and_refuses_what_cannot_run(
+    db_client: TestClient, admin: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = {leg["kind"]: leg for leg in db_client.get("/admin/call-stack", headers=admin).json()}
+    assert list(before) == ["stt", "llm", "tts"]
+    assert before["llm"]["vendor"] == "gemini"  # unset: the first vendor, as before
+    sarvam_llm = next(o for o in before["llm"]["options"] if o["vendor"] == "sarvam")
+    assert sarvam_llm["models"][0] == "sarvam-105b-conversations"
+    assert sarvam_llm["missing_keys"] == ["SARVAM_API_KEY"]
+
+    pick = {
+        "legs": [
+            {"kind": "stt", "vendor": "sarvam", "model": "saaras:v4"},
+            {"kind": "llm", "vendor": "sarvam", "model": "sarvam-105b-conversations"},
+            {"kind": "tts", "vendor": "cartesia", "model": "sonic-3.6"},
+        ]
+    }
+    refused = db_client.put("/admin/call-stack", json=pick, headers=admin)
+    assert refused.status_code == 422 and "SARVAM_API_KEY" in refused.text  # no keys, no switch
+
+    monkeypatch.setenv("SARVAM_API_KEY", "k")
+    monkeypatch.setenv("CARTESIA_API_KEY", "k")
+    saved = db_client.put("/admin/call-stack", json=pick, headers=admin)
+    assert saved.status_code == 200
+    after = {leg["kind"]: (leg["vendor"], leg["model"]) for leg in saved.json()}
+    assert after == {
+        "stt": ("sarvam", "saaras:v4"),
+        "llm": ("sarvam", "sarvam-105b-conversations"),
+        "tts": ("cartesia", "sonic-3.6"),
+    }
+    shown = db_client.get("/admin/call-stack", headers=admin).json()
+    assert {leg["kind"]: (leg["vendor"], leg["model"]) for leg in shown} == after
+
+    made_up = {"legs": [*pick["legs"][:2], {"kind": "tts", "vendor": "cartesia", "model": "x"}]}
+    assert db_client.put("/admin/call-stack", json=made_up, headers=admin).status_code == 422
+    twice = {"legs": [pick["legs"][0], pick["legs"][0], pick["legs"][2]]}
+    assert db_client.put("/admin/call-stack", json=twice, headers=admin).status_code == 422
+
+    owner = signup(db_client, email="owner@example.com")
+    assert db_client.get("/admin/call-stack", headers=owner).status_code == 403

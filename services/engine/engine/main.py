@@ -24,7 +24,7 @@ from app.employees.tickets import read as read_ticket
 from app.inbound import transfer as transferring
 from app.inbound.routing import route
 from app.main import provider_not_configured
-from app.providers import health
+from app.providers import health, stack
 from app.providers.base import ProviderKind, ProviderNotConfiguredError, TelephonyProvider
 from app.providers.registry import require
 from app.settings import engine_public_url, get_settings
@@ -112,7 +112,10 @@ async def _setup(
     factory = async_sessionmaker(app_.state.db, expire_on_commit=False)
     async with factory() as session:  # vendors failing right now are tried last
         down = await health.unhealthy(session, datetime.now(UTC))
-    legs = voice_legs(plan.language, voice=plan.voice, speed=plan.tts_speed, down=down)
+        picked = await stack.load(session)
+    legs = voice_legs(
+        plan.language, voice=plan.voice, speed=plan.tts_speed, down=down, stack=picked
+    )
     context = ActionContext(
         factory, plan.account_id, _call_id(call), plan.party_phone, plan.party_name
     )

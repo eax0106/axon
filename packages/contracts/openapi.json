@@ -1003,6 +1003,24 @@
         "title": "CallOut",
         "type": "object"
       },
+      "CallStack": {
+        "properties": {
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/StackLeg"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Legs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "legs"
+        ],
+        "title": "CallStack",
+        "type": "object"
+      },
       "CallStatus": {
         "enum": [
           "queued",
@@ -4256,6 +4274,103 @@
         "title": "SpokenProposal",
         "type": "object"
       },
+      "StackLeg": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "stt",
+              "llm",
+              "tts"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 100,
+            "title": "Model",
+            "type": "string"
+          },
+          "vendor": {
+            "maxLength": 50,
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "vendor",
+          "model"
+        ],
+        "title": "StackLeg",
+        "type": "object"
+      },
+      "StackLegOut": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "stt",
+              "llm",
+              "tts"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 100,
+            "title": "Model",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/StackVendor"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "vendor": {
+            "maxLength": 50,
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "vendor",
+          "model",
+          "options"
+        ],
+        "title": "StackLegOut",
+        "type": "object"
+      },
+      "StackVendor": {
+        "properties": {
+          "missing_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Keys",
+            "type": "array"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor",
+          "models",
+          "missing_keys"
+        ],
+        "title": "StackVendor",
+        "type": "object"
+      },
       "StartBody": {
         "properties": {
           "start_at": {
@@ -6270,6 +6385,80 @@
           }
         ],
         "summary": "Announce"
+      }
+    },
+    "/admin/call-stack": {
+      "get": {
+        "description": "The vendor and model each AI leg of a call starts on, and what else it could be.",
+        "operationId": "get_call_stack_admin_call_stack_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StackLegOut"
+                  },
+                  "title": "Response Get Call Stack Admin Call Stack Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Call Stack"
+      },
+      "put": {
+        "description": "Switch the call stack; calls that start from now on use it. A vendor whose keys are not\nset is refused rather than saved, so a call never starts on a vendor that cannot answer.",
+        "operationId": "set_call_stack_admin_call_stack_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallStack"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StackLegOut"
+                  },
+                  "title": "Response Set Call Stack Admin Call Stack Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Call Stack"
       }
     },
     "/admin/capacity": {
