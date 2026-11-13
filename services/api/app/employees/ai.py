@@ -9,6 +9,7 @@ import uuid
 from dataclasses import replace
 from typing import Annotated, Any, Literal
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError
 
@@ -109,8 +110,22 @@ def parse_json(text: str) -> dict[str, Any]:
 
 
 async def ask(system: str, user: str) -> dict[str, Any]:
-    reply = await llm().complete(system, [{"role": "user", "content": user}], json_output=True)
-    return parse_json(reply)
+    # ponytail: one retry. Flash-Lite models now and then emit a stray quote in long JSON (about
+    # 1 in 20 drafts on gemini-3.5-flash-lite) and Google now and then answers 503 when busy; a
+    # second request is almost always fine. Add backoff if a single retry stops being enough.
+    for attempt in range(2):
+        try:
+            reply = await llm().complete(
+                system, [{"role": "user", "content": user}], json_output=True
+            )
+            return parse_json(reply)
+        except httpx.HTTPStatusError as exc:
+            if attempt or not (exc.response.status_code == 429 or exc.response.is_server_error):
+                raise
+        except AiOutputError:
+            if attempt:
+                raise
+    raise AssertionError("unreachable")
 
 
 class Brief(BaseModel):

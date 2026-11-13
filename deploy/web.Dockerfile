@@ -12,5 +12,7 @@ COPY apps/web apps/web
 RUN pnpm --filter web build
 
 FROM nginx:1.27-alpine
-COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+# A template so the image's entrypoint fills in the DNS resolver the api upstream is looked up with.
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+COPY deploy/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html

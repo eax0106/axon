@@ -23,6 +23,7 @@ class Vendor:
 
     def __init__(self) -> None:
         self.text = "{}"
+        self.replies: list[str | int] = []  # answered first, one per request: text or a status
         self.status = 200
         self.requests: list[httpx.Request] = []
 
@@ -32,7 +33,10 @@ class Vendor:
             return httpx.Response(
                 200, json={"request_id": "r", "transcript": "  I sell solar panels "}
             )
-        payload = {"candidates": [{"content": {"role": "model", "parts": [{"text": self.text}]}}]}
+        text = self.replies.pop(0) if self.replies else self.text
+        if isinstance(text, int):
+            return httpx.Response(text, json={"error": {"code": text}})
+        payload = {"candidates": [{"content": {"role": "model", "parts": [{"text": text}]}}]}
         return httpx.Response(self.status, json=payload)
 
 
@@ -111,6 +115,29 @@ def test_malformed_model_output_is_a_502_not_a_crash(api: TestClient, vendor: Ve
         vendor.text = text
         response = api.post("/ai/brief-questions", json=BRIEF, headers=owner)
         assert response.status_code == 502 and "ai_output_invalid" in response.text, text
+
+
+def test_one_malformed_reply_is_retried_once(api: TestClient, vendor: Vendor) -> None:
+    owner = signup(api)
+    vendor.replies = ['{"questions": ["Which cities?",, }']
+    vendor.text = '{"questions": ["Which cities?"]}'
+    response = api.post("/ai/brief-questions", json=BRIEF, headers=owner)
+    assert response.json() == {"questions": ["Which cities?"]}
+    assert len(vendor.requests) == 2
+
+
+def test_a_busy_vendor_is_retried_once_and_a_bad_request_is_not(
+    api: TestClient, vendor: Vendor
+) -> None:
+    owner = signup(api)
+    vendor.text = '{"questions": ["Which cities?"]}'
+    vendor.replies = [503]
+    response = api.post("/ai/brief-questions", json=BRIEF, headers=owner)
+    assert response.json() == {"questions": ["Which cities?"]}
+    assert len(vendor.requests) == 2
+    vendor.replies = [400]
+    assert api.post("/ai/brief-questions", json=BRIEF, headers=owner).status_code >= 400
+    assert len(vendor.requests) == 3
 
 
 def test_draft_agent_returns_a_script_ready_to_save(api: TestClient, vendor: Vendor) -> None:
