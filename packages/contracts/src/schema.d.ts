@@ -639,6 +639,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/translate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Translate
+         * @description Owner-facing text (the follow-up questions) in another language, same order.
+         */
+        post: operations["translate_ai_translate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -5408,6 +5428,21 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** TranslateRequest */
+        TranslateRequest: {
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "te" | "hi" | "en";
+            /** Texts */
+            texts: string[];
+        };
+        /** Translated */
+        Translated: {
+            /** Texts */
+            texts: string[];
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -6905,6 +6940,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Transcript"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    translate_ai_translate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranslateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Translated"];
                 };
             };
             /** @description Validation Error */
