@@ -22,6 +22,8 @@ OutOfWindow = Literal["next_window", "plus_3h", "plus_6h", "next_day", "hold"]
 
 
 class DialerSettings(BaseModel):
+    # Off: the owner's rules below are kept but not applied (see `in_force`); the hard limit stays.
+    enabled: bool = True
     dial_delay_s: int = Field(default=0, ge=0, le=3600)
     # Default 9 AM to 9 PM, inside the hard 6 AM to 10 PM limit: TRAI's default-allowed band for
     # promotional calls is narrower than the hard limit, and the owner can widen it.
@@ -56,6 +58,21 @@ class DialerSettings(BaseModel):
     @property
     def max_attempts(self) -> int:
         return 1 + len(self.retry_ladder_min)
+
+    @classmethod
+    def in_force(cls, saved: dict[str, object] | None) -> "DialerSettings":
+        """The rules the dialer applies. With the rules switched off a lead is called at once, any
+        day, once, with no duplicate check; only the hard 6 AM to 10 PM limit still holds."""
+        settings = cls.model_validate(saved or {})
+        if settings.enabled:
+            return settings
+        return cls(
+            enabled=False,
+            window_start_min=HARD_START_MIN,
+            window_end_min=HARD_END_MIN,
+            retry_ladder_min=[],
+            dedup_recent_days=0,
+        )
 
 
 def local(now: datetime, offset_min: int) -> datetime:

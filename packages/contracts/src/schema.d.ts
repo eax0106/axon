@@ -4352,6 +4352,11 @@ export interface components {
              */
             dial_delay_s: number;
             /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
              * Out Of Window
              * @default next_window
              * @enum {string}

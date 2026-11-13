@@ -1735,6 +1735,11 @@
             "title": "Dial Delay S",
             "type": "integer"
           },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "out_of_window": {
             "default": "next_window",
             "enum": [

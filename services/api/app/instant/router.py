@@ -318,7 +318,7 @@ async def redial(
     )
     if on_dnc:
         raise HTTPException(status.HTTP_409_CONFLICT, "number is on the do-not-call list")
-    settings = DialerSettings.model_validate(employee.dialer or {})
+    settings = DialerSettings.in_force(employee.dialer)
     when = rules.next_window_start(datetime.now(UTC), settings, rules.IST)
     if call.status is CallStatus.QUEUED:
         call.scheduled_for = when  # releases a held call, or brings a waiting one forward

@@ -190,6 +190,7 @@ def test_dialer_settings_round_trip_and_reject_what_breaks_the_hard_limits(
     path = f"/employees/{employee}/instant/dialer"
     assert api.get(path, headers=owner).json()["window_start_min"] == 9 * 60  # the default
     mine = {
+        "enabled": False,
         "dial_delay_s": 30,
         "window_start_min": 7 * 60,
         "window_end_min": 20 * 60,

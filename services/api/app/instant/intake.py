@@ -81,7 +81,7 @@ async def process(
 ) -> Result:
     """Run one lead through the rules. `dry_run` (test leads) decides and logs but creates no lead
     and no call. Commits."""
-    settings = DialerSettings.model_validate(employee.dialer or {})
+    settings = DialerSettings.in_force(employee.dialer)
     declared = employees.bundle_of(employee).pre_call_variables
     phone = normalize_phone(pick(payload, PHONE_KEYS))
     if phone is not None:

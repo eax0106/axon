@@ -103,7 +103,7 @@ async def settle(
     employee = await session.get(Employee, call.employee_id)
     if employee is None:
         return None
-    settings = DialerSettings.model_validate(employee.dialer or {})
+    settings = DialerSettings.in_force(employee.dialer)
     if not rules.has_retry(call.attempt, settings):
         await _event(session, call, "attempts_used_up", attempts=call.attempt)
         return None
@@ -246,7 +246,7 @@ async def _decide(session: AsyncSession, call: Call, now: datetime) -> Claim:
     if employee.status is not EmployeeStatus.LIVE or number is None:
         call.scheduled_for = now + NOT_READY_RETRY
         return Claim(call.id, "rescheduled")
-    settings = DialerSettings.model_validate(employee.dialer or {})
+    settings = DialerSettings.in_force(employee.dialer)
     if not rules.in_window(now, settings, rules.IST):
         call.scheduled_for = rules.adjust(now, settings, rules.IST)
         await _event(session, call, "outside_window", next=str(call.scheduled_for))
