@@ -33,7 +33,8 @@ from app.models import (
 from app.numbers.renewals import next_month, today_ist
 from app.providers import costs, failover, health, stack
 from app.providers.base import ProviderKind
-from app.providers.registry import TIER_TTS, VENDOR_KEYS, missing_keys
+from app.providers.registry import TIER_TTS, VENDOR_KEYS, missing_keys, resolve
+from app.providers.speech.cartesia import CartesiaTTS
 from app.settings import max_concurrent_calls
 from app.voices import VoiceOut, voice_out
 
@@ -98,6 +99,40 @@ async def create_voice(body: VoiceIn, staff: Staff, session: Session) -> VoiceOu
     session.add(voice)
     audit(session, staff, None, "voice_created", voice=body.provider_voice_id)
     return await _save(session, voice)
+
+
+class LibraryVoice(BaseModel):
+    """A voice in Cartesia's public library, and whether it is already in our catalogue."""
+
+    provider_voice_id: str
+    name: str
+    description: str
+    gender: str | None
+    accent: str | None
+    added: bool
+
+
+@router.get("/voices/library/cartesia")
+async def cartesia_library(language: Language, session: Session) -> list[LibraryVoice]:
+    """Premium voices to add: Cartesia's public voices for one language (503 without its key)."""
+    vendor = resolve(ProviderKind.TTS, "cartesia")
+    assert isinstance(vendor, CartesiaTTS)
+    rows = await vendor.library(language)
+    have = set(
+        await session.scalars(select(Voice.provider_voice_id).where(Voice.provider == "cartesia"))
+    )
+    return [
+        LibraryVoice(
+            provider_voice_id=r["id"],
+            name=r.get("name") or r["id"],
+            description=r.get("description") or "",
+            gender=r.get("gender"),
+            accent=next((a.get("accent") for a in r.get("accents") or []), None),
+            added=r["id"] in have,
+        )
+        for r in rows
+        if r.get("status", "active") == "active"
+    ]
 
 
 @router.put("/voices/{voice_id}")

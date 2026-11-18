@@ -2403,6 +2403,27 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "Holder": {
+        "properties": {
+          "employee_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Id"
+          }
+        },
+        "required": [
+          "employee_id"
+        ],
+        "title": "Holder",
+        "type": "object"
+      },
       "HttpApi": {
         "description": "Call the owner's own web service. Values for `{name}` in the URL go in the path or query;\nthe rest go in the query (GET, DELETE) or a JSON body (POST, PUT, PATCH).",
         "properties": {
@@ -2941,6 +2962,59 @@
           }
         },
         "title": "LeadPatch",
+        "type": "object"
+      },
+      "LibraryVoice": {
+        "description": "A voice in Cartesia's public library, and whether it is already in our catalogue.",
+        "properties": {
+          "accent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent"
+          },
+          "added": {
+            "title": "Added",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider_voice_id": {
+            "title": "Provider Voice Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_voice_id",
+          "name",
+          "description",
+          "gender",
+          "accent",
+          "added"
+        ],
+        "title": "LibraryVoice",
         "type": "object"
       },
       "ListBody": {
@@ -7185,6 +7259,60 @@
           }
         ],
         "summary": "Create Voice"
+      }
+    },
+    "/admin/voices/library/cartesia": {
+      "get": {
+        "description": "Premium voices to add: Cartesia's public voices for one language (503 without its key).",
+        "operationId": "cartesia_library_admin_voices_library_cartesia_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "language",
+            "required": true,
+            "schema": {
+              "enum": [
+                "te",
+                "hi",
+                "en"
+              ],
+              "title": "Language",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LibraryVoice"
+                  },
+                  "title": "Response Cartesia Library Admin Voices Library Cartesia Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cartesia Library"
       }
     },
     "/admin/voices/{voice_id}": {
@@ -16472,6 +16600,64 @@
           }
         ],
         "summary": "Set Channels"
+      }
+    },
+    "/numbers/{number_id}/employee": {
+      "put": {
+        "description": "Give the number to another employee (or to none). Its current employee loses it and is\npaused if live; the new one must not hold a number already.",
+        "operationId": "move_number_numbers__number_id__employee_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Number Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Holder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Move Number Numbers  Number Id  Employee Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Move Number"
       }
     },
     "/public/otp/{token}": {

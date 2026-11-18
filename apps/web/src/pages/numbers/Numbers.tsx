@@ -40,6 +40,12 @@ function Mine() {
       void qc.invalidateQueries({ queryKey: ["numbers"] });
       void qc.invalidateQueries({ queryKey: ["wallet"] }); // a new channel is charged at once
     });
+  const move = (n: PhoneNumber, employeeId: string) =>
+    run(async () => {
+      await unwrap(api.PUT("/numbers/{number_id}/employee", { ...at(n), body: { employee_id: employeeId || null } }));
+      void qc.invalidateQueries({ queryKey: ["numbers"] });
+      void qc.invalidateQueries({ queryKey: ["employees"] });
+    });
   const release = (n: PhoneNumber) =>
     run(async () => {
       await unwrap(api.DELETE("/numbers/{number_id}", at(n)));
@@ -59,14 +65,23 @@ function Mine() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="num text-lg text-ink-strong">{n.e164}</p>
-                <p className="text-sm text-ink-muted">
-                  {TYPE[n.number_type]} · {nameOf(n.employee_id) ?? "Not attached"}
-                </p>
+                <p className="text-sm text-ink-muted">{TYPE[n.number_type]}</p>
               </div>
               <span className={`eyebrow ${n.status === "active" ? "" : "text-warn"}`}>
                 ● {n.status === "active" ? `Renews ${day(n.renews_on)}` : n.status === "grace" ? `Grace until ${day(n.grace_until)}` : "Being checked"}
               </span>
             </div>
+            <label className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+              <span className="text-ink-muted">Used by</span>
+              <select aria-label={`Employee using ${n.e164}`} value={n.employee_id ?? ""} onChange={(e) => void move(n, e.target.value)}
+                className="h-9 min-w-48 rounded-ctl border border-line-accent bg-bg px-2 text-ink-strong outline-none focus:border-accent">
+                <option value="">No one</option>
+                {(employees.data ?? []).map((e) => (
+                  <option key={e.id} value={e.id}>{e.name}{e.number_id && e.number_id !== n.id ? " (has a number)" : ""}</option>
+                ))}
+              </select>
+            </label>
+            {n.employee_id && <p className="mt-1 text-xs text-ink-muted">Moving it pauses {nameOf(n.employee_id) ?? "its employee"} if live: an employee cannot call without a number.</p>}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
               <span className="text-ink-muted">
                 <span className="num text-ink">{credits(n.monthly_fee)}</span> credits a month

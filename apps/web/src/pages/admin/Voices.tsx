@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { FormEvent } from "react";
+import { type FormEvent, useState } from "react";
 
 import { api, unwrap } from "../../lib/api";
 import { queryClient } from "../../lib/queries";
@@ -48,6 +48,7 @@ export function Voices() {
         )}
         {outcome}
       </Section>
+      <CartesiaLibrary />
       <Section id="add-voice" title="Add a voice">
         <form onSubmit={add} className="grid gap-2 sm:grid-cols-3">
           <select name="provider" aria-label="Vendor (sets the tier)" className={input}><option value="sarvam">sarvam (value)</option><option value="smallest">smallest (standard)</option><option value="cartesia">cartesia (premium)</option></select>
@@ -61,5 +62,49 @@ export function Voices() {
         </form>
       </Section>
     </div>
+  );
+}
+
+/** Cartesia's public Premium voices for one language; Add puts one in the catalogue. */
+function CartesiaLibrary() {
+  const [language, setLanguage] = useState<(typeof LANGS)[number]>("te");
+  const library = useQuery({
+    queryKey: ["admin", "cartesia-library", language],
+    queryFn: () => unwrap(api.GET("/admin/voices/library/cartesia", { params: { query: { language } } })),
+  });
+  const { busy, write, outcome } = useWrite();
+  type Row = NonNullable<typeof library.data>[number];
+  const add = (v: Row) =>
+    write(async () => {
+      await unwrap(api.POST("/admin/voices", { body: {
+        provider: "cartesia", provider_voice_id: v.provider_voice_id, name: v.name.slice(0, 100), native_language: language,
+        accent: v.accent?.slice(0, 50) ?? null, tone_tags: v.gender ? [v.gender] : [], language_scores: { [language]: 0.7 },
+      } }));
+      await queryClient.invalidateQueries({ queryKey: ["voices"] });
+      await library.refetch();
+      return `Added ${v.name} (Premium, ${language}); owners can pick it now.`;
+    });
+  return (
+    <Section id="cartesia-library" title={`Cartesia library · Premium · ${library.data?.length ?? "…"}`}>
+      <select aria-label="Language" value={language} onChange={(e) => setLanguage(e.target.value as (typeof LANGS)[number])} className={input}>
+        {LANGS.map((l) => <option key={l} value={l}>{l === "te" ? "Telugu" : l === "hi" ? "Hindi" : "English"}</option>)}
+      </select>
+      {library.error ? <div className="mt-3"><ErrorState error={library.error} /></div> : !library.data ? <Skeleton className="mt-3 h-40" /> : (
+        <ul className="mt-3 max-h-[28rem] divide-y divide-line overflow-y-auto text-sm">
+          {library.data.map((v) => (
+            <li key={v.provider_voice_id} className="flex items-start justify-between gap-3 py-2">
+              <span className="min-w-0">
+                <span className="text-ink-strong">{v.name}</span>
+                <span className="ml-2 text-xs text-ink-muted">{[v.gender, v.accent].filter(Boolean).join(" · ")}</span>
+                <span className="block text-xs text-ink-muted">{v.description}</span>
+              </span>
+              {v.added ? <span className="shrink-0 text-xs text-accent">In catalogue</span> : <button type="button" className={`${btn.quiet} shrink-0`} disabled={busy} onClick={() => add(v)}>Add</button>}
+            </li>
+          ))}
+          {library.data.length === 0 && <li className="py-4 text-center text-ink-muted">Cartesia lists no voices for this language.</li>}
+        </ul>
+      )}
+      {outcome}
+    </Section>
   );
 }

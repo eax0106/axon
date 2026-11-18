@@ -571,6 +571,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/voices/library/cartesia": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cartesia Library
+         * @description Premium voices to add: Cartesia's public voices for one language (503 without its key).
+         */
+        get: operations["cartesia_library_admin_voices_library_cartesia_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/voices/{voice_id}": {
         parameters: {
             query?: never;
@@ -3324,6 +3344,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/numbers/{number_id}/employee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Move Number
+         * @description Give the number to another employee (or to none). Its current employee loses it and is
+         *     paused if live; the new one must not hold a number already.
+         */
+        put: operations["move_number_numbers__number_id__employee_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/otp/{token}": {
         parameters: {
             query?: never;
@@ -4612,6 +4653,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** Holder */
+        Holder: {
+            /** Employee Id */
+            employee_id: string | null;
+        };
         /**
          * HttpApi
          * @description Call the owner's own web service. Values for `{name}` in the URL go in the path or query;
@@ -4865,6 +4911,24 @@ export interface components {
         LeadPatch: {
             /** Name */
             name?: string | null;
+        };
+        /**
+         * LibraryVoice
+         * @description A voice in Cartesia's public library, and whether it is already in our catalogue.
+         */
+        LibraryVoice: {
+            /** Accent */
+            accent: string | null;
+            /** Added */
+            added: boolean;
+            /** Description */
+            description: string;
+            /** Gender */
+            gender: string | null;
+            /** Name */
+            name: string;
+            /** Provider Voice Id */
+            provider_voice_id: string;
         };
         /** ListBody */
         ListBody: {
@@ -6869,6 +6933,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cartesia_library_admin_voices_library_cartesia_get: {
+        parameters: {
+            query: {
+                language: "te" | "hi" | "en";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryVoice"][];
                 };
             };
             /** @description Validation Error */
@@ -12531,6 +12626,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Channels"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_number_numbers__number_id__employee_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Holder"];
             };
         };
         responses: {
