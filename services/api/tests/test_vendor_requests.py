@@ -81,7 +81,10 @@ def test_gemini_model_follows_the_env_override(monkeypatch: pytest.MonkeyPatch) 
     reply = httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "x"}]}}]})
     _, request = run(GeminiLLM, reply, "complete", "s", [{"role": "user", "content": "q"}])
     assert request.url.path.endswith("/models/gemini-3.6-flash:generateContent")
-    assert "responseMimeType" not in json.loads(request.content)["generationConfig"]
+    config = json.loads(request.content)["generationConfig"]
+    assert "responseMimeType" not in config
+    # 3.x models answer 400 to a thinking budget of 0; they take a level instead.
+    assert config["thinkingConfig"] == {"thinkingLevel": "minimal"}
 
 
 def test_sarvam_complete_sends_both_auth_headers_and_asks_for_json_mode() -> None:

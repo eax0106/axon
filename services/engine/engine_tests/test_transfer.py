@@ -242,7 +242,11 @@ def test_without_a_transfer_number_the_ai_has_no_such_tool(
         link = f"/vobiz/stream?lang=en&call={query['call'][0]}&employee={query['employee'][0]}"
         with client.websocket_connect(link) as ws:
             ws.send_text(json.dumps(START))
-            time.sleep(0.5)
+            # The pipeline registers its tools a moment after start; slow CI runners need longer
+            # than a fixed half second.
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and "end_call" not in llm.handlers:
+                time.sleep(0.05)
     assert "transfer_to_human" not in llm.handlers and "end_call" in llm.handlers
 
 

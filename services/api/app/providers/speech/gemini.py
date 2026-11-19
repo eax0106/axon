@@ -27,6 +27,15 @@ def model() -> str:
     return os.environ.get("AXON_GEMINI_MODEL") or DEFAULT_MODEL
 
 
+def no_thinking() -> dict[str, Any]:
+    """The lowest hidden-reasoning setting: 2.x models take a token budget, 3.x models a level and
+    answer 400 to a budget of 0. Drafting and reading files need no hidden reasoning."""
+    # ponytail: 3.x Flash (not Flash-Lite) refuses "minimal"; map it to "low" if one is used
+    if model().startswith("gemini-2"):
+        return {"thinkingBudget": 0}
+    return {"thinkingLevel": "minimal"}
+
+
 class GeminiLLM(VendorHealth, LLMProvider, FileReader):
     name = "gemini"
     health_url = f"{BASE}/models"
@@ -40,7 +49,7 @@ class GeminiLLM(VendorHealth, LLMProvider, FileReader):
     ) -> str:
         config: dict[str, Any] = {
             "maxOutputTokens": 4096,
-            "thinkingConfig": {"thinkingBudget": 0},  # drafting does not need hidden reasoning
+            "thinkingConfig": no_thinking(),
         }
         if json_output:
             config["responseMimeType"] = "application/json"
@@ -73,7 +82,7 @@ class GeminiLLM(VendorHealth, LLMProvider, FileReader):
                     ],
                 }
             ],
-            "generationConfig": {"maxOutputTokens": 8192, "thinkingConfig": {"thinkingBudget": 0}},
+            "generationConfig": {"maxOutputTokens": 8192, "thinkingConfig": no_thinking()},
         }
         async with self.client() as client:
             response = await client.post(
