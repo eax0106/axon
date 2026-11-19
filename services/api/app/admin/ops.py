@@ -109,7 +109,15 @@ class LibraryVoice(BaseModel):
     description: str
     gender: str | None
     accent: str | None
+    languages: list[Language]  # the V1 languages Cartesia says this voice speaks
     added: bool
+
+
+def spoken(row: dict[str, Any], asked: str) -> list[Language]:
+    """The V1 languages a library voice speaks, read from its accents' locales (en-US, te-IN...).
+    Cartesia lists the voice under `asked`, so that one always counts."""
+    codes = {(a.get("locale") or "")[:2] for a in row.get("accents") or []} | {asked}
+    return [code for code in ("te", "hi", "en") if code in codes]
 
 
 @router.get("/voices/library/cartesia")
@@ -128,6 +136,7 @@ async def cartesia_library(language: Language, session: Session) -> list[Library
             description=r.get("description") or "",
             gender=r.get("gender"),
             accent=next((a.get("accent") for a in r.get("accents") or []), None),
+            languages=spoken(r, language),
             added=r["id"] in have,
         )
         for r in rows

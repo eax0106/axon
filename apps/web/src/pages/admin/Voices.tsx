@@ -78,11 +78,11 @@ function CartesiaLibrary() {
     write(async () => {
       await unwrap(api.POST("/admin/voices", { body: {
         provider: "cartesia", provider_voice_id: v.provider_voice_id, name: v.name.slice(0, 100), native_language: language,
-        accent: v.accent?.slice(0, 50) ?? null, tone_tags: v.gender ? [v.gender] : [], language_scores: { [language]: 0.7 },
+        accent: v.accent?.slice(0, 50) ?? null, tone_tags: v.gender ? [v.gender] : [], language_scores: Object.fromEntries(v.languages.map((l) => [l, 0.7])),
       } }));
       await queryClient.invalidateQueries({ queryKey: ["voices"] });
       await library.refetch();
-      return `Added ${v.name} (Premium, ${language}); owners can pick it now.`;
+      return `Added ${v.name} (Premium, ${v.languages.join(", ")}); owners can pick it now.`;
     });
   return (
     <Section id="cartesia-library" title={`Cartesia library · Premium · ${library.data?.length ?? "…"}`}>
@@ -95,7 +95,7 @@ function CartesiaLibrary() {
             <li key={v.provider_voice_id} className="flex items-start justify-between gap-3 py-2">
               <span className="min-w-0">
                 <span className="text-ink-strong">{v.name}</span>
-                <span className="ml-2 text-xs text-ink-muted">{[v.gender, v.accent].filter(Boolean).join(" · ")}</span>
+                <span className="ml-2 text-xs text-ink-muted">{[v.gender, v.accent, v.languages.join(", ")].filter(Boolean).join(" · ")}</span>
                 <span className="block text-xs text-ink-muted">{v.description}</span>
               </span>
               {v.added ? <span className="shrink-0 text-xs text-accent">In catalogue</span> : <button type="button" className={`${btn.quiet} shrink-0`} disabled={busy} onClick={() => add(v)}>Add</button>}

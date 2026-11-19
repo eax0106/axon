@@ -2997,6 +2997,18 @@
             ],
             "title": "Gender"
           },
+          "languages": {
+            "items": {
+              "enum": [
+                "te",
+                "hi",
+                "en"
+              ],
+              "type": "string"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3012,6 +3024,7 @@
           "description",
           "gender",
           "accent",
+          "languages",
           "added"
         ],
         "title": "LibraryVoice",

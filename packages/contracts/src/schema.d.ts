@@ -4925,6 +4925,8 @@ export interface components {
             description: string;
             /** Gender */
             gender: string | null;
+            /** Languages */
+            languages: ("te" | "hi" | "en")[];
             /** Name */
             name: string;
             /** Provider Voice Id */

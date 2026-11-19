@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.admin.ops import spoken
 from app.billing import ledger
 from app.models import LedgerKind
 from app.providers import health
@@ -30,6 +31,12 @@ VOICE = {
 @pytest.fixture
 def admin(db_client: TestClient, migrated_url: str) -> dict[str, str]:
     return staff(db_client, migrated_url)
+
+
+def test_a_library_voice_is_tagged_with_every_v1_language_its_accents_name() -> None:
+    daniel = {"accents": [{"locale": "en-US"}, {"locale": "te-IN"}, {"locale": "fr-FR"}]}
+    assert spoken(daniel, "en") == ["te", "en"]  # French is not a V1 language
+    assert spoken({"accents": None}, "hi") == ["hi"]  # the language it was listed under counts
 
 
 def test_the_voice_library_is_kept_by_staff(
