@@ -205,3 +205,31 @@ def test_channels_cannot_be_added_without_credits_or_while_the_rent_is_overdue(
     sql(migrated_url, "UPDATE numbers SET status = 'grace' WHERE id = :n", {"n": number})
     late = api.put(f"/numbers/{number}/channels", json={"channels": 2}, headers=owner)
     assert late.status_code == 409
+
+
+def test_a_number_moves_from_one_employee_to_another_and_can_be_freed(
+    api: TestClient, migrated_url: str
+) -> None:
+    owner = signup(api)
+    first = live_employee(api, migrated_url, owner)
+    number = sql(migrated_url, "SELECT number_id FROM employees WHERE id = :e", {"e": first})
+    second = hire(api, owner)
+    path = f"/numbers/{number}/employee"
+
+    moved = api.put(path, json={"employee_id": second}, headers=owner)
+    assert moved.status_code == 200 and moved.json()["employee_id"] == second
+    assert (
+        sql(migrated_url, "SELECT status FROM employees WHERE id = :e", {"e": first}) == "paused"
+    )  # it cannot call without a number, so it stops
+    assert sql(migrated_url, "SELECT number_id FROM employees WHERE id = :e", {"e": first}) is None
+    assert api.put(path, json={"employee_id": second}, headers=owner).status_code == 200  # again
+
+    other = rent(migrated_url, account_id(api, owner), "+911400000002")
+    attach(api, owner, first, other)
+    taken = api.put(f"/numbers/{other}/employee", json={"employee_id": second}, headers=owner)
+    assert taken.status_code == 409  # the second one already has a number
+
+    freed = api.put(path, json={"employee_id": None}, headers=owner)
+    assert freed.status_code == 200 and freed.json()["employee_id"] is None
+    stranger = signup(api, email="b@example.com")
+    assert api.put(path, json={"employee_id": None}, headers=stranger).status_code == 404

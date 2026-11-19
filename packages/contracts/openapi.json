@@ -1003,6 +1003,24 @@
         "title": "CallOut",
         "type": "object"
       },
+      "CallStack": {
+        "properties": {
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/StackLeg"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Legs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "legs"
+        ],
+        "title": "CallStack",
+        "type": "object"
+      },
       "CallStatus": {
         "enum": [
           "queued",
@@ -1717,6 +1735,11 @@
             "title": "Dial Delay S",
             "type": "integer"
           },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "out_of_window": {
             "default": "next_window",
             "enum": [
@@ -2380,6 +2403,27 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "Holder": {
+        "properties": {
+          "employee_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Id"
+          }
+        },
+        "required": [
+          "employee_id"
+        ],
+        "title": "Holder",
+        "type": "object"
+      },
       "HttpApi": {
         "description": "Call the owner's own web service. Values for `{name}` in the URL go in the path or query;\nthe rest go in the query (GET, DELETE) or a JSON body (POST, PUT, PATCH).",
         "properties": {
@@ -2918,6 +2962,72 @@
           }
         },
         "title": "LeadPatch",
+        "type": "object"
+      },
+      "LibraryVoice": {
+        "description": "A voice in Cartesia's public library, and whether it is already in our catalogue.",
+        "properties": {
+          "accent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent"
+          },
+          "added": {
+            "title": "Added",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "languages": {
+            "items": {
+              "enum": [
+                "te",
+                "hi",
+                "en"
+              ],
+              "type": "string"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider_voice_id": {
+            "title": "Provider Voice Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_voice_id",
+          "name",
+          "description",
+          "gender",
+          "accent",
+          "languages",
+          "added"
+        ],
+        "title": "LibraryVoice",
         "type": "object"
       },
       "ListBody": {
@@ -4254,6 +4364,103 @@
           "transcript"
         ],
         "title": "SpokenProposal",
+        "type": "object"
+      },
+      "StackLeg": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "stt",
+              "llm",
+              "tts"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 100,
+            "title": "Model",
+            "type": "string"
+          },
+          "vendor": {
+            "maxLength": 50,
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "vendor",
+          "model"
+        ],
+        "title": "StackLeg",
+        "type": "object"
+      },
+      "StackLegOut": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "stt",
+              "llm",
+              "tts"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 100,
+            "title": "Model",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/StackVendor"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "vendor": {
+            "maxLength": 50,
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "vendor",
+          "model",
+          "options"
+        ],
+        "title": "StackLegOut",
+        "type": "object"
+      },
+      "StackVendor": {
+        "properties": {
+          "missing_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Keys",
+            "type": "array"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor",
+          "models",
+          "missing_keys"
+        ],
+        "title": "StackVendor",
         "type": "object"
       },
       "StartBody": {
@@ -6272,6 +6479,80 @@
         "summary": "Announce"
       }
     },
+    "/admin/call-stack": {
+      "get": {
+        "description": "The vendor and model each AI leg of a call starts on, and what else it could be.",
+        "operationId": "get_call_stack_admin_call_stack_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StackLegOut"
+                  },
+                  "title": "Response Get Call Stack Admin Call Stack Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Call Stack"
+      },
+      "put": {
+        "description": "Switch the call stack; calls that start from now on use it. A vendor whose keys are not\nset is refused rather than saved, so a call never starts on a vendor that cannot answer.",
+        "operationId": "set_call_stack_admin_call_stack_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallStack"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StackLegOut"
+                  },
+                  "title": "Response Set Call Stack Admin Call Stack Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Call Stack"
+      }
+    },
     "/admin/capacity": {
       "get": {
         "description": "How many calls the platform carries at once, how many are up, and the numbers' lines.",
@@ -6991,6 +7272,60 @@
           }
         ],
         "summary": "Create Voice"
+      }
+    },
+    "/admin/voices/library/cartesia": {
+      "get": {
+        "description": "Premium voices to add: Cartesia's public voices for one language (503 without its key).",
+        "operationId": "cartesia_library_admin_voices_library_cartesia_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "language",
+            "required": true,
+            "schema": {
+              "enum": [
+                "te",
+                "hi",
+                "en"
+              ],
+              "title": "Language",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LibraryVoice"
+                  },
+                  "title": "Response Cartesia Library Admin Voices Library Cartesia Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cartesia Library"
       }
     },
     "/admin/voices/{voice_id}": {
@@ -16278,6 +16613,64 @@
           }
         ],
         "summary": "Set Channels"
+      }
+    },
+    "/numbers/{number_id}/employee": {
+      "put": {
+        "description": "Give the number to another employee (or to none). Its current employee loses it and is\npaused if live; the new one must not hold a number already.",
+        "operationId": "move_number_numbers__number_id__employee_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Number Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Holder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Move Number Numbers  Number Id  Employee Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Move Number"
       }
     },
     "/public/otp/{token}": {

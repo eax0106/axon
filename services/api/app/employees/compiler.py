@@ -209,7 +209,10 @@ def compile_prompt(
             "Do not greet again or repeat the disclosure. Listen to what the caller needs."
         )
     elif bundle.welcome_message.strip():
-        flow.append(f"Start by saying: {fill(bundle.welcome_message.strip())}")
+        flow.append(
+            f"Start by saying: {fill(bundle.welcome_message.strip())}\n"
+            "If the person has already asked something, answer it first, then carry on."
+        )
     for number, section in enumerate(bundle.sections, start=1):
         flow.append(f"## Step {number}: {fill(section.title)}\n{fill(section.body.strip())}")
     parts.append(

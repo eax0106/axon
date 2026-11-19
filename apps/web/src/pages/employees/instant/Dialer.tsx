@@ -27,18 +27,33 @@ export function DialerForm({ employeeId, settings }: { employeeId: string; setti
     setS((x) => ({ ...x, ...patch }));
   };
 
-  function save(e: FormEvent) {
-    e.preventDefault();
-    void run(async () => {
-      await unwrap(api.PUT("/employees/{employee_id}/instant/dialer", { params: { path: { employee_id: employeeId } }, body: s }));
+  const put = (body: Required<Settings>) =>
+    run(async () => {
+      await unwrap(api.PUT("/employees/{employee_id}/instant/dialer", { params: { path: { employee_id: employeeId } }, body }));
       setSaved(true);
       await qc.invalidateQueries({ queryKey: ["instant", employeeId] });
     });
+  function save(e: FormEvent) {
+    e.preventDefault();
+    void put(s);
+  }
+  // The switch saves at once, keeping the saved rules as they are (unsaved edits stay in the form).
+  function toggle(enabled: boolean) {
+    setS((x) => ({ ...x, enabled }));
+    void put({ ...settings, ...s, enabled });
   }
   const ladder = s.retry_ladder_min;
   return (
     <form onSubmit={save} className="rounded-card border border-line bg-surface p-6" aria-labelledby="dialer">
-      <h2 id="dialer" className="eyebrow">Calling rules</h2>
+      <div className="flex items-center justify-between gap-4">
+        <h2 id="dialer" className="eyebrow">Calling rules</h2>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
+          {s.enabled ? "On" : "Off"}
+          <input type="checkbox" role="switch" aria-label="Apply calling rules" checked={s.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} className="size-5 accent-[var(--accent)]" />
+        </label>
+      </div>
+      {!s.enabled && <p className="mt-2 text-sm text-ink-muted">Off: new leads are called at once, any day, once, with no repeat check. Only the law's 6 AM–10 PM limit still applies. Your rules below are kept for when you switch back on.</p>}
+      <fieldset disabled={!s.enabled} className="min-w-0 disabled:opacity-50">
       <div className="mt-4 grid gap-4 sm:grid-cols-3">
         <label className="block">
           <span className="text-sm text-ink">Wait before calling</span>
@@ -109,10 +124,12 @@ export function DialerForm({ employeeId, settings }: { employeeId: string; setti
         </span>
       </label>
 
+      </fieldset>
+
       {error !== null && <div className="mt-4"><ErrorState error={error} /></div>}
       <div className="mt-5 flex items-center gap-3">
-        <button type="submit" className={btn.primary} disabled={busy}>{busy ? "Saving…" : "Save calling rules"}</button>
-        {saved && <span role="status" className="text-sm text-accent">Saved. New leads follow these rules.</span>}
+        <button type="submit" className={btn.primary} disabled={busy || !s.enabled}>{busy ? "Saving…" : "Save calling rules"}</button>
+        {saved && <span role="status" className="text-sm text-accent">{s.enabled ? "Saved. New leads follow these rules." : "Saved. Calling rules are off."}</span>}
       </div>
     </form>
   );

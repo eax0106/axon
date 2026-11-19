@@ -258,6 +258,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/call-stack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Call Stack
+         * @description The vendor and model each AI leg of a call starts on, and what else it could be.
+         */
+        get: operations["get_call_stack_admin_call_stack_get"];
+        /**
+         * Set Call Stack
+         * @description Switch the call stack; calls that start from now on use it. A vendor whose keys are not
+         *     set is refused rather than saved, so a call never starts on a vendor that cannot answer.
+         */
+        put: operations["set_call_stack_admin_call_stack_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/capacity": {
         parameters: {
             query?: never;
@@ -540,6 +565,26 @@ export interface paths {
         put?: never;
         /** Create Voice */
         post: operations["create_voice_admin_voices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/voices/library/cartesia": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cartesia Library
+         * @description Premium voices to add: Cartesia's public voices for one language (503 without its key).
+         */
+        get: operations["cartesia_library_admin_voices_library_cartesia_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3299,6 +3344,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/numbers/{number_id}/employee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Move Number
+         * @description Give the number to another employee (or to none). Its current employee loses it and is
+         *     paused if live; the new one must not hold a number already.
+         */
+        put: operations["move_number_numbers__number_id__employee_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/otp/{token}": {
         parameters: {
             query?: never;
@@ -4047,6 +4113,11 @@ export interface components {
             /** Voicemail */
             voicemail: boolean;
         };
+        /** CallStack */
+        CallStack: {
+            /** Legs */
+            legs: components["schemas"]["StackLeg"][];
+        };
         /**
          * CallStatus
          * @enum {string}
@@ -4322,6 +4393,11 @@ export interface components {
              */
             dial_delay_s: number;
             /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
              * Out Of Window
              * @default next_window
              * @enum {string}
@@ -4577,6 +4653,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** Holder */
+        Holder: {
+            /** Employee Id */
+            employee_id: string | null;
+        };
         /**
          * HttpApi
          * @description Call the owner's own web service. Values for `{name}` in the URL go in the path or query;
@@ -4830,6 +4911,26 @@ export interface components {
         LeadPatch: {
             /** Name */
             name?: string | null;
+        };
+        /**
+         * LibraryVoice
+         * @description A voice in Cartesia's public library, and whether it is already in our catalogue.
+         */
+        LibraryVoice: {
+            /** Accent */
+            accent: string | null;
+            /** Added */
+            added: boolean;
+            /** Description */
+            description: string;
+            /** Gender */
+            gender: string | null;
+            /** Languages */
+            languages: ("te" | "hi" | "en")[];
+            /** Name */
+            name: string;
+            /** Provider Voice Id */
+            provider_voice_id: string;
         };
         /** ListBody */
         ListBody: {
@@ -5327,6 +5428,41 @@ export interface components {
             items: components["schemas"]["NewItem"][];
             /** Transcript */
             transcript: string;
+        };
+        /** StackLeg */
+        StackLeg: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "stt" | "llm" | "tts";
+            /** Model */
+            model: string;
+            /** Vendor */
+            vendor: string;
+        };
+        /** StackLegOut */
+        StackLegOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "stt" | "llm" | "tts";
+            /** Model */
+            model: string;
+            /** Options */
+            options: components["schemas"]["StackVendor"][];
+            /** Vendor */
+            vendor: string;
+        };
+        /** StackVendor */
+        StackVendor: {
+            /** Missing Keys */
+            missing_keys: string[];
+            /** Models */
+            models: string[];
+            /** Vendor */
+            vendor: string;
         };
         /** StartBody */
         StartBody: {
@@ -6264,6 +6400,59 @@ export interface operations {
             };
         };
     };
+    get_call_stack_admin_call_stack_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackLegOut"][];
+                };
+            };
+        };
+    };
+    set_call_stack_admin_call_stack_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CallStack"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackLegOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     capacity_admin_capacity_get: {
         parameters: {
             query?: never;
@@ -6746,6 +6935,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cartesia_library_admin_voices_library_cartesia_get: {
+        parameters: {
+            query: {
+                language: "te" | "hi" | "en";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryVoice"][];
                 };
             };
             /** @description Validation Error */
@@ -12408,6 +12628,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Channels"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_number_numbers__number_id__employee_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                number_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Holder"];
             };
         };
         responses: {

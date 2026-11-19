@@ -37,10 +37,12 @@ LLM_TIMEOUT_S = 10.0
 
 @dataclass(frozen=True)
 class Delivery:
-    """How a call should sound: the chosen vendor voice (None = built-in default) and speed."""
+    """How a leg's service is built: the chosen vendor voice (None = built-in default), speed, and
+    model (None = the vendor's default; set for the vendor the call stack starts the leg on)."""
 
     voice_id: str | None = None
     speed: float = 1.0
+    model: str | None = None
 
 
 def language(code: str) -> Language:
@@ -49,11 +51,13 @@ def language(code: str) -> Language:
     return Language(code)
 
 
-def _sarvam_stt(code: str, _: Delivery) -> FrameProcessor:
+def _sarvam_stt(code: str, delivery: Delivery) -> FrameProcessor:
     return SarvamSTTService(
         api_key=os.environ["SARVAM_API_KEY"],
         mode="codemix",
-        settings=SarvamSTTService.Settings(model=sarvam.STT_MODEL, language=language(code)),
+        settings=SarvamSTTService.Settings(
+            model=delivery.model or sarvam.STT_MODEL, language=language(code)
+        ),
     )
 
 
@@ -61,7 +65,7 @@ def _sarvam_tts(code: str, delivery: Delivery) -> FrameProcessor:
     return SarvamTTSService(
         api_key=os.environ["SARVAM_API_KEY"],
         settings=SarvamTTSService.Settings(
-            model=sarvam.TTS_MODEL,
+            model=delivery.model or sarvam.TTS_MODEL,
             voice=delivery.voice_id or SARVAM_TTS_VOICE,
             language=language(code),
             pace=delivery.speed,
@@ -77,19 +81,24 @@ class _SarvamLLM(SarvamLLMService):
         return client.with_options(timeout=LLM_TIMEOUT_S, max_retries=0)
 
 
-def _sarvam_llm(code: str, _: Delivery) -> FrameProcessor:
+def _sarvam_llm(code: str, delivery: Delivery) -> FrameProcessor:
     language(code)  # reject languages outside V1
     # ponytail: Sarvam's reasoning counts against max tokens, so keep the cap at 1500 or more.
     return _SarvamLLM(
         api_key=os.environ["SARVAM_API_KEY"],
-        settings=SarvamLLMService.Settings(model=sarvam.LLM_MODEL, max_tokens=1500),
+        settings=SarvamLLMService.Settings(
+            model=delivery.model or sarvam.LLM_MODEL, max_tokens=1500
+        ),
     )
 
 
-def _smallest_stt(code: str, _: Delivery) -> FrameProcessor:
+def _smallest_stt(code: str, delivery: Delivery) -> FrameProcessor:
+    settings = SmallestSTTService.Settings(language=language(code))
+    if delivery.model:
+        settings.model = delivery.model
     return SmallestSTTService(
         api_key=os.environ["SMALLEST_API_KEY"],
-        settings=SmallestSTTService.Settings(language=language(code)),
+        settings=settings,
     )
 
 
@@ -97,7 +106,7 @@ def _smallest_tts(code: str, delivery: Delivery) -> FrameProcessor:
     return SmallestTTSService(
         api_key=os.environ["SMALLEST_API_KEY"],
         settings=SmallestTTSService.Settings(
-            model=smallest.TTS_MODEL,
+            model=delivery.model or smallest.TTS_MODEL,
             voice=delivery.voice_id or SMALLEST_VOICES[code],
             language=language(code),
             speed=delivery.speed,
@@ -122,7 +131,7 @@ def _cartesia_tts(code: str, delivery: Delivery) -> FrameProcessor:
     return CartesiaTTSService(
         api_key=os.environ["CARTESIA_API_KEY"],
         settings=CartesiaTTSService.Settings(
-            model=cartesia.MODEL,
+            model=delivery.model or cartesia.MODEL,
             voice=_cartesia_voice(code, delivery),
             language=language(code),
             # Cartesia accepts 0.6 to 1.5.
@@ -131,11 +140,11 @@ def _cartesia_tts(code: str, delivery: Delivery) -> FrameProcessor:
     )
 
 
-def _gemini_llm(code: str, _: Delivery) -> FrameProcessor:
+def _gemini_llm(code: str, delivery: Delivery) -> FrameProcessor:
     language(code)
     return GoogleLLMService(
         api_key=os.environ["GEMINI_API_KEY"],
-        settings=GoogleLLMService.Settings(model=gemini.model()),
+        settings=GoogleLLMService.Settings(model=delivery.model or gemini.model()),
         stream_idle_timeout_secs=LLM_TIMEOUT_S,
     )
 

@@ -4,7 +4,7 @@ REST base https://api.cartesia.ai, header `Authorization: Bearer <key>` and `Car
 """
 
 import os
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from app.providers.base import TextToSpeechProvider
 from app.providers.speech.common import VendorHealth, check_language
@@ -34,6 +34,16 @@ class CartesiaTTS(VendorHealth, TextToSpeechProvider):
         if missing:
             raise RuntimeError(f"set {', '.join(missing)} (voice ids from play.cartesia.ai/voices)")
         await super().health()
+
+    async def library(self, language: str) -> list[dict[str, Any]]:
+        """Cartesia's public voices for a language (docs: GET /voices), newest first."""
+        # ponytail: one page of 100; Cartesia lists 48 Telugu and 87 Hindi voices today. Follow
+        # `next_page` if a language outgrows it.
+        params = {"language": check_language(language), "limit": "100"}
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/voices", headers=self.headers(), params=params)
+            response.raise_for_status()
+            return list(response.json().get("data", []))
 
     async def synthesize(self, text: str, voice_id: str, language: str, speed: float) -> bytes:
         body = {

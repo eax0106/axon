@@ -4,6 +4,7 @@ vendors last). When the active vendor fails the call moves to the next one; see 
 """
 
 import time
+from dataclasses import replace
 from typing import Any
 
 from pipecat.frames.frames import ErrorFrame
@@ -15,6 +16,7 @@ from app.models import Voice, VoiceTier
 from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
 from app.providers.failover import TTS_TIER, chain, ordered
 from app.providers.registry import resolve
+from app.providers.stack import Choice
 from engine.services import SERVICES, Delivery
 
 STRIKES = 3  # errors the last vendor of a leg may make within STRIKE_WINDOW_S before it is given up
@@ -114,15 +116,18 @@ def _candidates(
     language: str,
     delivery: Delivery,
     own: tuple[str, Delivery] | None = None,
+    pick: Choice | None = None,
 ) -> list[tuple[str, FrameProcessor]]:
     """A built service per vendor that can be built. A vendor that cannot (a missing key, a voice
     it lacks for this language) is left out, like an unhealthy one; with none left, the first
     vendor's error is raised (served as 503 naming what is missing). `own` is the employee's
-    chosen vendor with its own voice."""
+    chosen vendor with its own voice; `pick` is the call stack's vendor and model for this leg."""
     built: list[tuple[str, FrameProcessor]] = []
     first: ProviderNotConfiguredError | None = None
     for vendor in vendors:
         chosen = delivery if own is None or own[0] != vendor else own[1]
+        if pick is not None and pick.vendor == vendor:
+            chosen = replace(chosen, model=pick.model)
         try:
             built.append((vendor, _service(resolve(kind, vendor), language, chosen)))
         except ProviderNotConfiguredError as exc:
@@ -139,21 +144,27 @@ def voice_legs(
     voice: Voice | None = None,
     speed: float = 1.0,
     down: frozenset[tuple[str, str]] = frozenset(),
+    stack: dict[ProviderKind, Choice] | None = None,
 ) -> tuple[ServiceLeg, LLMLeg, ServiceLeg]:
     """STT, LLM and TTS legs for a call, or ProviderNotConfiguredError (served as 503).
 
     A `voice` row (from the voices table) decides the first TTS vendor, the voice id and the
     tier. Otherwise `tier` picks the vendor; without either the selected TTS vendor leads with its
     default voice. Fallback voices are each vendor's default voice for the language, at the same
-    speed. `down` holds the (kind, vendor) pairs that are unhealthy right now: tried last."""
+    speed. `down` holds the (kind, vendor) pairs that are unhealthy right now: tried last.
+    `stack` (the admin call stack) names the vendor and model each leg starts on, ahead of the
+    voice's own vendor; a voice from another vendor then plays in that vendor's default voice."""
     plain = Delivery(speed=speed)
     tier = voice.tier if voice is not None else tier
     own = (voice.provider, Delivery(voice.provider_voice_id, speed)) if voice else None
 
     def legs(kind: ProviderKind) -> list[tuple[str, FrameProcessor]]:
         vendors = chain(kind, tier, own[0] if own and kind is ProviderKind.TTS else None)
+        pick = (stack or {}).get(kind)
+        if pick is not None:
+            vendors = list(dict.fromkeys([pick.vendor, *vendors]))
         mine = own if kind is ProviderKind.TTS else None
-        return _candidates(kind, ordered(kind, vendors, down), language, plain, mine)
+        return _candidates(kind, ordered(kind, vendors, down), language, plain, mine, pick)
 
     return (
         ServiceLeg(ProviderKind.STT, legs(ProviderKind.STT)),
