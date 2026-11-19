@@ -80,6 +80,7 @@ def test_every_ai_endpoint_is_503_without_keys(api: TestClient) -> None:
         ("/ai/brief-questions", BRIEF),
         ("/ai/draft-agent", BRIEF),
         ("/ai/structure-prompt", {"text": "hello"}),
+        ("/ai/translate", {"texts": ["hello"], "language": "en"}),
         (f"/employees/{employee}/ai/edit-flow", {"instruction": "shorter"}),
         (f"/employees/{employee}/chat", {"messages": [{"role": "user", "content": "hi"}]}),
     ]
@@ -357,3 +358,20 @@ def test_edit_flow_keeps_the_actions_and_never_sends_their_secrets_to_the_model(
     assert api.put(f"/employees/{employee}/script", json=body, headers=owner).status_code == 200
     kept = api.get(f"/employees/{employee}/actions", headers=owner).json()["actions"]
     assert [a["name"] for a in kept] == ["order_status"]
+
+
+def test_translate_returns_the_texts_in_order_and_refuses_a_mismatch(
+    api: TestClient, vendor: Vendor
+) -> None:
+    owner = signup(api)
+    body = {"texts": ["మీ బడ్జెట్ ఎంత?", "ఎప్పుడు కొంటారు?"], "language": "en"}
+    vendor.text = '{"texts": ["What is your budget?", "When will you buy?"]}'
+    response = api.post("/ai/translate", json=body, headers=owner)
+    assert response.json() == {"texts": ["What is your budget?", "When will you buy?"]}
+    sent = vendor.requests[0].content.decode()
+    assert "Target language: English" in json.loads(sent)["contents"][0]["parts"][0]["text"]
+    vendor.text = '{"texts": ["What is your budget?"]}'
+    response = api.post("/ai/translate", json=body, headers=owner)
+    assert response.status_code == 502 and "ai_output_invalid" in response.text
+    too_many = {"texts": ["q"] * 6, "language": "en"}
+    assert api.post("/ai/translate", json=too_many, headers=owner).status_code == 422

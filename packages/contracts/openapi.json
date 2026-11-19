@@ -4540,6 +4540,52 @@
         "title": "Transcript",
         "type": "object"
       },
+      "TranslateRequest": {
+        "properties": {
+          "language": {
+            "enum": [
+              "te",
+              "hi",
+              "en"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "texts": {
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Texts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "texts",
+          "language"
+        ],
+        "title": "TranslateRequest",
+        "type": "object"
+      },
+      "Translated": {
+        "properties": {
+          "texts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Texts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "texts"
+        ],
+        "title": "Translated",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -7213,6 +7259,50 @@
           }
         ],
         "summary": "Transcribe Chunk"
+      }
+    },
+    "/ai/translate": {
+      "post": {
+        "description": "Owner-facing text (the follow-up questions) in another language, same order.",
+        "operationId": "translate_ai_translate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Translated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Translate"
       }
     },
     "/auth/login": {

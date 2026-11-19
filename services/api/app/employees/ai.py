@@ -45,8 +45,15 @@ ROLE = (
 QUESTIONS_PROMPT = (
     ROLE + " Read the owner's brief and ask the follow-up questions you need to write a good call "
     "script: the facts a caller will ask for, what counts as success, and when to end the call. "
-    "Ask at most 5 short questions and skip anything the brief already answers. "
-    'JSON: {"questions": ["...", "..."]}'
+    "Ask at most 5 short questions and skip anything the brief already answers. Each item is one "
+    "question, never a preamble or a remark. Write the questions in the language the brief is "
+    'written in (it is the owner reading them, not a caller). JSON: {"questions": ["...", "..."]}'
+)
+
+TRANSLATE_PROMPT = (
+    "Translate each text into the target language for a small-business owner reading it on "
+    "screen. Keep the meaning, names, numbers and prices exactly; use plain everyday words. "
+    'Return the same number of texts in the same order. JSON: {"texts": ["...", "..."]}'
 )
 
 DRAFT_PROMPT = (
@@ -138,12 +145,38 @@ class Questions(BaseModel):
     questions: list[str] = Field(max_length=5)
 
 
+class TranslateRequest(BaseModel):
+    texts: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
+        min_length=1, max_length=5
+    )
+    language: Literal["te", "hi", "en"]
+
+
+class Translated(BaseModel):
+    texts: list[str]
+
+
+@router.post("/ai/translate", dependencies=[AiBudget])
+async def translate(body: TranslateRequest, _: CurrentUser) -> Translated:
+    """Owner-facing text (the follow-up questions) in another language, same order."""
+    data = await ask(
+        TRANSLATE_PROMPT,
+        f"Target language: {LANGUAGE_NAMES[body.language]}.\n\n"
+        + json.dumps({"texts": body.texts}, ensure_ascii=False),
+    )
+    texts = data.get("texts")
+    if not isinstance(texts, list) or len(texts) != len(body.texts):
+        raise AiOutputError("the translation did not match the texts sent")
+    return Translated(texts=[str(t) for t in texts])
+
+
 @router.post("/ai/brief-questions", dependencies=[AiBudget])
 async def brief_questions(body: Brief, _: CurrentUser) -> Questions:
     data = await ask(
         QUESTIONS_PROMPT,
-        f"Channel: {body.channel}. Opening language: {LANGUAGE_NAMES[body.language]}.\n\n"
-        f"Brief:\n{body.brief}",
+        f"Channel: {body.channel}. The calls open in {LANGUAGE_NAMES[body.language]}; that is "
+        "only for the call script, not for these questions, which the owner reads in the "
+        f"language of the brief.\n\nBrief:\n{body.brief}",
     )
     try:
         questions = Questions.model_validate({"questions": data.get("questions")})

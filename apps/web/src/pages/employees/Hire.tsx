@@ -15,6 +15,9 @@ type Draft = components["schemas"]["Draft"];
 type Setup = { channel: Channel; language: Language; second: Language | "" };
 type Step = { at: "setup" } | { at: "brief" } | { at: "questions"; questions: string[] } | { at: "draft"; draft: Draft };
 
+/** Each language in its own script, so a reader finds theirs without knowing the others. */
+const NATIVE: Record<Language, string> = { en: "English", te: "తెలుగు", hi: "हिन्दी" };
+
 /** English is always on; one more language may be added (parity with the builder rules). */
 function languagesOf(s: Setup) {
   const extra = [...new Set([s.language === "en" ? "" : "en", s.second].filter((l) => l && l !== s.language))];
@@ -26,7 +29,11 @@ export default function Hire() {
   const [setup, setSetup] = useState<Setup>({ channel: "instant", language: "te", second: "" });
   const [step, setStep] = useState<Step>({ at: "setup" });
   const [brief, setBrief] = useState("");
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // By question position, so translating the questions keeps what the owner typed.
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  // Questions as the AI first wrote them, and the language they are shown in now (null: as written).
+  const [shownIn, setShownIn] = useState<Language | null>(null);
+  const original = useRef<string[]>([]);
   const { busy, error, setError, run } = useAction();
   // Kept across retries: if filling the script fails, trying again must not hire a second employee.
   const created = useRef<Employee | null>(null);
@@ -36,14 +43,25 @@ export default function Hire() {
       const { questions } = await unwrap(
         api.POST("/ai/brief-questions", { body: { brief, channel: setup.channel, language: setup.language } }),
       );
+      original.current = questions;
+      setShownIn(null);
+      setAnswers({});
+      setStep({ at: "questions", questions });
+    });
+
+  const translate = (to: Language | null) =>
+    run(async () => {
+      const texts = original.current;
+      const questions =
+        to === null ? texts : (await unwrap(api.POST("/ai/translate", { body: { texts, language: to } }))).texts;
+      setShownIn(to);
       setStep({ at: "questions", questions });
     });
 
   const draft = () =>
     run(async () => {
-      const given = Object.entries(answers)
-        .filter(([, a]) => a.trim())
-        .map(([question, answer]) => ({ question, answer }));
+      const asked = step.at === "questions" ? step.questions : [];
+      const given = asked.map((question, i) => ({ question, answer: answers[i] ?? "" })).filter((a) => a.answer.trim());
       const made = await unwrap(
         api.POST("/ai/draft-agent", { body: { brief, channel: setup.channel, language: setup.language, answers: given } }),
       );
@@ -150,10 +168,24 @@ export default function Hire() {
       {step.at === "questions" && (
         <section className="page-in">
           <h1 className="display mt-3 text-4xl">A few questions.</h1>
-          <p className="mt-2 text-ink-muted">Answer what you can; skip the rest.</p>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-ink-muted">Answer what you can; skip the rest.</p>
+            {original.current.length > 0 && (
+              <div role="radiogroup" aria-label="Translate questions" className="flex items-center gap-1 rounded-ctl border border-line p-1">
+                <span className="px-1.5 text-xs text-ink-muted">Translate</span>
+                {([null, "en", "te", "hi"] as const).map((l) => (
+                  <button key={l ?? "original"} type="button" role="radio" aria-checked={shownIn === l} disabled={busy}
+                    onClick={() => shownIn !== l && translate(l)}
+                    className="rounded-tag px-2.5 py-1 text-sm text-ink-muted aria-checked:bg-accent-soft aria-checked:text-ink-strong disabled:opacity-50">
+                    {l === null ? "Original" : NATIVE[l]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <ol className="mt-8 space-y-5">
             {step.questions.map((q, i) => (
-              <li key={q}>
+              <li key={i}>
                 <label className="block">
                   <span className="flex gap-3 text-ink">
                     <span className="num text-accent">{String(i + 1).padStart(2, "0")}</span>
@@ -162,8 +194,8 @@ export default function Hire() {
                   <textarea
                     rows={2}
                     maxLength={2000}
-                    value={answers[q] ?? ""}
-                    onChange={(e) => setAnswers({ ...answers, [q]: e.target.value })}
+                    value={answers[i] ?? ""}
+                    onChange={(e) => setAnswers({ ...answers, [i]: e.target.value })}
                     className="mt-2 w-full rounded-ctl border border-line-accent bg-surface px-3.5 py-2.5 text-ink-strong outline-none focus:border-accent"
                   />
                 </label>
