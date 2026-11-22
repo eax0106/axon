@@ -177,3 +177,26 @@ def test_whole_day_walk_each_minute_obeys_the_window() -> None:
         m for m in range(24 * 60) if rules.in_window(start + timedelta(minutes=m), settings, IST)
     ]
     assert (opened[0], opened[-1], len(opened)) == (6 * 60, 22 * 60 - 1, 16 * 60)
+
+
+def test_rules_switched_off_call_at_once_any_day_once_but_never_outside_the_hard_limit() -> None:
+    saved = {
+        "enabled": False,
+        "dial_delay_s": 600,
+        "window_start_min": 10 * 60,
+        "window_end_min": 12 * 60,
+        "days": [0],
+        "out_of_window": "hold",
+        "retry_ladder_min": [10, 60],
+        "dedup_recent_days": 7,
+    }
+    off = DialerSettings.in_force(saved)
+    assert DialerSettings.model_validate(saved).retry_ladder_min == [10, 60]  # the rules are kept
+    assert (off.dial_delay_s, off.dedup_recent_days, off.max_attempts) == (0, 0, 1)
+    sunday_8pm_ist = datetime(2026, 11, 15, 14, 30, tzinfo=UTC)
+    assert rules.first_attempt_time(sunday_8pm_ist, off, rules.IST) == sunday_8pm_ist
+    late = datetime(2026, 11, 15, 17, 0, tzinfo=UTC)  # 10:30 PM IST: past the hard limit
+    assert rules.first_attempt_time(late, off, rules.IST) == datetime(
+        2026, 11, 16, 0, 30, tzinfo=UTC
+    )
+    assert DialerSettings.in_force({**saved, "enabled": True}).dial_delay_s == 600

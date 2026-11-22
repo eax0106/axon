@@ -12,6 +12,7 @@ type Report = { kind: string; name: string; selected: boolean; status: string; m
 type Score = { kind: string; vendor: string; ok: number; failed: number; success_rate: number | null; healthy: boolean };
 type Rate = { kind: string; vendor: string; unit: string; inr_per_unit: string };
 type Cost = { kind: string; vendor: string; unit: string; usage: string; inr_per_unit: string | null; cost_inr: string | null };
+type StackLeg = { kind: "stt" | "llm" | "tts"; vendor: string; model: string; options: { vendor: string; models: string[]; missing_keys: string[] }[] };
 type Balance = { vendor: string; recorded_inr: string; recorded_at: string; spent_since_inr: string; estimated_inr: string; alert_below_inr: string | null; low: boolean };
 
 /** Every vendor: is it configured, is it working, what it costs, and what is left on it. */
@@ -38,6 +39,7 @@ export function Providers() {
           </ul>
         )}
       </Section>
+      <CallStack />
       <Costs />
       <div className="grid gap-6 lg:grid-cols-2">
         <Rates />
@@ -144,6 +146,57 @@ function Balances({ vendors }: { vendors: string[] }) {
         <input name="alert" aria-label="Alert below, INR (optional)" inputMode="decimal" placeholder="Alert under ₹" className={input} />
         <button type="submit" className={btn.primary} disabled={busy}>Record</button>
       </form>
+      {outcome}
+    </Section>
+  );
+}
+
+const LEG_NAMES = { stt: "Ears · speech to text", llm: "Brain · LLM", tts: "Voice · text to speech" } as const;
+
+/** Which vendor and model each AI leg of a call starts on. Calls read it when they start. */
+function CallStack() {
+  const current = useQuery({ queryKey: ["admin", "call-stack"], queryFn: () => unwrap<StackLeg[]>(api.GET("/admin/call-stack")) });
+  const [picks, setPicks] = useState<Record<string, { vendor: string; model: string }>>({});
+  const { busy, write, outcome } = useWrite();
+  const pick = (leg: StackLeg) => picks[leg.kind] ?? { vendor: leg.vendor, model: leg.model };
+  const changed = current.data?.some((leg) => { const p = pick(leg); return p.vendor !== leg.vendor || p.model !== leg.model; }) ?? false;
+  function save(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const legs = (current.data ?? []).map((leg) => ({ kind: leg.kind, ...pick(leg) }));
+    write(async () => {
+      await unwrap(api.PUT("/admin/call-stack", { body: { legs } }));
+      setPicks({});
+      await queryClient.invalidateQueries({ queryKey: ["admin", "call-stack"] });
+      return `Calls starting now use ${legs.map((l) => `${l.vendor} ${l.model}`).join(", ")}.`;
+    });
+  }
+  return (
+    <Section id="call-stack" title="Call stack · what each call starts on">
+      {current.error ? <ErrorState error={current.error} /> : !current.data ? <Skeleton className="h-32" /> : (
+        <form onSubmit={save} className="space-y-3">
+          {current.data.map((leg) => {
+            const p = pick(leg);
+            const models = leg.options.find((o) => o.vendor === p.vendor)?.models ?? [];
+            return (
+              <div key={leg.kind} className="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr_1fr] sm:items-center">
+                <span className="text-sm text-ink">{LEG_NAMES[leg.kind]}</span>
+                <select aria-label={`${LEG_NAMES[leg.kind]} vendor`} value={p.vendor} className={input}
+                  onChange={(e) => { const v = e.target.value; setPicks({ ...picks, [leg.kind]: { vendor: v, model: leg.options.find((o) => o.vendor === v)?.models[0] ?? "" } }); }}>
+                  {leg.options.map((o) => <option key={o.vendor} value={o.vendor} disabled={o.missing_keys.length > 0}>{o.vendor}{o.missing_keys.length > 0 ? ` (needs ${o.missing_keys.join(", ")})` : ""}</option>)}
+                </select>
+                <select aria-label={`${LEG_NAMES[leg.kind]} model`} value={p.model} className={`num ${input}`}
+                  onChange={(e) => setPicks({ ...picks, [leg.kind]: { ...p, model: e.target.value } })}>
+                  {models.map((m) => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+            );
+          })}
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <button type="submit" className={btn.primary} disabled={busy || !changed}>Save</button>
+            <span className="text-xs text-ink-muted">The other vendors stay behind your choice as backup. The voice leg plays the chosen vendor's default voice when an employee's voice is from another vendor.</span>
+          </div>
+        </form>
+      )}
       {outcome}
     </Section>
   );

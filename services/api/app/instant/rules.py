@@ -10,18 +10,24 @@ Hard limits, not settings: calls only between 6 AM and 10 PM local time (the def
 end exclusive, so 21:59 may dial and 22:00 may not.
 """
 
+import os
 from datetime import UTC, datetime, time, timedelta, timezone
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 IST = 330  # minutes east of UTC. Every dialable number is Indian, so the calling hours are India's.
-HARD_START_MIN, HARD_END_MIN = 6 * 60, 22 * 60
+# ponytail: AXON_DIALER_ANY_HOUR=1 lifts the hard limit for testing on a private stack only. Never
+# set it where real leads are called: the 6 AM to 10 PM limit is a legal guard, not a preference.
+ANY_HOUR = os.environ.get("AXON_DIALER_ANY_HOUR") == "1"
+HARD_START_MIN, HARD_END_MIN = (0, 24 * 60) if ANY_HOUR else (6 * 60, 22 * 60)
 MAX_LADDER_STEPS = 9  # 1 first attempt + 9 retries = 10 attempts
 OutOfWindow = Literal["next_window", "plus_3h", "plus_6h", "next_day", "hold"]
 
 
 class DialerSettings(BaseModel):
+    # Off: the owner's rules below are kept but not applied (see `in_force`); the hard limit stays.
+    enabled: bool = True
     dial_delay_s: int = Field(default=0, ge=0, le=3600)
     # Default 9 AM to 9 PM, inside the hard 6 AM to 10 PM limit: TRAI's default-allowed band for
     # promotional calls is narrower than the hard limit, and the owner can widen it.
@@ -56,6 +62,21 @@ class DialerSettings(BaseModel):
     @property
     def max_attempts(self) -> int:
         return 1 + len(self.retry_ladder_min)
+
+    @classmethod
+    def in_force(cls, saved: dict[str, object] | None) -> "DialerSettings":
+        """The rules the dialer applies. With the rules switched off a lead is called at once, any
+        day, once, with no duplicate check; only the hard 6 AM to 10 PM limit still holds."""
+        settings = cls.model_validate(saved or {})
+        if settings.enabled:
+            return settings
+        return cls(
+            enabled=False,
+            window_start_min=HARD_START_MIN,
+            window_end_min=HARD_END_MIN,
+            retry_ladder_min=[],
+            dedup_recent_days=0,
+        )
 
 
 def local(now: datetime, offset_min: int) -> datetime:

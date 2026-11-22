@@ -260,7 +260,7 @@ async def _schedule_callback(
     )
     if waiting:
         return  # one callback at a time; the caller's latest wish is not guessed over
-    settings = DialerSettings.model_validate(employee.dialer or {})
+    settings = DialerSettings.in_force(employee.dialer)
     at = rules.next_window_start(asked_for, settings, rules.IST)  # never outside calling hours
     session.add(
         Call(

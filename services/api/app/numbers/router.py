@@ -307,6 +307,32 @@ async def attach_number(
     return _number_out(number, employee.id)
 
 
+class Holder(BaseModel):
+    employee_id: uuid.UUID | None  # None frees the number
+
+
+@router.put("/numbers/{number_id}/employee", dependencies=[Depends(not_impersonating)])
+async def move_number(
+    number_id: uuid.UUID, body: Holder, user: OwnerUser, session: Session
+) -> dict[str, Any]:
+    """Give the number to another employee (or to none). Its current employee loses it and is
+    paused if live; the new one must not hold a number already."""
+    number = await attaching.load_number(session, user.account_id, number_id)
+    target = await load(session, user, body.employee_id) if body.employee_id else None
+    if target is not None and target.number_id == number.id:
+        return _number_out(number, target.id)
+    if target is not None and target.number_id is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{target.name} already has a number: move or free that one first",
+        )
+    await attaching.detach_number(session, number.id)
+    if target is not None:
+        await attaching.attach(session, target, number.id)
+    await session.commit()
+    return _number_out(number, target.id if target else None)
+
+
 @router.delete("/employees/{employee_id}/number")
 async def detach_number(
     employee_id: uuid.UUID, user: OwnerUser, session: Session
