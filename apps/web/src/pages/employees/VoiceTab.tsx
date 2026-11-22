@@ -142,23 +142,24 @@ function VoiceRow(props: { voice: Voice; language: string; chosen: boolean; onCh
 
   return (
     <div
-      className={`rounded-card border p-4 transition-colors duration-150 ${
+      className={`relative rounded-card border p-4 transition-colors duration-150 ${
         props.chosen ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-line-accent"
       }`}
     >
+      {/* ponytail: the name button's ::after covers the card, so a click anywhere on it chooses the voice. */}
       <div className="flex items-start justify-between gap-3">
-        <button type="button" role="radio" aria-checked={props.chosen} onClick={props.onChoose} className="min-w-0 text-left">
+        <button type="button" role="radio" aria-checked={props.chosen} onClick={props.onChoose} className="min-w-0 text-left after:absolute after:inset-0 after:rounded-card">
           <span className="block font-medium text-ink-strong">{v.name}</span>
           <span className="block text-xs text-ink-muted">
             {TIERS[v.tier]} · {v.tone_tags.slice(0, 3).join(", ") || v.provider.charAt(0).toUpperCase() + v.provider.slice(1)}
           </span>
         </button>
-        <button type="button" className={btn.quiet} onClick={() => void preview()} disabled={playing} aria-label={`Play a sample of ${v.name}`}>
+        <button type="button" className={`${btn.quiet} relative`} onClick={() => void preview()} disabled={playing} aria-label={`Play a sample of ${v.name}`}>
           {playing ? "Playing…" : "▶ Listen"}
         </button>
       </div>
       {error !== null && (
-        <div className="mt-3">
+        <div className="relative mt-3">
           <ErrorState error={error} />
         </div>
       )}
