@@ -83,11 +83,15 @@ class _SarvamLLM(SarvamLLMService):
 
 def _sarvam_llm(code: str, delivery: Delivery) -> FrameProcessor:
     language(code)  # reject languages outside V1
-    # ponytail: Sarvam's reasoning counts against max tokens, so keep the cap at 1500 or more.
+    # sarvam-105b reasons before it answers unless reasoning_effort is an explicit null, and on a
+    # call that only delays the first word. Pipecat's own setting drops a None, so it rides in
+    # extra_body. ponytail: the 1500 cap still leaves room if a model reasons anyway.
     return _SarvamLLM(
         api_key=os.environ["SARVAM_API_KEY"],
         settings=SarvamLLMService.Settings(
-            model=delivery.model or sarvam.LLM_MODEL, max_tokens=1500
+            model=delivery.model or sarvam.LLM_MODEL,
+            max_tokens=1500,
+            extra={"extra_body": {"reasoning_effort": None}},
         ),
     )
 

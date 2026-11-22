@@ -1,8 +1,13 @@
 """Each vendor's Pipecat service builds offline (no network until a call starts)."""
 
+import asyncio
+import json
 from typing import Any
 
+import httpx
+import openai
 import pytest
+from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.sarvam.llm import SarvamLLMService
@@ -92,3 +97,39 @@ def test_cartesia_telugu_and_hindi_need_a_voice_id(monkeypatch: pytest.MonkeyPat
 def test_unsupported_language_is_rejected() -> None:
     with pytest.raises(ValueError, match="unsupported language"):
         SERVICES[(ProviderKind.STT, "sarvam")]("ta", Delivery())
+
+
+@pytest.mark.parametrize(
+    ("model", "thinking"),
+    [
+        ("gemini-2.5-flash", {"thinking_budget": 0}),
+        ("gemini-3.5-flash-lite", {"thinking_level": "minimal"}),
+    ],
+)
+def test_gemini_asks_for_its_lowest_thinking(model: str, thinking: dict[str, Any]) -> None:
+    """Hidden thinking delays the first word the caller hears; Pipecat sends the lowest setting
+    for a model it knows, and this catches an upgrade that stops doing so."""
+    built: Any = SERVICES[(ProviderKind.LLM, "gemini")]("en", Delivery(model=model))
+    params: dict[str, Any] = {}
+    built._maybe_apply_thinking_default(params)
+    assert params["thinking_config"] == thinking
+
+
+def test_sarvam_llm_turns_reasoning_off() -> None:
+    """sarvam-105b reasons before answering unless the request carries reasoning_effort: null."""
+    sent: list[dict[str, Any]] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(400, json={"error": {"message": "not a real vendor"}})
+
+    built: Any = SERVICES[(ProviderKind.LLM, "sarvam")]("te", Delivery())
+    built._client = built._client.with_options(
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(answer))
+    )
+    context = LLMContext(messages=[{"role": "user", "content": "hello"}])
+    with pytest.raises(openai.BadRequestError):
+        asyncio.run(built.get_chat_completions(context))
+    assert "reasoning_effort" in sent[0]
+    assert sent[0]["reasoning_effort"] is None
+    assert sent[0]["max_tokens"] == 1500

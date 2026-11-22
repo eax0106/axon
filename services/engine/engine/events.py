@@ -21,8 +21,10 @@ from pipecat.frames.frames import (
     TTSTextFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
+    VADUserStartedSpeakingFrame,
+    VADUserStoppedSpeakingFrame,
 )
-from pipecat.metrics.metrics import LLMUsageMetricsData, TTSUsageMetricsData
+from pipecat.metrics.metrics import LLMUsageMetricsData, TTFBMetricsData, TTSUsageMetricsData
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 from pipecat.processors.frame_processor import FrameProcessor
 from redis.asyncio import Redis
@@ -50,6 +52,10 @@ class Usage:
     llm_prompt_tokens: int = 0
     llm_completion_tokens: int = 0
     tts_characters: int = 0
+    # How long each caller waited for a reply: from their last sound to the reply's first audio
+    # leaving the engine (the carrier's own delay comes on top). Speed work is measured from this.
+    response_ms: list[int] = field(default_factory=list)
+    ttfb_ms: dict[str, list[int]] = field(default_factory=dict)  # leg kind -> each request's
     # The same usage per vendor, for provider costs: a call that failed over used two vendors.
     meters: dict[Meter, float] = field(default_factory=lambda: defaultdict(float))
 
@@ -106,6 +112,7 @@ class CallObserver(BaseObserver):
         self._vendor_of = vendor_of
         self._listening = listening
         self._seen: set[int] = set()
+        self._caller_quiet_at: float | None = None  # the caller's last sound, until a reply starts
 
     async def on_push_frame(self, data: FramePushed) -> None:
         frame = data.frame
@@ -129,6 +136,17 @@ class CallObserver(BaseObserver):
 
     def _event(self, frame: Any) -> dict[str, Any] | None:
         """The event to publish for `frame`, {} to only meter it, None to ignore it."""
+        if isinstance(frame, VADUserStartedSpeakingFrame):
+            self._caller_quiet_at = None
+            return {}
+        if isinstance(frame, VADUserStoppedSpeakingFrame):
+            # The VAD only calls speech over after stop_secs of silence; the wait began then.
+            self._caller_quiet_at = time.monotonic() - frame.stop_secs
+            return {}
+        if isinstance(frame, BotStartedSpeakingFrame) and self._caller_quiet_at is not None:
+            waited = time.monotonic() - self._caller_quiet_at
+            self.usage.response_ms.append(round(waited * 1000))
+            self._caller_quiet_at = None
         if type(frame) in _STATES:
             return {"type": _STATES[type(frame)]}
         if isinstance(frame, TranscriptionFrame):
@@ -145,6 +163,8 @@ class CallObserver(BaseObserver):
                         self.usage.meters[(*named, "input_tokens")] += item.value.prompt_tokens
                         out = item.value.completion_tokens
                         self.usage.meters[(*named, "output_tokens")] += out
+                elif isinstance(item, TTFBMetricsData) and named and item.value > 0:
+                    self.usage.ttfb_ms.setdefault(named[0], []).append(round(item.value * 1000))
                 elif isinstance(item, TTSUsageMetricsData):
                     self.usage.tts_characters += item.value
                     if named:
