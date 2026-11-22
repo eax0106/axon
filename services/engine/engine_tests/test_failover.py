@@ -64,6 +64,8 @@ def test_usage_is_metered_per_vendor(
     assert meters[("stt", "goodstt", "audio_seconds")] > 0
     assert not any(vendor == "badllm" for _, vendor, _ in meters)  # it produced nothing
     assert usage["llm_prompt_tokens"] == 12  # the totals stay as they were
+    assert usage["response_ms"] == []  # silence only: the VAD heard no turn to time
+    assert usage["ttfb_ms"]["llm"]  # the backup LLM's time to its first token
 
 
 def test_a_tool_failure_is_not_the_vendors_and_does_not_fail_over() -> None:
