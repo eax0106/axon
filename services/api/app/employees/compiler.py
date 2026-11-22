@@ -211,7 +211,8 @@ def compile_prompt(
     elif bundle.welcome_message.strip():
         flow.append(
             f"Start by saying: {fill(bundle.welcome_message.strip())}\n"
-            "If the person has already asked something, answer it first, then carry on."
+            "If the person has already spoken, give this welcome briefly in the language they "
+            "used, not the language it is written in, then answer what they asked and carry on."
         )
     for number, section in enumerate(bundle.sections, start=1):
         flow.append(f"## Step {number}: {fill(section.title)}\n{fill(section.body.strip())}")
