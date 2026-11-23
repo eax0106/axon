@@ -58,6 +58,9 @@ def test_campaigns_are_listed_and_read_only_inside_their_account(
     second = make_campaign(api, owner, employee, ["9876543211"], name="Second", consent=True)
     listed = api.get("/campaigns", headers=owner).json()
     assert [c["id"] for c in listed] == [second, first]  # newest first
+    # The list reads counts and consent for all campaigns at once; each must still be its own.
+    assert listed == [get(api, owner, second), get(api, owner, first)]
+    assert [c["consent_given"] for c in listed] == [True, False]
     running = api.get("/campaigns", params={"state": "running"}, headers=owner).json()
     assert [c["id"] for c in running] == [second]
     mine = api.get("/campaigns", params={"employee_id": employee}, headers=owner).json()
