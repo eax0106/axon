@@ -81,8 +81,10 @@ def build(context: CallContext | None) -> str:
 def test_an_ordinary_call_is_unchanged_by_the_context() -> None:
     assert build(None) == build(CallContext())
     assert "Start by saying: Start of the old script" in build(None)
-    # A caller who speaks first gets an answer, not the scripted welcome on top of the question.
-    assert "already asked something, answer it first" in build(None)
+    # A caller who speaks first is welcomed in their own language and gets an answer, not the
+    # scripted welcome in its written language on top of the question.
+    assert "already spoken, give this welcome briefly in the language they used" in build(None)
+    assert "then answer what they asked" in build(None)
 
 
 def test_an_incoming_call_is_told_what_was_already_said_and_how_to_take_a_message() -> None:
