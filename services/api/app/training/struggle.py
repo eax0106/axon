@@ -9,6 +9,12 @@ from app.calls.analysis import Struggle, _norm
 from app.models import Call, Employee, KnowledgeKind, SuggestionStatus, TrainingSuggestion
 
 MAX_OPEN = 50  # per employee: an owner who never looks should not collect an unbounded list
+KEY_LEN = 400  # the quote_key column; folding can lengthen a 200-character quote a little
+
+
+def quote_key(quote: str) -> str:
+    """The quote as it is compared with the ones already shown."""
+    return _norm(quote)[:KEY_LEN]
 
 
 async def store(
@@ -19,21 +25,24 @@ async def store(
     same caller words) is not added again."""
     if call.is_test or not struggles:
         return 0
-    known = (
-        await session.execute(
-            select(TrainingSuggestion.caller_quote, TrainingSuggestion.status).where(
-                TrainingSuggestion.employee_id == employee.id
+    # A moment the owner already saw (taught or dismissed) is not put in front of them again.
+    # Only the new quotes are looked up, not every suggestion the employee ever had.
+    keys = {quote_key(item.caller_quote) for item in struggles}
+    seen = set(
+        await session.scalars(
+            select(TrainingSuggestion.quote_key).where(
+                TrainingSuggestion.employee_id == employee.id,
+                TrainingSuggestion.quote_key.in_(keys),
             )
         )
-    ).all()
-    # A moment the owner already saw (taught or dismissed) is not put in front of them again.
-    seen = {_norm(quote) for quote, _ in known}
-    waiting = sum(state is SuggestionStatus.OPEN for _, state in known)
+    )
+    waiting = await count_open(session, employee.id)
     added = 0
     for item in struggles:
-        if waiting + added >= MAX_OPEN or _norm(item.caller_quote) in seen:
+        key = quote_key(item.caller_quote)
+        if waiting + added >= MAX_OPEN or key in seen:
             continue
-        seen.add(_norm(item.caller_quote))
+        seen.add(key)
         session.add(
             TrainingSuggestion(
                 account_id=call.account_id,
@@ -42,6 +51,7 @@ async def store(
                 kind=KnowledgeKind(item.kind),
                 reason=item.reason,
                 caller_quote=item.caller_quote,
+                quote_key=key,
                 agent_quote=item.agent_quote,
                 text=item.text,
             )

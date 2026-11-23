@@ -44,6 +44,7 @@ LEASE = timedelta(minutes=5)  # a claimed send that never reports is tried again
 TIMEOUT_S = 10
 BATCH = 20
 KEEP = timedelta(days=30)  # events, their deliveries and the request log are kept this long
+PRUNE_BATCH = 5000
 
 # Tests only: a transport to send through instead of the network. Never set in the app.
 TRANSPORT: httpx.AsyncBaseTransport | None = None
@@ -339,15 +340,23 @@ def resend(
 
 
 async def prune(factory: async_sessionmaker[AsyncSession], now: datetime) -> int:
-    """Forget the request log, and the events and deliveries, that are older than KEEP."""
-    async with factory() as session:
-        old_requests = await session.execute(
-            delete(ApiRequest).where(ApiRequest.created_at < now - KEEP)
-        )
-        old_events = await session.execute(
-            delete(WebhookEvent).where(
-                WebhookEvent.created_at < now - KEEP, WebhookEvent.fanned_out_at.is_not(None)
-            )
-        )  # the deliveries of an event go with it
-        await session.commit()
-    return int(old_requests.rowcount or 0) + int(old_events.rowcount or 0)  # type: ignore[attr-defined]
+    """Forget the request log, and the events and deliveries, that are older than KEEP. Rows go
+    PRUNE_BATCH at a time, each batch its own transaction, so a large backlog never holds one
+    long lock or one huge transaction."""
+    old_requests = select(ApiRequest.id).where(ApiRequest.created_at < now - KEEP)
+    old_events = select(WebhookEvent.id).where(  # the deliveries of an event go with it
+        WebhookEvent.created_at < now - KEEP, WebhookEvent.fanned_out_at.is_not(None)
+    )
+    forgotten = 0
+    for table, old in ((ApiRequest, old_requests), (WebhookEvent, old_events)):
+        while True:
+            async with factory() as session:
+                gone = await session.execute(
+                    delete(table).where(table.id.in_(old.limit(PRUNE_BATCH).scalar_subquery()))
+                )
+                await session.commit()
+            count = int(gone.rowcount or 0)  # type: ignore[attr-defined]
+            forgotten += count
+            if count < PRUNE_BATCH:
+                break
+    return forgotten

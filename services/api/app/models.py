@@ -435,6 +435,12 @@ class Call(Base):
                 " AND status IN ('completed', 'no_answer', 'busy', 'failed')"
             ),
         ),
+        # The daily inbound summary reads a day of real inbound calls across every account.
+        Index(
+            "ix_calls_inbound_created",
+            "created_at",
+            postgresql_where=text("direction = 'inbound' AND NOT is_test"),
+        ),
     )
     id: Mapped[uuid.UUID] = _pk()
     account_id: Mapped[uuid.UUID] = _account_fk()
@@ -764,7 +770,10 @@ class ApiRequest(Base):
     """One request made with an API key, kept for the developer's request log."""
 
     __tablename__ = "api_request_log"
-    __table_args__ = (Index("ix_api_request_log_account_created", "account_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_api_request_log_account_created", "account_id", "created_at"),
+        Index("ix_api_request_log_created", "created_at"),  # the hourly prune of old requests
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     account_id: Mapped[uuid.UUID] = _account_fk()
     key_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("api_keys.id", ondelete="SET NULL"))
@@ -800,6 +809,12 @@ class WebhookEvent(Base):
             "ix_webhook_events_unsent",
             "created_at",
             postgresql_where=text("fanned_out_at IS NULL"),
+        ),
+        # The hourly prune forgets old events once they are fanned out.
+        Index(
+            "ix_webhook_events_sent",
+            "created_at",
+            postgresql_where=text("fanned_out_at IS NOT NULL"),
         ),
     )
     id: Mapped[uuid.UUID] = _pk()
@@ -948,6 +963,8 @@ class TrainingSuggestion(Base):
     is taught until the owner accepts."""
 
     __tablename__ = "training_suggestions"
+    # A new struggle is checked against the quotes this employee has already been shown.
+    __table_args__ = (Index("ix_training_suggestions_quote", "employee_id", "quote_key"),)
     id: Mapped[uuid.UUID] = _pk()
     account_id: Mapped[uuid.UUID] = _account_fk()
     employee_id: Mapped[uuid.UUID] = mapped_column(
@@ -957,6 +974,8 @@ class TrainingSuggestion(Base):
     kind: Mapped[KnowledgeKind] = mapped_column(_enum(KnowledgeKind, "suggestion_kind"))
     reason: Mapped[str] = mapped_column(String(16))  # unanswered or conduct
     caller_quote: Mapped[str] = mapped_column(String(200))
+    # The quote as compared: case, accents, punctuation and spacing folded (training.struggle).
+    quote_key: Mapped[str] = mapped_column(String(400))
     agent_quote: Mapped[str | None] = mapped_column(String(200))
     text: Mapped[str] = mapped_column(String(300), server_default="")  # empty: the owner writes it
     status: Mapped[SuggestionStatus] = mapped_column(
