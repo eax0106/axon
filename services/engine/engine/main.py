@@ -132,6 +132,7 @@ async def _setup(
         transfer_to=plan.transfer_to,
         tools=tuple(tools),
         max_call_s=plan.max_call_s,
+        extra_languages=plan.extra_languages,
     )
 
 

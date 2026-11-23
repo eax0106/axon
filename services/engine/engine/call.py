@@ -26,6 +26,7 @@ from pipecat.frames.frames import (
     FunctionCallResultProperties,
     LLMMessagesAppendFrame,
     LLMRunFrame,
+    TranscriptionFrame,
     TTSSpeakFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
@@ -51,6 +52,7 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from starlette.websockets import WebSocket, WebSocketState
 
 from app.actions.tools import Tool, run_timed
+from app.employees.compiler import LANGUAGE_NAMES
 from app.models import VoiceTier
 from app.providers.base import ObjectStorageProvider, ProviderKind, ProviderNotConfiguredError
 from app.providers.failover import billed_tier
@@ -86,6 +88,7 @@ class CallSettings:
     opening: str = ""  # spoken first, before the caller says a word (an incoming call)
     transfer_to: str | None = None  # a person the AI may hand the call to (an incoming call)
     tools: tuple[Tool, ...] = ()  # what the employee's actions let the AI do during the call
+    extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
 
     def __post_init__(self) -> None:
         if not MIN_CALL_S <= self.max_call_s <= MAX_CALL_S:
@@ -112,6 +115,47 @@ class UtteranceCheckpoints(FrameProcessor):
             self._gate.checkpoint_issued(name)
             await self.push_frame(checkpoint(name))
             self._gate.tts_stopped()
+
+
+# Which language a transcript is in, by its letters: STT writes Telugu, Hindi and English each
+# in its own script. ponytail: romanised Telugu or Hindi would read as English; use the STT's own
+# language code instead if a vendor starts returning that.
+SCRIPTS = {"te": (0x0C00, 0x0C7F), "hi": (0x0900, 0x097F), "en": (ord("a"), ord("z"))}
+MIN_LETTERS = 8  # "Hello" or "OK" alone is too little to switch on
+
+
+def spoken_language(text: str) -> str | None:
+    """The language most of the transcript's letters are written in, or None if too few."""
+    lowered = text.lower()
+    counts = {
+        code: sum(low <= ord(c) <= high for c in lowered) for code, (low, high) in SCRIPTS.items()
+    }
+    best = max(counts, key=lambda code: counts[code])
+    return best if counts[best] >= MIN_LETTERS else None
+
+
+class CallerLanguage(FrameProcessor):
+    """Tell the LLM, in so many words, when the caller speaks another of the employee's
+    languages. The prompt's Telugu welcome otherwise outweighs "reply in the caller's language"
+    and an English caller is answered in Telugu (seen with Sarvam and Gemini alike)."""
+
+    def __init__(self, language: str, allowed: set[str]) -> None:
+        super().__init__()
+        self._current = language
+        self._allowed = allowed
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if isinstance(frame, TranscriptionFrame):
+            heard = spoken_language(frame.text)
+            if heard and heard != self._current and heard in self._allowed:
+                self._current = heard
+                name = LANGUAGE_NAMES[heard]
+                note = f"The caller is speaking {name}. Reply only in {name} from now on."
+                await self.push_frame(
+                    LLMMessagesAppendFrame([{"role": "system", "content": note}], run_llm=False)
+                )
+        await self.push_frame(frame, direction)
 
 
 def _wav(audio: bytes, sample_rate: int, channels: int) -> bytes:
@@ -263,6 +307,7 @@ async def run_call(
             transport.input(),
             PlayedStreamTap(gate),
             stt,
+            CallerLanguage(settings.language, {settings.language, *settings.extra_languages, "en"}),
             aggregators.user(),
             llm,
             tts,
