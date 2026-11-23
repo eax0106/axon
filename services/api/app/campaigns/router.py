@@ -2,6 +2,7 @@
 adding contacts (CSV, paste, manual, saved list), the exclusion list, and start, pause, resume and
 cancel. The live panel, export, analytics and capacity are in `app.campaigns.panel`."""
 
+import asyncio
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -448,7 +449,7 @@ async def preview(
     employee = await session.get(Employee, campaign.employee_id)
     assert employee is not None
     try:
-        header, rows = importer.read_table(body.text)
+        header, rows = await asyncio.to_thread(importer.read_table, body.text)
     except importer.MappingError as exc:
         raise HTTPException(422, str(exc)) from exc
     return {
@@ -490,11 +491,13 @@ async def import_contacts(
     campaign, employee = await open_campaign(session, user, campaign_id)
     try:
         if body.format == "paste":
-            parsed = importer.parse_paste(body.text)
+            parsed = await asyncio.to_thread(importer.parse_paste, body.text)
         elif body.mapping is None:
             raise importer.MappingError("say which column holds the phone number (mapping)")
         else:
-            parsed = importer.parse_csv(body.text, body.mapping, declared_variables(employee))
+            parsed = await asyncio.to_thread(
+                importer.parse_csv, body.text, body.mapping, declared_variables(employee)
+            )
     except importer.MappingError as exc:
         raise HTTPException(422, str(exc)) from exc
     now = datetime.now(UTC)
@@ -613,7 +616,7 @@ async def add_exclusions(
     skipped at once."""
     campaign = await load_campaign(session, user, campaign_id, lock=True)
     try:
-        parsed = importer.parse_paste(body.text)
+        parsed = await asyncio.to_thread(importer.parse_paste, body.text)
     except importer.MappingError as exc:
         raise HTTPException(422, str(exc)) from exc
     added = await contacts.exclude(session, campaign, [r.phone for r in parsed.rows])

@@ -1,5 +1,6 @@
 """Saved contact lists: upload once, start many campaigns from them."""
 
+import asyncio
 import uuid
 from collections.abc import Sequence
 from typing import Annotated, Any
@@ -73,7 +74,7 @@ async def create(body: ListBody, user: CurrentUser, session: Session) -> dict[st
     """Save a CSV as a list. Every column the mapping names is kept as a variable; a campaign
     later takes the ones its script declares."""
     try:
-        parsed = importer.parse_csv(body.text, body.mapping, None)
+        parsed = await asyncio.to_thread(importer.parse_csv, body.text, body.mapping, None)
     except importer.MappingError as exc:
         raise HTTPException(422, str(exc)) from exc
     saved = await save_list(session, user, body.name, parsed.rows)

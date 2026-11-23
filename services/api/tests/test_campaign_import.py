@@ -1,9 +1,13 @@
 """Contacts into a campaign: CSV with an explicit column mapping, paste, manual, saved lists, the
 do-not-call list at upload, and the exclusion list."""
 
+import asyncio
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
+
+from app.campaigns import importer
 
 from .campaigning import make_campaign, setup_bulk, signup_second
 from .conftest import sql
@@ -318,3 +322,34 @@ def test_contacts_cannot_be_added_to_another_accounts_or_a_finished_campaign(
     api.post(f"/campaigns/{campaign}/cancel", headers=owner)
     closed = api.post(f"/campaigns/{campaign}/contacts/import", json=body, headers=owner)
     assert closed.status_code == 409
+
+
+def test_files_and_pastes_are_parsed_off_the_event_loop(
+    api: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 5 MB upload takes a while to parse: it must not stall every other request meanwhile."""
+    on_loop: dict[str, bool] = {}
+    for name in ("read_table", "parse_csv", "parse_paste"):
+        real = getattr(importer, name)
+
+        def watched(*args: Any, _real: Any = real, _name: str = name) -> Any:
+            try:
+                asyncio.get_running_loop()
+                on_loop[_name] = True
+            except RuntimeError:  # a worker thread has no running loop
+                on_loop.setdefault(_name, False)
+            return _real(*args)
+
+        monkeypatch.setattr(importer, name, watched)
+    employee, owner = setup_bulk(api, migrated_url, variables=("city", "plan"))
+    campaign = make_campaign(api, owner, employee, [], start=False, consent=False)
+    preview = api.post(f"/campaigns/{campaign}/contacts/preview", json={"text": CSV}, headers=owner)
+    assert preview.status_code == 200
+    assert import_csv(api, owner, campaign).status_code == 200
+    pasted = {"format": "paste", "text": "9876543212"}
+    assert api.post(f"/campaigns/{campaign}/contacts/import", json=pasted, headers=owner).is_success
+    excluded = {"text": "9876543210"}
+    assert api.post(f"/campaigns/{campaign}/exclusions", json=excluded, headers=owner).is_success
+    listed = {"name": "Pune leads", "text": CSV, "mapping": MAPPING}
+    assert api.post("/contact-lists", json=listed, headers=owner).status_code == 201
+    assert on_loop == {"read_table": False, "parse_csv": False, "parse_paste": False}
