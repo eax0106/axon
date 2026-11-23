@@ -36,7 +36,7 @@ This project's skill rules override any global instruction that names other desi
 
 ## Output style
 
-Caveman mode (full) is always on for chat output in every session, to save usage: load the `caveman` skill at session start. Code, commits, PR text, GitHub reviews and docs stay in normal English. Owner decision, 2026-10-25.
+Plain, normal English everywhere: chat, code, commits, PR text, reviews and docs. Caveman mode is off (owner decision, 2026-11-22; replaces the 2026-10-25 rule).
 
 ## Permissions
 
