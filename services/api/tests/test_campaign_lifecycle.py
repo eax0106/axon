@@ -11,7 +11,7 @@ from .campaigning import (
     signup_second,
 )
 from .conftest import sql
-from .helpers import add_member, live_employee
+from .helpers import add_member, counted_queries, live_employee
 
 
 def get(api: TestClient, owner: dict[str, str], campaign: str) -> dict[str, object]:
@@ -55,8 +55,12 @@ def test_campaigns_are_listed_and_read_only_inside_their_account(
 ) -> None:
     employee, owner = setup_bulk(api, migrated_url)
     first = make_campaign(api, owner, employee, ["9876543210"], start=False, consent=False)
+    with counted_queries(api) as one:
+        api.get("/campaigns", headers=owner)
     second = make_campaign(api, owner, employee, ["9876543211"], name="Second", consent=True)
-    listed = api.get("/campaigns", headers=owner).json()
+    with counted_queries(api) as two:
+        listed = api.get("/campaigns", headers=owner).json()
+    assert len(two) == len(one), (one, two)  # no queries per campaign
     assert [c["id"] for c in listed] == [second, first]  # newest first
     # The list reads counts and consent for all campaigns at once; each must still be its own.
     assert listed == [get(api, owner, second), get(api, owner, first)]

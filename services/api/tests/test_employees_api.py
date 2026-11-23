@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from .helpers import add_member, seed, signup
+from .helpers import add_member, counted_queries, seed, signup
 
 
 @pytest.fixture
@@ -306,3 +306,30 @@ def test_update_changes_name_languages_and_voice_and_validates(api: TestClient) 
     assert api.patch(path, json={"name": None}, headers=owner).status_code == 422
     assert api.patch(path, json={"voice_id": None}, headers=owner).status_code == 422
     assert api.patch(path, json={"language": "ta"}, headers=owner).status_code == 422
+
+
+def test_the_list_costs_the_same_queries_however_many_employees_and_matches_each_read(
+    api: TestClient,
+) -> None:
+    owner = signup(api)
+    first = hire(api, owner, name="Asha", language="te")
+    with counted_queries(api) as one:
+        assert api.get("/employees", headers=owner).status_code == 200
+    other_voice = next(
+        v
+        for v in api.get("/voices?tier=standard", headers=owner).json()
+        if "hi" in v["languages"] and v["id"] != first["voice"]["id"]
+    )
+    second = hire(
+        api, owner, name="Ravi", channel="bulk", language="hi", voice_id=other_voice["id"]
+    )
+    third = hire(api, owner, name="Meena")
+    api.put(f"/employees/{third['id']}/script", json={"welcome_message": "Hi"}, headers=owner)
+    assert api.post(f"/employees/{third['id']}/publish", headers=owner).status_code == 200
+    with counted_queries(api) as three:
+        listed = api.get("/employees", headers=owner).json()
+    assert len(three) == len(one), (one, three)  # no queries per employee
+    ids = [first["id"], second["id"], third["id"]]
+    assert listed == [api.get(f"/employees/{i}", headers=owner).json() for i in ids]
+    assert [e["published_version"] for e in listed] == [None, None, 1]
+    assert listed[1]["voice"]["id"] == other_voice["id"] != listed[0]["voice"]["id"]

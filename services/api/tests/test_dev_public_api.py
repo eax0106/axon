@@ -10,7 +10,7 @@ from app.developer import keys
 
 from .conftest import sql
 from .developer_support import NOW, bearer, make_key
-from .helpers import account_id, add_call, add_lead, live_employee, signup
+from .helpers import account_id, add_call, add_lead, counted_queries, live_employee, signup
 
 CALLER = "+919876543210"
 
@@ -24,14 +24,24 @@ def setup(api: TestClient, url: str, **kw: Any) -> tuple[dict[str, str], dict[st
 def test_account_and_employees_are_readable_and_only_for_the_keys_account(
     api: TestClient, migrated_url: str
 ) -> None:
-    _, key, employee = setup(api, migrated_url)
+    owner, key, employee = setup(api, migrated_url)
     other = signup(api, email="b@example.com", account="Other")
     other_employee = live_employee(api, migrated_url, other, number="+911400000002", variables=())
     assert api.get("/v1/account", headers=key).json()["name"] == "Acme"
     assert float(api.get("/v1/account", headers=key).json()["credit_balance"]) == 50
-    listed = api.get("/v1/employees", headers=key).json()
+    with counted_queries(api) as one:
+        listed = api.get("/v1/employees", headers=key).json()
     assert [e["id"] for e in listed] == [employee]
     shown = api.get(f"/v1/employees/{employee}", headers=key).json()
+    assert listed == [shown]
+    second = live_employee(api, migrated_url, owner, number="+911400000003", variables=())
+    with counted_queries(api) as two:
+        listed = api.get("/v1/employees", headers=key).json()
+    assert len(two) == len(one), (one, two)  # the numbers come in the same query
+    assert [(e["id"], e["phone_number"]) for e in listed] == [
+        (employee, "+911400000001"),
+        (second, "+911400000003"),
+    ]
     assert shown["phone_number"] == "+911400000001"
     assert shown["pre_call_variables"] == ["budget"] and shown["status"] == "live"
     assert api.get(f"/v1/employees/{other_employee}", headers=key).status_code == 404
