@@ -642,7 +642,8 @@ class ConsentAttestation(Base):
     account_id: Mapped[uuid.UUID] = _account_fk()
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     scope: Mapped[ConsentScope] = mapped_column(_enum(ConsentScope, "consent_scope"))
-    subject_id: Mapped[uuid.UUID]  # the campaign or lead source the attestation covers
+    # the campaign or lead source the attestation covers; read on every campaign view
+    subject_id: Mapped[uuid.UUID] = mapped_column(index=True)
     statement: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = _created()
 
