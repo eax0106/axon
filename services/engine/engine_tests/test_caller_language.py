@@ -27,6 +27,17 @@ def test_it_reads_the_language_from_the_script() -> None:
     assert spoken_language("Hello") is None  # too short to switch on
 
 
+def test_english_words_inside_telugu_or_hindi_do_not_make_it_english() -> None:
+    # Real Sarvam transcripts of code-mixed callers: the English words come back in Latin script.
+    assert spoken_language("మీ clinic timings ఏంటి?") == "te"
+    assert spoken_language("రేపు appointment book చేయగలరా?") == "te"
+    assert spoken_language("क्या मैं कल का appointment book कर सकता हूँ?") == "hi"
+    assert notes("te", {"te", "en"}, "Do you open on Saturday?", "మీ clinic timings ఏంటి?") == [
+        "The caller is speaking English. Reply only in English from now on.",
+        "The caller is speaking Telugu. Reply only in Telugu from now on.",
+    ]
+
+
 def test_an_english_caller_to_a_telugu_employee_is_answered_in_english() -> None:
     assert notes("te", {"te", "en"}, "Hi, what are your clinic timings on Saturday?") == [
         "The caller is speaking English. Reply only in English from now on."

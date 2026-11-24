@@ -129,13 +129,17 @@ MIN_LETTERS = 8  # "Hello" or "OK" alone is too little to switch on
 
 
 def spoken_language(text: str) -> str | None:
-    """The language most of the transcript's letters are written in, or None if too few."""
+    """The caller's language from the transcript's script, or None if it is too short. Callers mix
+    English words into Telugu and Hindi, and those come back in Latin letters inside native-script
+    speech, so any Telugu or Hindi letters win; only an all-Latin transcript is English."""
     lowered = text.lower()
     counts = {
         code: sum(low <= ord(c) <= high for c in lowered) for code, (low, high) in SCRIPTS.items()
     }
-    best = max(counts, key=lambda code: counts[code])
-    return best if counts[best] >= MIN_LETTERS else None
+    if sum(counts.values()) < MIN_LETTERS:
+        return None
+    native = max(("te", "hi"), key=lambda code: counts[code])
+    return native if counts[native] else "en"
 
 
 class CallerLanguage(FrameProcessor):
