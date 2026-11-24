@@ -60,7 +60,7 @@ async def on_activate(session: AsyncSession, employee: Employee) -> None:
         return
     try:
         await connect(session, employee)
-    except (ProviderNotConfiguredError, HTTPException):
-        pass
+    except (ProviderNotConfiguredError, HTTPException) as exc:  # no carrier keys or no number yet
+        log.info("call-backs for %s not routed: %s", employee.id, getattr(exc, "detail", exc))
     except Exception as exc:  # a carrier outage must not keep an outbound employee from going live
         log.warning("could not route %s for call-backs: %s", employee.id, type(exc).__name__)

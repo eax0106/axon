@@ -32,8 +32,8 @@ MODELS: dict[ProviderKind, dict[str, tuple[str, ...]]] = {
             "gemini-3.1-flash-lite",
             "gemini-3.8-flash",
         ),
-        # ponytail: `-conversations` has no hidden reasoning (about 0.2 s to the first word);
-        # plain 105b reasons by default and Pipecat cannot send the switch that turns it off.
+        # `-conversations` has no hidden reasoning (about 0.2 s to the first word). Plain 105b
+        # reasons by default; the engine turns that off with an explicit null (services.py).
         "sarvam": ("sarvam-105b-conversations", sarvam.LLM_MODEL),
     },
     ProviderKind.TTS: {
