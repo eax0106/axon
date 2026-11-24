@@ -31,11 +31,15 @@ def needed(actions: list[Action]) -> set[str]:
 
 async def missing(session: AsyncSession, account_id: uuid.UUID, actions: list[Action]) -> list[str]:
     """The Google services the actions need that the account has not allowed."""
-    wanted = needed(actions)
-    if not wanted:
+    if not needed(actions):
         return []
-    have = services_of(await session.get(GoogleConnection, account_id))
-    return sorted(s for s in wanted if not have[s])
+    return lacking(actions, await session.get(GoogleConnection, account_id))
+
+
+def lacking(actions: list[Action], connection: GoogleConnection | None) -> list[str]:
+    """`missing`, for a connection the caller has already read."""
+    have = services_of(connection)
+    return sorted(s for s in needed(actions) if not have[s])
 
 
 def _sheets_changed(incoming: list[Action], stored: list[Action]) -> bool:

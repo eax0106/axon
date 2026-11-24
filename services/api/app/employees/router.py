@@ -2,7 +2,7 @@
 
 import hashlib
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -19,7 +19,18 @@ from app.employees import ambience, runtime, service
 from app.employees.lifecycle import Action, TransitionError, next_status
 from app.employees.script import LANGUAGES, EmployeeSettings, ScriptBundle
 from app.inbound import connect as inbound_connect
-from app.models import Channel, Employee, EmployeeStatus, Purpose, Role, User, Voice, VoiceTier
+from app.models import (
+    Channel,
+    Employee,
+    EmployeeStatus,
+    EmployeeVersion,
+    GoogleConnection,
+    Purpose,
+    Role,
+    User,
+    Voice,
+    VoiceTier,
+)
 from app.voices import VoiceOut, default_voice, supports, voice_out
 
 router = APIRouter(prefix="/employees")
@@ -132,13 +143,42 @@ def _masked(bundle: ScriptBundle) -> ScriptBundle:
 
 
 async def out(session: AsyncSession, employee: Employee) -> EmployeeOut:
-    live = await service.latest_version(session, employee.id)
-    voice = await session.get(Voice, employee.voice_id) if employee.voice_id else None
+    return (await outs(session, [employee]))[0]
+
+
+async def outs(session: AsyncSession, employees: Sequence[Employee]) -> list[EmployeeOut]:
+    """`out` for a whole list in a fixed number of queries, not three per employee."""
+    live = await service.latest_versions(session, [e.id for e in employees])
+    voice_ids = {e.voice_id for e in employees if e.voice_id}
+    voices: dict[uuid.UUID | None, Voice] = (
+        {v.id: v for v in await session.scalars(select(Voice).where(Voice.id.in_(voice_ids)))}
+        if voice_ids
+        else {}
+    )
+    # Read only when some action needs Google: an account with no connection is not cached.
+    needs_google = {e.account_id for e in employees if actions.needed(service.bundle_of(e).actions)}
+    google = {a: await session.get(GoogleConnection, a) for a in needs_google}
+    return [
+        _out(employee, live.get(employee.id), voices.get(employee.voice_id), google)
+        for employee in employees
+    ]
+
+
+def _out(
+    employee: Employee,
+    live: EmployeeVersion | None,
+    voice: Voice | None,
+    google: dict[uuid.UUID, GoogleConnection | None],
+) -> EmployeeOut:
     settings = service.settings_of(employee)
     bundle = service.bundle_of(employee)
     warnings = [
         f"your actions need Google {s} connected"
-        for s in await actions.missing(session, employee.account_id, bundle.actions)
+        for s in (
+            actions.lacking(bundle.actions, google[employee.account_id])
+            if employee.account_id in google
+            else []
+        )
     ]
     if ambience.is_missing(settings.ambience):
         name = settings.ambience
@@ -196,7 +236,7 @@ async def list_employees(user: CurrentUser, session: Session) -> list[EmployeeOu
     rows = await session.scalars(
         select(Employee).where(Employee.account_id == user.account_id).order_by(Employee.created_at)
     )
-    return [await out(session, e) for e in rows]
+    return await outs(session, list(rows))
 
 
 @router.get("/{employee_id}")

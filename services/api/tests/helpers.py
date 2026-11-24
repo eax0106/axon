@@ -3,9 +3,12 @@
 import asyncio
 import json
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.auth import issue_token
@@ -184,3 +187,20 @@ def support_session(url: str, email: str, staff_email: str = "staff@alterx.in") 
     admin = sql(url, "SELECT id FROM users WHERE email = :e", {"e": staff_email})
     token = issue_token(User(id=user), impersonator=User(id=admin))
     return {"Authorization": f"Bearer {token}"}
+
+
+@contextmanager
+def counted_queries(client: TestClient) -> Iterator[list[str]]:
+    """Every SQL statement the app sends while the block runs, so a test can show that a list
+    costs the same number of queries however long it is."""
+    seen: list[str] = []
+    engine = client.app.state.db.sync_engine  # type: ignore[attr-defined]
+
+    def record(*args: Any) -> None:
+        seen.append(args[2])
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield seen
+    finally:
+        event.remove(engine, "before_cursor_execute", record)

@@ -228,6 +228,7 @@ def shop(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{server.server_port}"
     server.shutdown()
+    server.server_close()
 
 
 @pytest.fixture
@@ -282,3 +283,4 @@ def receiver(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield Receiver
     server.shutdown()
+    server.server_close()

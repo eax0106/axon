@@ -1,7 +1,10 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 from app.developer import delivery
 
@@ -71,6 +74,44 @@ def test_old_log_rows_are_pruned_and_recent_ones_stay(api: TestClient, migrated_
     removed = run_db(migrated_url, lambda factory: delivery.prune(factory, now))
     assert removed == 1
     assert sql(migrated_url, "SELECT count(*) FROM api_request_log") == 1
+
+
+def test_a_backlog_is_pruned_in_batches_until_only_recent_rows_are_left(
+    api: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(delivery, "PRUNE_BATCH", 2)
+    account = account_id(api, signup(api))
+    now = datetime.now(UTC)
+    for age in (45, 44, 43, 42, 41, 5):
+        sql(
+            migrated_url,
+            "INSERT INTO api_request_log (account_id, method, path, status_code, duration_ms,"
+            " created_at) VALUES (:a, 'GET', '/v1/account', 200, 3, :t)",
+            {"a": account, "t": now - timedelta(days=age)},
+        )
+    for age, sent in ((40, True), (39, True), (38, True), (37, False), (5, True)):
+        sql(
+            migrated_url,
+            "INSERT INTO webhook_events (account_id, type, data, created_at, fanned_out_at)"
+            " VALUES (:a, 'lead.created', '{}', :t, :f)",
+            {"a": account, "t": now - timedelta(days=age), "f": now if sent else None},
+        )
+    deletes: list[str] = []
+
+    async def prune(factory: Any) -> int:
+        def record(*args: Any) -> None:
+            if args[2].lstrip().upper().startswith("DELETE"):
+                deletes.append(args[2])
+
+        event.listen(factory.kw["bind"].sync_engine, "before_cursor_execute", record)
+        return await delivery.prune(factory, now)
+
+    removed = run_db(migrated_url, prune)
+    assert removed == 5 + 3  # every old request; old events only once fanned out
+    assert len(deletes) == 3 + 2  # batches of two: 2, 2, 1 requests, then 2, 1 events
+    assert sql(migrated_url, "SELECT count(*) FROM api_request_log") == 1
+    assert sql(migrated_url, "SELECT count(*) FROM webhook_events") == 2
+    assert run_db(migrated_url, lambda factory: delivery.prune(factory, now)) == 0
 
 
 def test_status_reports_requests_errors_and_the_webhook_queue(

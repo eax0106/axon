@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import any_, delete, literal, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.actions import net
@@ -29,6 +29,7 @@ from app.employees.script import ScriptBundle
 from app.models import (
     ApiRequest,
     DeliveryStatus,
+    EmployeeVersion,
     WebhookDelivery,
     WebhookEndpoint,
     WebhookEvent,
@@ -43,6 +44,7 @@ LEASE = timedelta(minutes=5)  # a claimed send that never reports is tried again
 TIMEOUT_S = 10
 BATCH = 20
 KEEP = timedelta(days=30)  # events, their deliveries and the request log are kept this long
+PRUNE_BATCH = 5000
 
 # Tests only: a transport to send through instead of the network. Never set in the app.
 TRANSPORT: httpx.AsyncBaseTransport | None = None
@@ -174,20 +176,29 @@ async def fan_out(factory: async_sessionmaker[AsyncSession], now: datetime) -> i
                 .with_for_update(skip_locked=True)
             )
         )
+        # The endpoints and published hooks for the whole batch, read once, not per event.
+        endpoints: dict[uuid.UUID, list[WebhookEndpoint]] = {e.account_id: [] for e in taken}
+        for endpoint in await session.scalars(
+            select(WebhookEndpoint)
+            .where(
+                WebhookEndpoint.account_id.in_(endpoints),
+                WebhookEndpoint.active.is_(True),
+            )
+            .order_by(WebhookEndpoint.created_at)
+        ):
+            endpoints[endpoint.account_id].append(endpoint)
+        live = await service.latest_versions(
+            session,
+            list({e.employee_id for e in taken if e.employee_id and e.type in events.CONNECTED}),
+        )
         for event in taken:
             payload = events.envelope(
                 event.id, event.type, event.created_at, event.account_id, event.data
             )
-            endpoints = await session.scalars(
-                select(WebhookEndpoint).where(
-                    WebhookEndpoint.account_id == event.account_id,
-                    WebhookEndpoint.active.is_(True),
-                    literal(event.type) == any_(WebhookEndpoint.events),
-                )
-            )
-            for endpoint in endpoints:
-                session.add(_delivery(event, payload, now, endpoint=endpoint))
-            if hook := await _result_webhook(session, event):
+            for endpoint in endpoints[event.account_id]:
+                if event.type in endpoint.events:
+                    session.add(_delivery(event, payload, now, endpoint=endpoint))
+            if hook := _result_webhook(event, live):
                 session.add(_delivery(event, payload, now, hook=hook))
             event.fanned_out_at = now
         await session.commit()
@@ -220,17 +231,20 @@ def _delivery(
 
 async def published_hook(session: AsyncSession, employee_id: uuid.UUID) -> ResultWebhook | None:
     """The result webhook of the employee's latest published version, if it has one."""
-    live = await service.latest_version(session, employee_id)
+    return _hook_of(await service.latest_version(session, employee_id))
+
+
+def _hook_of(live: EmployeeVersion | None) -> ResultWebhook | None:
     return ScriptBundle.model_validate(live.bundle).result_webhook if live else None
 
 
-async def _result_webhook(
-    session: AsyncSession, event: WebhookEvent
+def _result_webhook(
+    event: WebhookEvent, live: dict[uuid.UUID, EmployeeVersion]
 ) -> tuple[uuid.UUID, ResultWebhook] | None:
     """The employee's result webhook as published, if this call is one it wants."""
     if event.employee_id is None or event.type not in events.CONNECTED:
         return None
-    config = await published_hook(session, event.employee_id)
+    config = _hook_of(live.get(event.employee_id))
     if config is None or not config.wants(voicemail=bool(event.data["call"]["voicemail"])):
         return None
     return event.employee_id, config
@@ -326,15 +340,23 @@ def resend(
 
 
 async def prune(factory: async_sessionmaker[AsyncSession], now: datetime) -> int:
-    """Forget the request log, and the events and deliveries, that are older than KEEP."""
-    async with factory() as session:
-        old_requests = await session.execute(
-            delete(ApiRequest).where(ApiRequest.created_at < now - KEEP)
-        )
-        old_events = await session.execute(
-            delete(WebhookEvent).where(
-                WebhookEvent.created_at < now - KEEP, WebhookEvent.fanned_out_at.is_not(None)
-            )
-        )  # the deliveries of an event go with it
-        await session.commit()
-    return int(old_requests.rowcount or 0) + int(old_events.rowcount or 0)  # type: ignore[attr-defined]
+    """Forget the request log, and the events and deliveries, that are older than KEEP. Rows go
+    PRUNE_BATCH at a time, each batch its own transaction, so a large backlog never holds one
+    long lock or one huge transaction."""
+    old_requests = select(ApiRequest.id).where(ApiRequest.created_at < now - KEEP)
+    old_events = select(WebhookEvent.id).where(  # the deliveries of an event go with it
+        WebhookEvent.created_at < now - KEEP, WebhookEvent.fanned_out_at.is_not(None)
+    )
+    forgotten = 0
+    for table, old in ((ApiRequest, old_requests), (WebhookEvent, old_events)):
+        while True:
+            async with factory() as session:
+                gone = await session.execute(
+                    delete(table).where(table.id.in_(old.limit(PRUNE_BATCH).scalar_subquery()))
+                )
+                await session.commit()
+            count = int(gone.rowcount or 0)  # type: ignore[attr-defined]
+            forgotten += count
+            if count < PRUNE_BATCH:
+                break
+    return forgotten

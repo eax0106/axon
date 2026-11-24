@@ -2,6 +2,7 @@
 adding contacts (CSV, paste, manual, saved list), the exclusion list, and start, pause, resume and
 cancel. The live panel, export, analytics and capacity are in `app.campaigns.panel`."""
 
+import asyncio
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -63,16 +64,21 @@ async def load_campaign(
 
 async def counts(session: AsyncSession, campaign_id: uuid.UUID) -> dict[str, int]:
     """Contacts by status; every status is present, so a client can rely on the keys."""
-    found = dict(
-        (
-            await session.execute(
-                select(CampaignContact.status, func.count())
-                .where(CampaignContact.campaign_id == campaign_id)
-                .group_by(CampaignContact.status)
-            )
-        ).all()
-    )
-    return {s.value: int(found.get(s, 0)) for s in ContactStatus}
+    return (await counts_of(session, [campaign_id]))[campaign_id]
+
+
+async def counts_of(
+    session: AsyncSession, campaign_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, int]]:
+    """`counts` for many campaigns in one query."""
+    found: dict[uuid.UUID, dict[ContactStatus, int]] = {i: {} for i in campaign_ids}
+    for campaign_id, state, n in await session.execute(
+        select(CampaignContact.campaign_id, CampaignContact.status, func.count())
+        .where(CampaignContact.campaign_id.in_(campaign_ids))
+        .group_by(CampaignContact.campaign_id, CampaignContact.status)
+    ):
+        found[campaign_id][state] = n
+    return {i: {s.value: int(by.get(s, 0)) for s in ContactStatus} for i, by in found.items()}
 
 
 class CampaignOut(BaseModel):
@@ -96,36 +102,61 @@ class CampaignOut(BaseModel):
 async def consent_current(session: AsyncSession, campaign_id: uuid.UUID) -> bool:
     """The owner has confirmed the list as it stands: no contact was added after the last
     confirmation, so nobody is called under consent given before they were on the list."""
-    given = await session.scalar(
-        select(func.max(ConsentAttestation.created_at)).where(
-            ConsentAttestation.scope == ConsentScope.CAMPAIGN,
-            ConsentAttestation.subject_id == campaign_id,
+    return (await consent_of(session, [campaign_id]))[campaign_id]
+
+
+async def consent_of(
+    session: AsyncSession, campaign_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, bool]:
+    """`consent_current` for many campaigns in two queries."""
+    given = {
+        subject: at
+        for subject, at in await session.execute(
+            select(ConsentAttestation.subject_id, func.max(ConsentAttestation.created_at))
+            .where(
+                ConsentAttestation.scope == ConsentScope.CAMPAIGN,
+                ConsentAttestation.subject_id.in_(campaign_ids),
+            )
+            .group_by(ConsentAttestation.subject_id)
         )
-    )
-    newest = await session.scalar(
-        select(func.max(CampaignContact.created_at)).where(
-            CampaignContact.campaign_id == campaign_id
+    }
+    newest = {
+        campaign_id: at
+        for campaign_id, at in await session.execute(
+            select(CampaignContact.campaign_id, func.max(CampaignContact.created_at))
+            .where(CampaignContact.campaign_id.in_(campaign_ids))
+            .group_by(CampaignContact.campaign_id)
         )
-    )
-    return given is not None and (newest is None or newest <= given)
+    }
+    return {i: i in given and (i not in newest or newest[i] <= given[i]) for i in campaign_ids}
 
 
 async def out(session: AsyncSession, campaign: Campaign) -> CampaignOut:
-    return CampaignOut(
-        id=campaign.id,
-        employee_id=campaign.employee_id,
-        name=campaign.name,
-        purpose=campaign.purpose,
-        status=campaign.status,
-        settings=schedule.of(campaign.settings),
-        scheduled_at=campaign.scheduled_at,
-        started_at=campaign.started_at,
-        completed_at=campaign.completed_at,
-        note=campaign.note,
-        created_at=campaign.created_at,
-        contacts=await counts(session, campaign.id),
-        consent_given=await consent_current(session, campaign.id),
-    )
+    return (await outs(session, [campaign]))[0]
+
+
+async def outs(session: AsyncSession, campaigns: Sequence[Campaign]) -> list[CampaignOut]:
+    """`out` for a whole list in three queries, not four per campaign."""
+    ids = [c.id for c in campaigns]
+    contacts, consent = await counts_of(session, ids), await consent_of(session, ids)
+    return [
+        CampaignOut(
+            id=campaign.id,
+            employee_id=campaign.employee_id,
+            name=campaign.name,
+            purpose=campaign.purpose,
+            status=campaign.status,
+            settings=schedule.of(campaign.settings),
+            scheduled_at=campaign.scheduled_at,
+            started_at=campaign.started_at,
+            completed_at=campaign.completed_at,
+            note=campaign.note,
+            created_at=campaign.created_at,
+            contacts=contacts[campaign.id],
+            consent_given=consent[campaign.id],
+        )
+        for campaign in campaigns
+    ]
 
 
 async def bulk_employee(session: AsyncSession, user: User, employee_id: uuid.UUID) -> Employee:
@@ -179,7 +210,7 @@ async def list_campaigns(
         query = query.where(Campaign.employee_id == employee_id)
     if state:
         query = query.where(Campaign.status == state)
-    return [await out(session, c) for c in await session.scalars(query)]
+    return await outs(session, list(await session.scalars(query)))
 
 
 @router.get("/{campaign_id}")
@@ -418,7 +449,7 @@ async def preview(
     employee = await session.get(Employee, campaign.employee_id)
     assert employee is not None
     try:
-        header, rows = importer.read_table(body.text)
+        header, rows = await asyncio.to_thread(importer.read_table, body.text)
     except importer.MappingError as exc:
         raise HTTPException(422, str(exc)) from exc
     return {
@@ -460,11 +491,13 @@ async def import_contacts(
     campaign, employee = await open_campaign(session, user, campaign_id)
     try:
         if body.format == "paste":
-            parsed = importer.parse_paste(body.text)
+            parsed = await asyncio.to_thread(importer.parse_paste, body.text)
         elif body.mapping is None:
             raise importer.MappingError("say which column holds the phone number (mapping)")
         else:
-            parsed = importer.parse_csv(body.text, body.mapping, declared_variables(employee))
+            parsed = await asyncio.to_thread(
+                importer.parse_csv, body.text, body.mapping, declared_variables(employee)
+            )
     except importer.MappingError as exc:
         raise HTTPException(422, str(exc)) from exc
     now = datetime.now(UTC)
@@ -583,7 +616,7 @@ async def add_exclusions(
     skipped at once."""
     campaign = await load_campaign(session, user, campaign_id, lock=True)
     try:
-        parsed = importer.parse_paste(body.text)
+        parsed = await asyncio.to_thread(importer.parse_paste, body.text)
     except importer.MappingError as exc:
         raise HTTPException(422, str(exc)) from exc
     added = await contacts.exclude(session, campaign, [r.phone for r in parsed.rows])

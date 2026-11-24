@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from app.employees import runtime
 from app.models import Employee
 from app.providers.speech import common
+from app.training import struggle
 
 from .conftest import sql
 from .helpers import run_db, seed, signup
@@ -147,6 +148,22 @@ def test_a_moment_the_owner_already_saw_does_not_come_back(
     assert client.post(f"{base}/dismiss", headers=owner).status_code == 204
     analyse(migrated_url, fake, employee, [GAP])
     assert open_suggestions(client, owner, employee) == []
+
+
+def test_an_employee_never_holds_more_open_suggestions_than_the_cap(
+    api: tuple[TestClient, Gemini], migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, fake = api
+    monkeypatch.setattr(struggle, "MAX_OPEN", 2)
+    employee, owner = setup(client, migrated_url)
+    analyse(migrated_url, fake, employee, [GAP])
+    analyse(migrated_url, fake, employee, [PUSHY, {**GAP, "caller_quote": TURNS[5]["text"]}])
+    assert len(open_suggestions(client, owner, employee)) == 2  # the third waits for room
+    first = open_suggestions(client, owner, employee)[0]["id"]
+    path = f"/employees/{employee}/training/suggestions/{first}/dismiss"
+    assert client.post(path, headers=owner).status_code == 204
+    analyse(migrated_url, fake, employee, [{**GAP, "caller_quote": TURNS[5]["text"]}])
+    assert len(open_suggestions(client, owner, employee)) == 2  # a dismissed one makes room
 
 
 def test_accepting_a_gap_needs_the_owners_answer_and_the_next_call_uses_it(

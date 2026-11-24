@@ -136,6 +136,10 @@ Cursor = Annotated[str | None, Query(description="`next_cursor` of the previous 
 
 async def _employee_out(session: AsyncSession, employee: Employee) -> EmployeeOut:
     number = await session.get(PhoneNumber, employee.number_id) if employee.number_id else None
+    return _employee_shape(employee, number.e164 if number else None)
+
+
+def _employee_shape(employee: Employee, phone_number: str | None) -> EmployeeOut:
     return EmployeeOut(
         id=employee.id,
         name=employee.name,
@@ -145,7 +149,7 @@ async def _employee_out(session: AsyncSession, employee: Employee) -> EmployeeOu
         status=employee.status.value,
         language=employee.language,
         extra_languages=employee.extra_languages,
-        phone_number=number.e164 if number else None,
+        phone_number=phone_number,
         pre_call_variables=service.bundle_of(employee).pre_call_variables,
     )
 
@@ -170,10 +174,13 @@ async def account(auth: Authenticated, session: Session) -> AccountOut:
 
 @router.get("/employees", tags=["employees"], summary="List employees")
 async def list_employees(auth: Authenticated, session: Session) -> list[EmployeeOut]:
-    rows = await session.scalars(
-        select(Employee).where(Employee.account_id == auth.account_id).order_by(Employee.created_at)
+    rows = await session.execute(
+        select(Employee, PhoneNumber.e164)
+        .outerjoin(PhoneNumber, PhoneNumber.id == Employee.number_id)
+        .where(Employee.account_id == auth.account_id)
+        .order_by(Employee.created_at)
     )
-    return [await _employee_out(session, e) for e in rows]
+    return [_employee_shape(employee, phone) for employee, phone in rows]
 
 
 @router.get("/employees/{employee_id}", tags=["employees"], summary="Get one employee")

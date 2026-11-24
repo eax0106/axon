@@ -1,9 +1,11 @@
 """Employee operations that touch the database: versions, publish, revert, restore, reset."""
 
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.employees.lifecycle import Action, next_status
@@ -28,6 +30,19 @@ async def latest_version(session: AsyncSession, employee_id: uuid.UUID) -> Emplo
         .order_by(EmployeeVersion.version.desc())
         .limit(1)
     )
+
+
+async def latest_versions(
+    session: AsyncSession, employee_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, EmployeeVersion]:
+    """`latest_version` for many employees in one query; one never published is left out."""
+    rows = await session.scalars(
+        select(EmployeeVersion)
+        .where(EmployeeVersion.employee_id.in_(employee_ids))
+        .ext(distinct_on(EmployeeVersion.employee_id))
+        .order_by(EmployeeVersion.employee_id, EmployeeVersion.version.desc())
+    )
+    return {v.employee_id: v for v in rows}
 
 
 async def versions(session: AsyncSession, employee_id: uuid.UUID) -> list[EmployeeVersion]:

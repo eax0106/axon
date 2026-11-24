@@ -151,6 +151,10 @@ def test_google_backed_actions_need_the_account_to_have_connected_google(
     warnings = client.get(f"/employees/{employee}", headers=owner).json()["warnings"]
     assert "your actions need Google calendar connected" in warnings
     assert "your actions need Google sheets connected" in warnings
+    # The list reads the connection once for everyone: each employee still gets its own warnings.
+    plain = new_employee(client, owner)
+    listed = {e["id"]: e["warnings"] for e in client.get("/employees", headers=owner).json()}
+    assert listed == {employee: warnings, plain: []}
 
 
 def test_another_account_cannot_read_edit_or_test_my_actions(
