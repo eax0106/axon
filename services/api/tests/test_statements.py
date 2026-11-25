@@ -315,3 +315,22 @@ def test_invoice_details_are_checked_before_they_are_kept(api: TestClient) -> No
     assert ok.json()["details"] == {"gstin": "36AAAAA0000A1Z5"}
     cleared = api.put("/billing/settings", json={"gstin": ""}, headers=owner)
     assert cleared.json()["details"] == {}
+
+
+def test_invoices_come_newest_first_one_page_at_a_time(
+    api: TestClient, migrated_url: str, seller: None
+) -> None:
+    owner = signup(api)
+    mine = account_id(api, owner)
+    for day in (1, 2, 3):
+        paid(migrated_url, mine, "118", f"order_{day}", datetime(2026, 11, day, tzinfo=UTC))
+
+    def page(query: str) -> list[str]:
+        got = api.get(f"/billing/invoices?{query}", headers=owner)
+        assert got.status_code == 200, got.text
+        return [i["issued_at"][:10] for i in got.json()]
+
+    assert page("limit=2") == ["2026-11-03", "2026-11-02"]
+    assert page("limit=2&offset=2") == ["2026-11-01"]
+    assert len(page("")) == 3
+    assert api.get("/billing/invoices?limit=201", headers=owner).status_code == 422

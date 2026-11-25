@@ -7762,7 +7762,33 @@
     },
     "/billing/invoices": {
       "get": {
+        "description": "Newest first, one page at a time (`limit`, `offset`).",
         "operationId": "list_invoices_billing_invoices_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -7778,6 +7804,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -14323,6 +14359,7 @@
     },
     "/employees/{employee_id}/training/suggestions": {
       "get": {
+        "description": "Open suggestions, newest first, one page at a time (`limit`, `offset`).",
         "operationId": "suggestions_employees__employee_id__training_suggestions_get",
         "parameters": [
           {
@@ -14333,6 +14370,29 @@
               "format": "uuid",
               "title": "Employee Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           }
         ],

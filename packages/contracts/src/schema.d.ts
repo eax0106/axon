@@ -766,7 +766,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Invoices */
+        /**
+         * List Invoices
+         * @description Newest first, one page at a time (`limit`, `offset`).
+         */
         get: operations["list_invoices_billing_invoices_get"];
         put?: never;
         post?: never;
@@ -2617,7 +2620,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Suggestions */
+        /**
+         * Suggestions
+         * @description Open suggestions, newest first, one page at a time (`limit`, `offset`).
+         */
         get: operations["suggestions_employees__employee_id__training_suggestions_get"];
         put?: never;
         post?: never;
@@ -7307,7 +7313,10 @@ export interface operations {
     };
     list_invoices_billing_invoices_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7323,6 +7332,15 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -11218,7 +11236,10 @@ export interface operations {
     };
     suggestions_employees__employee_id__training_suggestions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
             header?: never;
             path: {
                 employee_id: string;
