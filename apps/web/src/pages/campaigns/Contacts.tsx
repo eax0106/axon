@@ -308,11 +308,11 @@ function SaveAsList({ campaignId, selected }: { campaignId: string; selected: st
       <h3 className="eyebrow">Save as a list</h3>
       <p className="mt-2 text-sm text-ink-muted">Keep these people, with their details, to start another campaign from. The do-not-call list is checked again then.</p>
       <div className="mt-3 flex flex-wrap items-end gap-3">
-        <label className="block"><span className="text-sm text-ink">Who</span>
-          <select value={choice} onChange={(e) => { setWho(e.target.value); setSaved(null); }} className="mt-1.5 h-10 rounded-ctl border border-line-accent bg-bg px-2 text-sm text-ink-strong">
+        <div><label htmlFor={`${campaignId}-save-who`} className="block text-sm text-ink">Who</label>
+          <select id={`${campaignId}-save-who`} value={choice} onChange={(e) => { setWho(e.target.value); setSaved(null); }} className="mt-1.5 h-10 rounded-ctl border border-line-accent bg-bg px-2 text-sm text-ink-strong">
             {selected.length > 0 && <option value="selected">The {selected.length} selected</option>}
             {SAVE_GROUPS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
-          </select></label>
+          </select></div>
         <div className="min-w-56 flex-1"><Field label="List name" name="save-list" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} /></div>
         <button type="button" className={btn.ghost} disabled={busy || !name.trim()} onClick={() => void save()}>Save list</button>
       </div>
