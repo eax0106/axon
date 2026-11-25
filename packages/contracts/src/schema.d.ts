@@ -4162,17 +4162,8 @@ export interface components {
              * @default 2
              */
             retries: number;
-            /**
-             * Retry Gap Min
-             * @default 60
-             */
-            retry_gap_min: number;
-            /**
-             * Retry Mode
-             * @default same_run
-             * @enum {string}
-             */
-            retry_mode: "same_run" | "next_day";
+            /** Retry Ladder */
+            retry_ladder?: (number | "next_day")[];
             /**
              * Skip Dnc
              * @default true

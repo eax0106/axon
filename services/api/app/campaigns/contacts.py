@@ -222,7 +222,7 @@ async def settle(
         )
     else:
         contact.status = ContactStatus.PENDING
-        contact.next_attempt_at = campaign_settings.retry_time(now, settings)
+        contact.next_attempt_at = campaign_settings.retry_time(contact.attempts, now, settings)
 
 
 async def callback(session: AsyncSession, call: Call, lead: Lead, asked_for: datetime) -> None:

@@ -218,6 +218,7 @@ def test_a_running_campaign_changes_its_hours_retries_and_pace_but_not_its_rules
         "holidays": ["2026-12-25"],
         "concurrency": 5,
         "retries": 4,
+        "retry_ladder": [15, 120, "next_day"],
     }
     changed = api.patch(
         f"/campaigns/{campaign}", json={"name": "Renamed", "settings": live}, headers=owner

@@ -6,7 +6,7 @@ the window is held to 9 AM to 9 PM, narrower than the 6 AM to 10 PM limit of an 
 """
 
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -15,8 +15,10 @@ from app.instant import rules
 HARD_START_MIN, HARD_END_MIN = 9 * 60, 21 * 60
 MAX_RETRIES = 9  # 1 first attempt + 9 retries = 10 attempts
 MAX_HOLIDAYS = 100
+MAX_LADDER_STEPS = 5
 Repeat = Literal["none", "daily", "weekly"]
-RetryMode = Literal["same_run", "next_day"]
+# A wait in minutes (inside the day's window), or "next_day": when the window opens on a later day.
+RetryStep = Annotated[int, Field(ge=1, le=1440)] | Literal["next_day"]
 
 
 class CampaignSettings(BaseModel):
@@ -27,13 +29,28 @@ class CampaignSettings(BaseModel):
     concurrency: int = Field(default=2, ge=1, le=20)
     skip_dnc: bool = True
     retries: int = Field(default=2, ge=0, le=MAX_RETRIES)
-    # same_run: try again after `retry_gap_min` minutes, within the day's window; next_day: try
-    # again when the window next opens on a later day.
-    retry_mode: RetryMode = "same_run"
-    retry_gap_min: int = Field(default=60, ge=1, le=1440)
+    # The wait before each retry: step 1 after the first unanswered call, and so on. With more
+    # retries than steps, the last step repeats.
+    retry_ladder: list[RetryStep] = Field(
+        default_factory=lambda: list[RetryStep]([60]), min_length=1, max_length=MAX_LADDER_STEPS
+    )
     # Do not call a number another campaign of the account called in the last N days (0 = off).
     dedupe_days: int = Field(default=7, ge=0, le=90)
     repeat: Repeat = "none"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _one_step_ladder(cls, raw: Any) -> Any:
+        """Settings saved before the ladder had one `retry_mode` (same_run or next_day) and one
+        `retry_gap_min`: they are read as a ladder of one step."""
+        if not isinstance(raw, dict) or not {"retry_mode", "retry_gap_min"} & raw.keys():
+            return raw
+        raw = dict(raw)
+        mode, gap = raw.pop("retry_mode", "same_run"), raw.pop("retry_gap_min", 60)
+        if mode not in ("same_run", "next_day"):
+            raise ValueError("retry_mode is same_run or next_day")
+        raw.setdefault("retry_ladder", ["next_day" if mode == "next_day" else gap])
+        return raw
 
     @field_validator("days")
     @classmethod
@@ -92,13 +109,15 @@ def window_minutes(settings: CampaignSettings) -> int:
     return settings.window_end_min - settings.window_start_min
 
 
-def retry_time(now: datetime, settings: CampaignSettings) -> datetime:
-    """When an unanswered contact may be tried again."""
-    if settings.retry_mode == "next_day":
+def retry_time(failed: int, now: datetime, settings: CampaignSettings) -> datetime:
+    """When a contact whose attempt number `failed` went unanswered may be tried again."""
+    ladder = settings.retry_ladder
+    step = ladder[min(failed, len(ladder)) - 1]
+    if step == "next_day":
         tomorrow = rules.local(now, rules.IST).date() + timedelta(days=1)
         midnight = datetime.combine(tomorrow, time(0), tzinfo=rules.local(now, rules.IST).tzinfo)
         return next_open(midnight.astimezone(UTC), settings)
-    return next_open(now + timedelta(minutes=settings.retry_gap_min), settings)
+    return next_open(now + timedelta(minutes=step), settings)
 
 
 def next_run(after: datetime, settings: CampaignSettings) -> datetime | None:

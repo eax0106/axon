@@ -1120,21 +1120,24 @@
             "title": "Retries",
             "type": "integer"
           },
-          "retry_gap_min": {
-            "default": 60,
-            "maximum": 1440.0,
-            "minimum": 1.0,
-            "title": "Retry Gap Min",
-            "type": "integer"
-          },
-          "retry_mode": {
-            "default": "same_run",
-            "enum": [
-              "same_run",
-              "next_day"
-            ],
-            "title": "Retry Mode",
-            "type": "string"
+          "retry_ladder": {
+            "items": {
+              "anyOf": [
+                {
+                  "maximum": 1440.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "const": "next_day",
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Retry Ladder",
+            "type": "array"
           },
           "skip_dnc": {
             "default": true,

@@ -50,7 +50,15 @@ EDITABLE = (CampaignStatus.DRAFT, CampaignStatus.SCHEDULED, CampaignStatus.PAUSE
 # when its call ends, so a change applies from the next dial. The do-not-call rules, the purpose
 # and the list stay as they were when the owner started it: change those after pausing.
 LIVE_SETTINGS = frozenset(
-    {"window_start_min", "window_end_min", "days", "holidays", "concurrency", "retries"}
+    {
+        "window_start_min",
+        "window_end_min",
+        "days",
+        "holidays",
+        "concurrency",
+        "retries",
+        "retry_ladder",
+    }
 )
 CLOSED = (CampaignStatus.COMPLETED, CampaignStatus.CANCELED)
 

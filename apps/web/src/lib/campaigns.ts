@@ -112,5 +112,16 @@ export function tally(contacts: Pick<Contact, "status">[]): Record<Contact["stat
   return out;
 }
 
+export type RetryStep = CampaignSettings["retry_ladder"][number];
+export const MAX_LADDER_STEPS = 5;
+
+/** The wait before each of `retries` retries: step n of the ladder, and the last step once it runs out. */
+export function retryWaits(retries: number, ladder: RetryStep[]): RetryStep[] {
+  return Array.from({ length: ladder.length ? retries : 0 }, (_, i) => ladder[Math.min(i, ladder.length - 1)] as RetryStep);
+}
+
+/** A ladder step in words. */
+export const stepLabel = (step: RetryStep) => (step === "next_day" ? "the next open day" : step % 60 === 0 ? `${step / 60} h` : `${step} min`);
+
 /** Columns for a grid of `n` dots that stays roughly 2.5 times wider than tall. */
 export const gridColumns = (n: number) => Math.max(1, Math.ceil(Math.sqrt(n * 2.5)));
