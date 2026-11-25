@@ -17,6 +17,7 @@ from .campaigning import (
     make_campaign,
     open_calls,
     setup_bulk,
+    signup_second,
     states,
     tick,
 )
@@ -237,6 +238,100 @@ def test_an_answered_contact_can_be_retried_and_reopens_a_completed_campaign(
     target = contact_id(migrated_url, A)
     back = api.post(f"/campaigns/{campaign}/contacts/{target}/retry", headers=owner).json()
     assert back == {"status": "pending", "campaign_status": "paused"}
+
+
+def test_a_selection_of_contacts_is_acted_on_with_the_single_contact_rules(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    _, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, LOCAL, concurrency=1)
+    tick(migrated_url, adapter, NOW)  # A is on a call
+    a, b, c, d = (contact_id(migrated_url, p) for p in (A, B, C, D))
+    ghost = "00000000-0000-0000-0000-000000000000"
+    url = f"/campaigns/{campaign}/contacts/bulk"
+    cancel = api.post(
+        url, json={"contact_ids": [a, b, c, ghost], "action": "cancel"}, headers=owner
+    )
+    assert cancel.status_code == 200
+    assert cancel.json() == {
+        "done": 2,
+        "refused": [
+            {"contact_id": a, "reason": "a calling contact cannot be cancelled"},
+            {"contact_id": ghost, "reason": "contact not found"},
+        ],
+        "campaign_status": "running",
+    }
+    assert states(migrated_url) == {A: "calling", B: "canceled", C: "canceled", D: "pending"}
+    now = api.post(url, json={"contact_ids": [b, d], "action": "call-now"}, headers=owner).json()
+    assert now["done"] == 2 and now["refused"] == []
+    assert states(migrated_url)[B] == "pending"  # a cancelled contact gets another go
+    retry = api.post(url, json={"contact_ids": [c, d], "action": "retry"}, headers=owner).json()
+    assert retry["done"] == 1 and retry["refused"][0]["contact_id"] == d  # d is waiting
+    api.post(f"/campaigns/{campaign}/pause", headers=owner)
+    paused = api.post(url, json={"contact_ids": [d], "action": "call-now"}, headers=owner)
+    assert paused.status_code == 409
+    empty = api.post(url, json={"contact_ids": [], "action": "cancel"}, headers=owner)
+    assert empty.status_code == 422
+    assert api.post(url, json={"contact_ids": [d], "action": "x"}, headers=owner).status_code == 422
+    other = signup_second(api)
+    stranger = api.post(url, json={"contact_ids": [d], "action": "cancel"}, headers=other)
+    assert stranger.status_code == 404 and states(migrated_url)[D] == "pending"
+
+
+def test_a_bulk_retry_reopens_a_finished_campaign_paused(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, LOCAL[:1])
+    tick(migrated_url, adapter, NOW)
+    call = open_calls(migrated_url)[0]
+    end_call(migrated_url, fake, adapter, call, NOW + timedelta(seconds=30), answered=True)
+    tick(migrated_url, adapter, NOW + timedelta(seconds=40))
+    body = {"contact_ids": [contact_id(migrated_url, A)], "action": "retry"}
+    back = api.post(f"/campaigns/{campaign}/contacts/bulk", json=body, headers=owner).json()
+    assert back == {"done": 1, "refused": [], "campaign_status": "paused"}
+
+
+def test_contacts_are_saved_as_a_list_by_selection_state_or_last_outcome(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, LOCAL[:3], concurrency=3)
+    tick(migrated_url, adapter, NOW)
+    for call in open_calls(migrated_url):
+        end_call(migrated_url, fake, adapter, call, NOW + timedelta(seconds=40), answered=True)
+    sql(migrated_url, "UPDATE calls SET outcome = 'not_interested'")
+    sql(
+        migrated_url,
+        "UPDATE calls SET outcome = 'callback_requested' FROM leads"
+        " WHERE calls.lead_id = leads.id AND leads.phone IN (:a, :b)",
+        {"a": A, "b": B},
+    )
+    sql(migrated_url, 'UPDATE campaign_contacts SET variables = \'{"project": "Kokapet"}\'')
+    url = f"/campaigns/{campaign}/contacts/save-as-list"
+
+    def phones(list_id: str) -> list[str]:
+        got = api.get(f"/contact-lists/{list_id}", headers=owner).json()["contacts"]
+        assert all(c["variables"] == {"project": "Kokapet"} for c in got)
+        return [c["phone"] for c in got]
+
+    asked = api.post(
+        url, json={"name": "Call backs", "outcome": "callback_requested"}, headers=owner
+    )
+    assert asked.status_code == 201 and asked.json()["contacts"] == 2
+    assert phones(asked.json()["list_id"]) == [A, B]
+    picked = {"name": "Picked", "contact_ids": [contact_id(migrated_url, C)]}
+    assert phones(api.post(url, json=picked, headers=owner).json()["list_id"]) == [C]
+    done = api.post(url, json={"name": "All done", "state": "done"}, headers=owner).json()
+    assert done["contacts"] == 3
+    none = api.post(url, json={"name": "x", "state": "skipped"}, headers=owner)
+    assert none.status_code == 409
+    bad = api.post(url, json={"name": "x", "outcome": "delighted"}, headers=owner)
+    assert bad.status_code == 422
+    assert api.post(url, json={"name": "x"}, headers=signup_second(api)).status_code == 404
 
 
 def test_the_contact_export_is_a_csv_a_spreadsheet_cannot_run(

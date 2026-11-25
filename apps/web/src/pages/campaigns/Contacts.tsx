@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { api, unwrap } from "../../lib/api";
-import { type Contact, type ImportReport, type Preview, STATUS_LABEL, useCampaignAction, useContacts } from "../../lib/campaigns";
+import { type BulkAction, type BulkResult, bulkSummary, type Contact, type ImportReport, type Preview, SAVE_GROUPS, STATUS_LABEL, useCampaignAction, useContacts } from "../../lib/campaigns";
 import { useAction } from "../../lib/useAction";
 import { btn } from "../../ui/buttons";
 import { Field } from "../../ui/Field";
@@ -198,11 +198,13 @@ function Exclusions({ campaignId }: { campaignId: string }) {
   );
 }
 
-/** The list itself, with what can be done to each person. */
+/** The list itself, with what can be done to each person, or to several picked at once. */
 export function ContactTable({ campaignId, live }: { campaignId: string; live: boolean }) {
   const contacts = useContacts(campaignId, live);
   const action = useCampaignAction(campaignId);
-  const one = (c: Contact, what: "call-now" | "cancel" | "retry") => {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [note, setNote] = useState<string | null>(null);
+  const one = (c: Contact, what: BulkAction) => {
     const p = { params: { path: { campaign_id: campaignId, contact_id: c.id } } };
     action.mutate(() =>
       unwrap(
@@ -214,15 +216,55 @@ export function ContactTable({ campaignId, live }: { campaignId: string; live: b
       ),
     );
   };
+  const many = (what: BulkAction) =>
+    action.mutate(async () => {
+      const r = await unwrap<BulkResult>(api.POST("/campaigns/{campaign_id}/contacts/bulk", { ...at(campaignId), body: { contact_ids: [...selected], action: what } }));
+      setNote(bulkSummary(r));
+      setSelected(new Set());
+    });
+  const pick = (id: string, on: boolean) =>
+    setSelected((x) => {
+      const next = new Set(x);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   const rows = contacts.data?.contacts.slice(0, 200) ?? [];
+  const allPicked = rows.length > 0 && rows.every((c) => selected.has(c.id));
   return (
     <section aria-labelledby="contact-list">
       <h2 id="contact-list" className="eyebrow">Contacts {contacts.data && <span className="num text-ink-muted">· {contacts.data.total}</span>}</h2>
+      {selected.size > 0 && (
+        <div role="toolbar" aria-label="Selected contacts" className="mt-3 flex flex-wrap items-center gap-2 rounded-ctl border border-line-accent bg-accent-soft px-4 py-2 text-sm">
+          <span className="num text-ink-strong">{selected.size} selected</span>
+          {live && <button type="button" className={btn.quiet} disabled={action.isPending} onClick={() => many("call-now")}>Call now</button>}
+          <button type="button" className={btn.quiet} disabled={action.isPending} onClick={() => many("retry")}>Retry</button>
+          <button type="button" className={btn.quiet} disabled={action.isPending} onClick={() => many("cancel")}>Cancel calls</button>
+          <button type="button" className="ml-auto text-xs text-ink-muted hover:text-ink" onClick={() => setSelected(new Set())}>Clear</button>
+        </div>
+      )}
+      {note && <p role="status" className="mt-2 text-sm text-ink-muted">{note}</p>}
       <div className="mt-3 overflow-x-auto rounded-card border border-line" tabIndex={0} role="region" aria-label="Contacts table">
         <table className="w-full min-w-[560px] text-sm">
+          {rows.length > 0 && (
+            <thead className="border-b border-line">
+              <tr>
+                <th className="w-10 px-4 py-2 text-left">
+                  <input type="checkbox" aria-label="Select every contact shown" checked={allPicked} onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((c) => c.id)) : new Set())} className="accent-[var(--accent)]" />
+                </th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-ink-muted">Name</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-ink-muted">Phone</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-ink-muted">Status</th>
+                <th><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+          )}
           <tbody className="divide-y divide-line">
             {rows.map((c) => (
-              <tr key={c.id}>
+              <tr key={c.id} className={selected.has(c.id) ? "bg-accent-soft/40" : undefined}>
+                <td className="w-10 px-4 py-2.5">
+                  <input type="checkbox" aria-label={`Select ${c.name || c.phone}`} checked={selected.has(c.id)} onChange={(e) => pick(c.id, e.target.checked)} className="accent-[var(--accent)]" />
+                </td>
                 <td className="px-4 py-2.5 text-ink-strong">{c.name || "–"}</td>
                 <td className="num px-4 py-2.5 text-ink-muted">{c.phone}</td>
                 <td className="px-4 py-2.5 text-ink">{STATUS_LABEL[c.status]}{c.reason && <span className="text-ink-muted"> · {c.reason}</span>}</td>
@@ -239,6 +281,43 @@ export function ContactTable({ campaignId, live }: { campaignId: string; live: b
       </div>
       {contacts.data && contacts.data.total > rows.length && <p className="mt-2 text-xs text-ink-muted">Showing the first {rows.length}; export the CSV for all.</p>}
       {action.error && <div className="mt-3"><ErrorState error={action.error} /></div>}
+      {rows.length > 0 && <SaveAsList campaignId={campaignId} selected={[...selected]} />}
     </section>
+  );
+}
+
+/** Keep some of these people as a saved list (the ones picked, or a group such as everyone who asked for a call-back) to start another campaign from. */
+function SaveAsList({ campaignId, selected }: { campaignId: string; selected: string[] }) {
+  const qc = useQueryClient();
+  const [who, setWho] = useState<string>("callback");
+  const [name, setName] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
+  const group = who === "selected" ? null : SAVE_GROUPS.find((g) => g.key === who);
+  const save = () =>
+    run(async () => {
+      const body = group ? { name, ...group.body } : { name, contact_ids: selected };
+      const r = await unwrap<{ name: string; contacts: number }>(api.POST("/campaigns/{campaign_id}/contacts/save-as-list", { ...at(campaignId), body }));
+      setSaved(`Saved ${r.contacts} ${r.contacts === 1 ? "contact" : "contacts"} to the list ${r.name}.`);
+      setName("");
+      void qc.invalidateQueries({ queryKey: ["contact-lists"] });
+    });
+  const choice = who === "selected" && selected.length === 0 ? "callback" : who;
+  return (
+    <div className="mt-6 rounded-card border border-line bg-surface p-6">
+      <h3 className="eyebrow">Save as a list</h3>
+      <p className="mt-2 text-sm text-ink-muted">Keep these people, with their details, to start another campaign from. The do-not-call list is checked again then.</p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="block"><span className="text-sm text-ink">Who</span>
+          <select value={choice} onChange={(e) => { setWho(e.target.value); setSaved(null); }} className="mt-1.5 h-10 rounded-ctl border border-line-accent bg-bg px-2 text-sm text-ink-strong">
+            {selected.length > 0 && <option value="selected">The {selected.length} selected</option>}
+            {SAVE_GROUPS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+          </select></label>
+        <div className="min-w-56 flex-1"><Field label="List name" name="save-list" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} /></div>
+        <button type="button" className={btn.ghost} disabled={busy || !name.trim()} onClick={() => void save()}>Save list</button>
+      </div>
+      {saved && <p role="status" className="mt-3 text-sm text-accent">{saved}</p>}
+      {error !== null && <div className="mt-3"><ErrorState error={error} /></div>}
+    </div>
   );
 }

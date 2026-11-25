@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { gridColumns, retryWaits, stepLabel, tally } from "./campaigns";
+import { bulkSummary, gridColumns, retryWaits, stepLabel, tally } from "./campaigns";
 
 describe("campaign figures", () => {
   it("tallies contacts by status with every status present", () => {
@@ -13,6 +13,18 @@ describe("campaign figures", () => {
       skipped: 0,
       canceled: 0,
     });
+  });
+  it("sums up a bulk action and why some contacts were left", () => {
+    expect(bulkSummary({ done: 1, refused: [], campaign_status: "running" })).toBe("Done for 1 contact.");
+    const r = {
+      done: 3,
+      refused: [
+        { contact_id: "a", reason: "a calling contact cannot be cancelled" },
+        { contact_id: "b", reason: "a calling contact cannot be cancelled" },
+      ],
+      campaign_status: "running" as const,
+    };
+    expect(bulkSummary(r)).toBe("Done for 3 contacts. 2 left as they were (a calling contact cannot be cancelled).");
   });
   it("gives each retry its ladder step and repeats the last one", () => {
     expect(retryWaits(4, [10, "next_day"])).toEqual([10, "next_day", "next_day", "next_day"]);
