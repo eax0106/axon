@@ -1,0 +1,17 @@
+# TLS in front of the stack. Caddy gets and renews the certificates itself; both names must point
+# at the VM's public address before the first start. Access logs stay off: the live-call
+# WebSocket carries a session token in its URL.
+{
+	email {$AXON_ACME_EMAIL}
+}
+
+# The dashboard, with the API under /api (the web server proxies it).
+{$AXON_APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:80
+}
+
+# The voice engine: Vobiz's media WebSocket and the browser test calls.
+{$AXON_ENGINE_DOMAIN} {
+	reverse_proxy engine:8001
+}

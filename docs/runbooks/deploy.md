@@ -9,7 +9,30 @@ The same containers run everywhere: `api`, `engine`, `worker` (built from `deplo
 3. **Settings.** Copy `.env.example`; set `AXON_JWT_SECRET` (32+ random characters), `AXON_ENGINE_PUBLIC_URL`, `AXON_API_PUBLIC_URL` (both https, reachable by Vobiz), and each vendor key you have. Leave `AXON_AUTH_RATE_LIMIT` unset: `off` is for load tests.
 4. **Region.** An India region (Mumbai or Hyderabad) for Vobiz and Sarvam latency.
 
-## First deploy
+## One VM in Mumbai (the chosen setup)
+
+One Linux VM runs the whole stack with `deploy/docker-compose.prod.yml` on top of the development file. Only Caddy is published, on ports 80 and 443, and it gets the TLS certificates itself. Postgres, Redis, the API, the engine and the web server stay on Compose's private network, Postgres and Redis get real passwords, every service restarts on failure and after a reboot, logs are capped at 100 MB per service, and a `backup` service writes a dump a day to `deploy/backups` (14 kept).
+
+1. **VM.** Ubuntu 24.04 LTS in Mumbai (AWS Lightsail or EC2 `ap-south-1`, or DigitalOcean `blr1`), at least 4 vCPU and 8 GB of memory to start; the call count it carries is measured in [capacity.md](capacity.md). Open only ports 22, 80 and 443 in its firewall, and allow SSH by key only.
+2. **DNS.** Two names pointing at the VM's public address, for example `app.example.in` (dashboard and API) and `voice.example.in` (engine). Caddy cannot get certificates until both resolve.
+3. **Docker.** Install Docker Engine and the Compose plugin from docker.com's apt repository.
+4. **Code and settings.** Clone the repository, copy `.env.example` to `.env`, and set:
+   - `AXON_JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD` (long random strings; the Postgres password only takes effect when the database is first created);
+   - `AXON_APP_DOMAIN`, `AXON_ENGINE_DOMAIN`, `AXON_ACME_EMAIL`;
+   - `AXON_API_PUBLIC_URL=https://<app domain>/api` and `AXON_ENGINE_PUBLIC_URL=https://<engine domain>`;
+   - every vendor key you have ([WIRING_CHECKLIST.md](../WIRING_CHECKLIST.md)).
+5. **Start.**
+
+   ```bash
+   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build --wait
+   ```
+
+   Then check `https://<app domain>/api/readyz`, make the first staff admin (below), and look at `GET /admin/providers`.
+6. **Backups off the machine.** Copy `deploy/backups` to encrypted storage elsewhere every day (for example `rclone sync` to an R2 bucket from the host's cron), and do the restore drill in [backup-restore.md](backup-restore.md) once before launch.
+
+Upgrades on the VM: `git pull`, then the same `up -d --build --wait` command; the rules under **Upgrade** below still apply.
+
+## First deploy (any host)
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d --build --wait    # on a host: your equivalent
