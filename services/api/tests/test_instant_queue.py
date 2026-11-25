@@ -186,3 +186,18 @@ def test_a_double_click_on_redial_queues_the_lead_once(api: TestClient, migrated
     second = api.post(f"{base}/queue/{last}/redial", headers=owner).json()["call_id"]
     assert first == second
     assert sql(migrated_url, "SELECT count(*) FROM calls WHERE status = 'queued'") == 1
+
+
+def test_a_cancelled_call_says_why_it_was_not_dialled(api: TestClient, migrated_url: str) -> None:
+    _, owner, base = setup(api, migrated_url)
+    skipped = lead_call(migrated_url, "canceled", None, phone="+919876543210")
+    by_hand = lead_call(migrated_url, "canceled", None, phone="+919876543211")
+    done = lead_call(migrated_url, "completed", None, phone="+919876543212")
+    sql(
+        migrated_url,
+        "INSERT INTO call_events (call_id, type, data) VALUES (:c, 'cancelled', CAST(:d AS jsonb))",
+        {"c": skipped, "d": '{"reason": "number is on the do-not-call list"}'},
+    )
+    recent = {i["call_id"]: i for i in api.get(base + "/queue", headers=owner).json()["recent"]}
+    assert recent[skipped]["reason"] == "number is on the do-not-call list"
+    assert recent[by_hand]["reason"] is None and recent[done]["reason"] is None

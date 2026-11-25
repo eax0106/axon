@@ -5177,6 +5177,8 @@ export interface components {
             name: string | null;
             /** Phone */
             phone: string | null;
+            /** Reason */
+            reason?: string | null;
             /** Scheduled For */
             scheduled_for: string | null;
             /** State */
