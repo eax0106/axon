@@ -711,6 +711,11 @@
             "title": "Include Test",
             "type": "boolean"
           },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
           "max_credits": {
             "anyOf": [
               {
@@ -8333,6 +8338,16 @@
           },
           {
             "in": "query",
+            "name": "live",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Live",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "required": false,
             "schema": {
@@ -8592,6 +8607,16 @@
             "schema": {
               "default": false,
               "title": "Include Test",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "live",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Live",
               "type": "boolean"
             }
           },

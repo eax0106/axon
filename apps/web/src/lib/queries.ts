@@ -1,6 +1,7 @@
 import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, api, session, unwrap } from "./api";
+import type { CallRow } from "./data";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,7 +39,6 @@ export type Notification = {
   read: boolean;
 };
 type Notifications = { unread_count: number; items: Notification[] };
-type CallRow = { id: string; status: string };
 
 export const useMe = () =>
   useQuery({ queryKey: ["me"], queryFn: () => unwrap<Me>(api.GET("/accounts/me")) });
@@ -57,18 +57,15 @@ export const useNotifications = () =>
     refetchInterval: 30_000,
   });
 
-const LIVE = new Set(["ringing", "in_progress"]);
-// ponytail: no live-count endpoint exists, so count live rows among the newest 100 calls.
-// Undercounts only if over 100 newer calls are queued behind a live one; add a status filter
-// to GET /calls if that ever happens.
+/** Calls ringing or in progress right now, newest first. */
 export const useLiveCalls = () =>
   useQuery({
     queryKey: ["calls", "live"],
     queryFn: async () => {
-      const page = await unwrap<{ items: CallRow[] }>(
-        api.GET("/calls", { params: { query: { limit: 100, include_test: true } } }),
+      const page = await unwrap<{ total: number; items: CallRow[] }>(
+        api.GET("/calls", { params: { query: { live: true, include_test: true, limit: 20 } } }),
       );
-      return page.items.filter((c) => LIVE.has(c.status)).length;
+      return page;
     },
     refetchInterval: 10_000,
   });

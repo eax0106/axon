@@ -14,7 +14,7 @@ from app.calls import postcall
 from app.calls.csvsafe import to_csv
 from app.db import Session
 from app.employees.limits import AiRate
-from app.models import Call, Employee, Lead, Note, Role, User
+from app.models import Call, CallStatus, Employee, Lead, Note, Role, User
 from app.providers.base import ObjectStorageProvider, ProviderKind
 from app.providers.registry import require
 
@@ -39,6 +39,7 @@ class CallFilters(BaseModel):
     min_credits: float | None = Field(default=None, ge=0)
     max_credits: float | None = Field(default=None, ge=0)
     include_test: bool = False
+    live: bool = False  # only calls ringing or in progress right now
     q: str | None = Field(default=None, max_length=100)
 
 
@@ -56,6 +57,7 @@ def filters(
     min_credits: Annotated[float | None, Query(ge=0)] = None,
     max_credits: Annotated[float | None, Query(ge=0)] = None,
     include_test: bool = False,
+    live: bool = False,
     q: Annotated[str | None, Query(max_length=100)] = None,
 ) -> CallFilters:
     return CallFilters(**{k: v for k, v in locals().items()})
@@ -79,6 +81,8 @@ def apply(query: Select[Any], account_id: uuid.UUID, f: CallFilters) -> Select[A
     for column, value in exact.items():
         if value is not None:
             query = query.where(column == value)
+    if f.live:
+        query = query.where(Call.status.in_((CallStatus.RINGING, CallStatus.IN_PROGRESS)))
     if f.date_from:
         query = query.where(Call.created_at >= f.date_from)
     if f.date_to:

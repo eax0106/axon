@@ -248,3 +248,14 @@ def test_csv_cells_with_leading_spaces_before_a_formula_are_neutralised_too() ->
     for fine in ("hello", "  hello", "a=b", "100", None):
         assert not cell(fine).startswith("'"), fine
     assert cell(None) == ""
+
+
+def test_live_lists_only_calls_ringing_or_in_progress(api: TestClient, migrated_url: str) -> None:
+    owner, w = world(api, migrated_url)
+    ringing = add_call(migrated_url, w["account"], w["asha"], status="ringing")
+    talking = add_call(migrated_url, w["account"], w["ravi"], status="in_progress")
+    add_call(migrated_url, w["account"], w["asha"], status="queued")
+    live = api.get("/calls?live=true", headers=owner)
+    assert live.status_code == 200, live.text
+    assert set(ids(live)) == {str(ringing), str(talking)} and live.json()["total"] == 2
+    assert api.get("/calls", headers=owner).json()["total"] == 7  # the filter is off by default

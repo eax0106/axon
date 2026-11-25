@@ -4045,6 +4045,11 @@ export interface components {
              * @default false
              */
             include_test: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
             /** Max Credits */
             max_credits?: number | null;
             /** Max Duration */
@@ -7557,6 +7562,7 @@ export interface operations {
                 min_credits?: number | null;
                 max_credits?: number | null;
                 include_test?: boolean;
+                live?: boolean;
                 q?: string | null;
             };
             header?: never;
@@ -7603,6 +7609,7 @@ export interface operations {
                 min_credits?: number | null;
                 max_credits?: number | null;
                 include_test?: boolean;
+                live?: boolean;
                 q?: string | null;
             };
             header?: never;
