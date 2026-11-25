@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 import { useEmployees } from "../../lib/employees";
 import { useInstant } from "../../lib/instant";
@@ -25,7 +25,9 @@ export function Steps({ children }: { children: React.ReactNode }) {
 export function LeadUrl() {
   const instant = (useEmployees().data ?? []).filter((e) => e.channel === "instant");
   const [picked, setPicked] = useState("");
-  const id = picked || instant[0]?.id || "";
+  const [params] = useSearchParams(); // ?employee= from the employee's own Instant tab
+  const asked = instant.find((e) => e.id === params.get("employee"))?.id;
+  const id = picked || asked || instant[0]?.id || "";
   const info = useInstant(id);
   if (instant.length === 0)
     return (

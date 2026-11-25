@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 import { api, unwrap } from "../../../lib/api";
 import type { InstantInfo } from "../../../lib/instant";
@@ -12,11 +12,36 @@ import { ErrorState } from "../../../ui/states";
 
 type Props = { employeeId: string; info: InstantInfo };
 
+// "Where do your leads land?" -> the guide that connects it. Lead sites and CRMs without a
+// direct connection go through an automation tool that can send a web request.
+const PICKS: [string, string][] = [
+  ["My website form", "website-post"],
+  ["Facebook or Instagram ads", "meta-lead-ads"],
+  ["A Google Sheet", "google-sheets"],
+  ["Zapier", "zapier"],
+  ["Make", "make"],
+  ["n8n", "n8n"],
+  ["IndiaMART, JustDial or a CRM", "pabbly"],
+];
+
 /** Where leads come from: any tool that can POST, Meta Lead Ads, or a Google Sheet. */
 export function Sources({ employeeId, info }: Props) {
   const url = `${location.origin}/api${info.intake_path}`;
   return (
     <div className="space-y-8">
+      <section aria-labelledby="lead-picker">
+        <h2 id="lead-picker" className="eyebrow">Where do your leads land today?</h2>
+        <p className="mt-2 text-sm text-ink-muted">
+          Pick one for step-by-step setup. Lead sites and CRMs connect through an automation tool such as Pabbly or Zapier.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {PICKS.map(([label, slug]) => (
+            <Link key={slug + label} to={`/help/${slug}?employee=${employeeId}`} className={btn.ghost}>
+              {label}
+            </Link>
+          ))}
+        </div>
+      </section>
       <WebIntake url={url} header={info.secret_header} employeeId={employeeId} />
       <div className="grid gap-6 lg:grid-cols-2">
         <Meta employeeId={employeeId} info={info} />
