@@ -51,6 +51,7 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 
 ## Post-call and data [B6]
 - [x] Recording, transcript, summary, sentiment, outcome, captured fields; nothing invented when a field is missing
+- [x] Custom outcomes per employee (up to 8, each counting as a built-in outcome for the figures); shown on call detail, Conversations filters, the leads board, exports, webhooks and the developer API (`custom_outcome`)
 - [x] Conversations: all calls; filters (outcome, sentiment, employee, source, campaign, direction, date, duration, credits); remembered filters; CSV export
 - [x] Call detail: timeline, notes, share summary
 - [x] Leads: one per phone number across channels; table, card and kanban by outcome; notes; export with a field picker

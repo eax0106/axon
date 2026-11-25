@@ -470,6 +470,8 @@ class Call(Base):
     duration_s: Mapped[int | None]
     credits_charged: Mapped[Decimal] = mapped_column(Credits, server_default="0")
     outcome: Mapped[str | None] = mapped_column(String(50))
+    # An employee's own outcome (settings.outcomes); `outcome` is the built-in it counts as.
+    custom_outcome: Mapped[str | None] = mapped_column(String(40))
     sentiment: Mapped[str | None] = mapped_column(String(20))
     summary: Mapped[str | None] = mapped_column(Text)
     transcript: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")

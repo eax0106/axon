@@ -119,12 +119,20 @@ async def _run_one(
             account = await session.get(Account, call.account_id)
             assert account is not None  # FK guarantees it
             turns = list(call.transcript)
-            capture = employees.settings_of(employee).capture if employee else []
+            settings = employees.settings_of(employee) if employee else None
+            capture = settings.capture if settings else []
+            outcomes = settings.outcomes if settings else []
             remember = account.caller_memory and lead is not None
             old_memory = lead.memory if lead else None
         try:
             result = await analysis.analyse(
-                llm, turns, capture, now, old_memory=old_memory, remember=remember
+                llm,
+                turns,
+                capture,
+                now,
+                old_memory=old_memory,
+                remember=remember,
+                outcomes=outcomes,
             )
         except (analysis.AnalysisError, httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
             await _mark_failed(factory, call_id, type(exc).__name__, now)
@@ -165,6 +173,7 @@ async def _apply(
     employee = await session.get(Employee, call.employee_id) if call.employee_id else None
     lead = await session.get(Lead, call.lead_id) if call.lead_id else None
     call.summary, call.sentiment, call.outcome = result.summary, result.sentiment, result.outcome
+    call.custom_outcome = result.custom_outcome
     call.captured = {k: v for k, v in result.captured.items() if v is not None}
     call.voicemail = result.voicemail
     call.analysis_status, call.analysis_error = "done", None

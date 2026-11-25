@@ -462,6 +462,18 @@
             "title": "Created At",
             "type": "string"
           },
+          "custom_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One of the employee's own outcomes (e.g. site_visit_booked) when the analysis picked one; `outcome` is then the built-in outcome it counts as. Null otherwise.",
+            "title": "Custom Outcome"
+          },
           "direction": {
             "title": "Direction",
             "type": "string"
@@ -542,6 +554,7 @@
                 "type": "null"
               }
             ],
+            "description": "What happened, always one of: interested, not_interested, callback_requested, wrong_number, do_not_call, no_conversation, other. Null until the call is analysed.",
             "title": "Outcome"
           },
           "phone": {
@@ -623,6 +636,7 @@
           "ended_at",
           "duration_s",
           "outcome",
+          "custom_outcome",
           "sentiment",
           "summary",
           "captured",
@@ -634,7 +648,7 @@
         "type": "object"
       },
       "CallFilters": {
-        "description": "Also what a user's remembered conversation filters are made of.",
+        "description": "Also what a user's remembered conversation filters are made of. `outcome` matches a\nbuilt-in outcome (including the custom outcomes that count as it) or a custom outcome.",
         "properties": {
           "campaign_id": {
             "anyOf": [
@@ -841,6 +855,18 @@
             "title": "Created At",
             "type": "string"
           },
+          "custom_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One of the employee's own outcomes (e.g. site_visit_booked) when the analysis picked one; `outcome` is then the built-in outcome it counts as. Null otherwise.",
+            "title": "Custom Outcome"
+          },
           "direction": {
             "title": "Direction",
             "type": "string"
@@ -921,6 +947,7 @@
                 "type": "null"
               }
             ],
+            "description": "What happened, always one of: interested, not_interested, callback_requested, wrong_number, do_not_call, no_conversation, other. Null until the call is analysed.",
             "title": "Outcome"
           },
           "phone": {
@@ -994,6 +1021,7 @@
           "ended_at",
           "duration_s",
           "outcome",
+          "custom_outcome",
           "sentiment",
           "summary",
           "captured",
@@ -1439,6 +1467,40 @@
           "password"
         ],
         "title": "Credentials",
+        "type": "object"
+      },
+      "CustomOutcome": {
+        "description": "An outcome of the owner's own, e.g. site_visit_booked. The analysis picks it when the\ndescription fits the call better than a built-in outcome does.",
+        "properties": {
+          "counts_as": {
+            "default": "interested",
+            "enum": [
+              "interested",
+              "not_interested",
+              "callback_requested",
+              "wrong_number",
+              "other"
+            ],
+            "title": "Counts As",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 40,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "CustomOutcome",
         "type": "object"
       },
       "DeliveryDetail": {
@@ -2177,6 +2239,14 @@
             },
             "maxItems": 20,
             "title": "Capture",
+            "type": "array"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/CustomOutcome"
+            },
+            "maxItems": 8,
+            "title": "Outcomes",
             "type": "array"
           },
           "power_prompting": {
@@ -15535,7 +15605,7 @@
     },
     "/leads/board": {
       "get": {
-        "description": "Leads grouped by the outcome of their latest call (a kanban: one column per outcome).",
+        "description": "Leads grouped by the outcome of their latest call (a kanban: one column per outcome). A\ncustom outcome gets its own column rather than joining the built-in it counts as.",
         "operationId": "board_leads_board_get",
         "parameters": [
           {

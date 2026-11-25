@@ -136,3 +136,12 @@ def test_the_checker_rejects_a_broken_spec(api: TestClient) -> None:
     for damage in damages:
         with pytest.raises((AssertionError, KeyError)):
             check_openapi(broken(damage))
+
+
+def test_the_spec_explains_the_custom_outcome_field(api: TestClient) -> None:
+    spec = api.get("/v1/openapi.json").json()
+    props = spec["components"]["schemas"]["CallOut"]["properties"]
+    assert "own outcomes" in props["custom_outcome"]["description"]
+    assert "do_not_call" in props["outcome"]["description"]
+    sample = events.sample(events.CALL_COMPLETED)["call"]
+    assert sample["custom_outcome"] == "site_visit_booked"

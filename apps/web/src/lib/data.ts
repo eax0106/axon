@@ -15,6 +15,7 @@ export type CallRow = {
   channel: string;
   status: string;
   outcome: string | null;
+  custom_outcome: string | null;
   sentiment: string | null;
   duration_s: number | null;
   credits_charged: number;
@@ -41,6 +42,7 @@ export type LeadRow = {
   name: string | null;
   created_at: string;
   last_outcome: string | null;
+  last_custom_outcome: string | null;
   last_call_at: string | null;
   calls: number;
   fields: Record<string, unknown>;
@@ -52,7 +54,7 @@ export type LeadDetail = {
   fields: Record<string, unknown>;
   memory: string | null;
   created_at: string;
-  calls: { id: string; created_at: string; outcome: string | null; summary: string | null }[];
+  calls: { id: string; created_at: string; outcome: string | null; custom_outcome: string | null; summary: string | null }[];
   notes?: Note[];
 };
 export type Overview = {
@@ -78,6 +80,20 @@ export const OUTCOME: Record<string, string> = {
   other: "Other",
   no_outcome: "Not called yet",
 };
+/** An employee's own outcome reads as words ("site_visit_booked" is "Site visit booked"); a
+ *  built-in one has its label. `fallback` is shown when the call has no outcome yet. */
+export function outcomeLabel(outcome: string | null, custom: string | null = null, fallback = "–") {
+  if (custom) return custom.charAt(0).toUpperCase() + custom.slice(1).replaceAll("_", " ");
+  return outcome ? OUTCOME[outcome] ?? outcome : fallback;
+}
+/** The leads board's columns in a steady order: built-in outcomes, then the employees' own
+ *  outcomes by name, then leads not called yet. Only columns with leads are shown. */
+export function boardColumns(counts: Record<string, number>) {
+  const own = Object.keys(counts).filter((k) => !(k in OUTCOME)).sort();
+  const builtIn = Object.keys(OUTCOME).filter((k) => k !== "no_outcome");
+  return [...builtIn, ...own, "no_outcome"].filter((k) => counts[k]);
+}
+export const columnLabel = (key: string) => OUTCOME[key] ?? outcomeLabel(null, key);
 export const SENTIMENT: Record<string, string> = { positive: "Positive", neutral: "Neutral", negative: "Negative" };
 
 /** Conversation filters as the API names them; empty values are left out of the request. */
