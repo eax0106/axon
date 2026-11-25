@@ -11,16 +11,18 @@ from typing import Any
 
 from pipecat.processors.frame_processor import FrameProcessor
 from pipecat.services.cartesia.tts import CartesiaTTSService, GenerationConfig
+from pipecat.services.elevenlabs.stt import ElevenLabsRealtimeSTTService
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.sarvam.llm import SarvamLLMService
 from pipecat.services.sarvam.stt import SarvamSTTService
 from pipecat.services.sarvam.tts import SarvamTTSService
 from pipecat.services.smallest.stt import SmallestSTTService
 from pipecat.services.smallest.tts import SmallestTTSService
+from pipecat.services.soniox.stt import SonioxSTTService
 from pipecat.transcriptions.language import Language
 
 from app.providers.base import ProviderKind, ProviderNotConfiguredError
-from app.providers.speech import cartesia, gemini, sarvam, smallest
+from app.providers.speech import cartesia, elevenlabs, gemini, sarvam, smallest, soniox
 from app.providers.speech.cartesia import VOICE_ENV
 from app.providers.speech.common import LANGUAGES
 
@@ -106,6 +108,26 @@ def _smallest_stt(code: str, delivery: Delivery) -> FrameProcessor:
     )
 
 
+def _soniox_stt(code: str, delivery: Delivery) -> FrameProcessor:
+    # Pipecat's VAD ends the turn (vad_force_turn_endpoint, the default), as for every vendor.
+    return SonioxSTTService(
+        api_key=os.environ["SONIOX_API_KEY"],
+        settings=SonioxSTTService.Settings(
+            model=delivery.model or soniox.RT_MODEL,
+            language_hints=[language(hint) for hint in soniox.hints(code)],
+        ),
+    )
+
+
+def _elevenlabs_stt(code: str, delivery: Delivery) -> FrameProcessor:
+    return ElevenLabsRealtimeSTTService(
+        api_key=os.environ["ELEVENLABS_API_KEY"],
+        settings=ElevenLabsRealtimeSTTService.Settings(
+            model=delivery.model or elevenlabs.RT_MODELS[0], language=language(code)
+        ),
+    )
+
+
 def _smallest_tts(code: str, delivery: Delivery) -> FrameProcessor:
     return SmallestTTSService(
         api_key=os.environ["SMALLEST_API_KEY"],
@@ -156,6 +178,8 @@ def _gemini_llm(code: str, delivery: Delivery) -> FrameProcessor:
 SERVICES: dict[tuple[ProviderKind, str], Callable[[str, Delivery], FrameProcessor]] = {
     (ProviderKind.STT, "sarvam"): _sarvam_stt,
     (ProviderKind.STT, "smallest"): _smallest_stt,
+    (ProviderKind.STT, "soniox"): _soniox_stt,
+    (ProviderKind.STT, "elevenlabs"): _elevenlabs_stt,
     (ProviderKind.LLM, "gemini"): _gemini_llm,
     (ProviderKind.LLM, "sarvam"): _sarvam_llm,
     (ProviderKind.TTS, "sarvam"): _sarvam_tts,

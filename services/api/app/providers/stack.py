@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import PlatformSetting
 from app.providers.base import ProviderKind
 from app.providers.registry import VENDOR_KEYS, selected_name
-from app.providers.speech import cartesia, gemini, sarvam, smallest
+from app.providers.speech import cartesia, elevenlabs, gemini, sarvam, smallest, soniox
 
 KEY = "call_stack"
 LEGS = (ProviderKind.STT, ProviderKind.LLM, ProviderKind.TTS)
@@ -25,6 +25,8 @@ MODELS: dict[ProviderKind, dict[str, tuple[str, ...]]] = {
     ProviderKind.STT: {
         "sarvam": (sarvam.STT_MODEL,),
         "smallest": ("pulse",),
+        "soniox": (soniox.RT_MODEL,),
+        "elevenlabs": elevenlabs.RT_MODELS,
     },
     ProviderKind.LLM: {
         "gemini": (
