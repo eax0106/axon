@@ -27,6 +27,7 @@ from app.main import provider_not_configured
 from app.providers import health, stack
 from app.providers.base import ProviderKind, ProviderNotConfiguredError, TelephonyProvider
 from app.providers.registry import require
+from app.secretbox import check as check_secrets_key
 from app.settings import engine_public_url, get_settings
 from app.training.tool import knowledge_tool
 from engine.call import CallSettings, run_call
@@ -52,6 +53,7 @@ SUPPORTED_LANGUAGES = {"te", "hi", "en"}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    check_secrets_key()  # calls read employees' action keys: no key, no start (app/secretbox.py)
     settings = get_settings()
     app.state.redis = Redis.from_url(settings.redis_url)
     app.state.db = create_async_engine(settings.database_url, pool_pre_ping=True)
