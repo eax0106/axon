@@ -9,8 +9,9 @@ import { ErrorState } from "../../ui/states";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const input = "num mt-1.5 h-10 w-full rounded-ctl border border-line-accent bg-bg px-3 text-ink-strong outline-none focus:border-accent";
 
-/** How the list is worked: hours (9 AM–9 PM at most), pace, retries, repeats and repeats across campaigns. */
-export function CampaignSettingsForm({ campaign, editable }: { campaign: Campaign; editable: boolean }) {
+/** How the list is worked: hours (9 AM–9 PM at most), pace, retries, repeats and repeats across campaigns.
+ * While it runs, the hours, days, holidays, retries and pace can change; the rest waits for a pause. */
+export function CampaignSettingsForm({ campaign, editable, running }: { campaign: Campaign; editable: boolean; running: boolean }) {
   const [s, setS] = useState(campaign.settings as CampaignSettings);
   const [holiday, setHoliday] = useState("");
   const [saved, setSaved] = useState(false);
@@ -26,9 +27,13 @@ export function CampaignSettingsForm({ campaign, editable }: { campaign: Campaig
     });
 
   return (
-    <fieldset disabled={!editable} className="rounded-card border border-line bg-surface p-6 disabled:opacity-70">
+    <fieldset disabled={!editable && !running} className="rounded-card border border-line bg-surface p-6 disabled:opacity-70">
       <legend className="sr-only">Campaign settings</legend>
-      {!editable && <p className="mb-4 text-sm text-ink-muted">Pause the campaign to change its settings.</p>}
+      {running ? (
+        <p className="mb-4 text-sm text-ink-muted">The campaign is calling. Changes to the hours, days, holidays, retries and calls at once apply from the next call; pause it to change the rest.</p>
+      ) : (
+        !editable && <p className="mb-4 text-sm text-ink-muted">A finished campaign's settings are fixed.</p>
+      )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block"><span className="text-sm text-ink">Calls from</span>
           <input type="time" min="09:00" max="21:00" step={300} value={toClock(s.window_start_min)} onChange={(e) => set({ window_start_min: fromClock(e.target.value) })} className={input} /></label>
@@ -36,8 +41,8 @@ export function CampaignSettingsForm({ campaign, editable }: { campaign: Campaig
           <input type="time" min="09:00" max="21:00" step={300} value={toClock(s.window_end_min)} onChange={(e) => set({ window_end_min: fromClock(e.target.value) })} className={input} /></label>
         <label className="block"><span className="text-sm text-ink">Calls at once</span>
           <input type="number" min={1} max={20} value={s.concurrency} onChange={(e) => set({ concurrency: Number(e.target.value) })} className={input} /></label>
-        <label className="block"><span className="text-sm text-ink">Skip numbers another campaign called in</span>
-          <span className="relative block"><input type="number" min={0} max={90} value={s.dedupe_days} onChange={(e) => set({ dedupe_days: Number(e.target.value) })} className={input} />
+        <label className="block has-[:disabled]:opacity-60"><span className="text-sm text-ink">Skip numbers another campaign called in</span>
+          <span className="relative block"><input type="number" min={0} max={90} disabled={running} value={s.dedupe_days} onChange={(e) => set({ dedupe_days: Number(e.target.value) })} className={input} />
             <span className="pointer-events-none absolute top-1/2 right-3 translate-y-[-25%] text-xs text-ink-muted">days</span></span></label>
       </div>
       <p className="mt-2 text-xs text-ink-muted">Indian time. Bulk calls are never placed before 9 AM or after 9 PM.</p>
@@ -72,13 +77,13 @@ export function CampaignSettingsForm({ campaign, editable }: { campaign: Campaig
         <label className="block"><span className="text-sm text-ink">Retry</span>
           <select value={s.retry_mode} onChange={(e) => set({ retry_mode: e.target.value as CampaignSettings["retry_mode"] })} className={input}>
             <option value="same_run">In the same run</option><option value="next_day">The next day</option></select></label>
-        <label className="block"><span className="text-sm text-ink">Repeat</span>
-          <select value={s.repeat} onChange={(e) => set({ repeat: e.target.value as CampaignSettings["repeat"] })} className={input}>
+        <label className="block has-[:disabled]:opacity-60"><span className="text-sm text-ink">Repeat</span>
+          <select disabled={running} value={s.repeat} onChange={(e) => set({ repeat: e.target.value as CampaignSettings["repeat"] })} className={input}>
             <option value="none">Run once</option><option value="daily">Every day</option><option value="weekly">Every week</option></select></label>
       </div>
 
-      <label className="mt-5 flex items-start gap-3 text-sm">
-        <input type="checkbox" checked={s.skip_dnc} onChange={(e) => set({ skip_dnc: e.target.checked })} className="mt-0.5 accent-[var(--accent)]" />
+      <label className="mt-5 flex items-start gap-3 text-sm has-[:disabled]:opacity-60">
+        <input type="checkbox" disabled={running} checked={s.skip_dnc} onChange={(e) => set({ skip_dnc: e.target.checked })} className="mt-0.5 accent-[var(--accent)]" />
         <span><span className="text-ink">Skip numbers on my do-not-call list</span>
           <span className="block text-xs text-ink-muted">Anyone who asked not to be called is always skipped, whatever this says.</span></span>
       </label>
@@ -86,7 +91,7 @@ export function CampaignSettingsForm({ campaign, editable }: { campaign: Campaig
       {action.error && <div className="mt-4"><ErrorState error={action.error} /></div>}
       <div className="mt-5 flex items-center gap-3">
         <button type="button" className={btn.primary} onClick={save} disabled={action.isPending}>Save settings</button>
-        {saved && <span role="status" className="text-sm text-accent">Saved.</span>}
+        {saved && <span role="status" className="text-sm text-accent">{running ? "Saved. It applies from the next call." : "Saved."}</span>}
       </div>
     </fieldset>
   );

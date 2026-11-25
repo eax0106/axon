@@ -178,7 +178,7 @@ def test_pause_resume_and_cancel_move_the_campaign_and_refuse_wrong_moves(
     assert contacts_by_status(migrated_url) == {"canceled": 2}
 
 
-def test_a_campaign_is_edited_only_while_it_is_not_calling(
+def test_a_campaign_is_edited_freely_until_it_starts_and_a_finished_one_is_fixed(
     api: TestClient, migrated_url: str
 ) -> None:
     employee, owner = setup_bulk(api, migrated_url)
@@ -194,12 +194,44 @@ def test_a_campaign_is_edited_only_while_it_is_not_calling(
     assert cleared["purpose"] is None  # back to the employee's own purpose
     api.post(f"/campaigns/{campaign}/consent", json={"confirm": True}, headers=owner)
     api.post(f"/campaigns/{campaign}/start", headers=owner)
-    assert api.patch(f"/campaigns/{campaign}", json={"name": "x"}, headers=owner).status_code == 409
     api.post(f"/campaigns/{campaign}/pause", headers=owner)
     assert (
         api.patch(f"/campaigns/{campaign}", json={"name": "Later"}, headers=owner).status_code
         == 200
     )
+    api.post(f"/campaigns/{campaign}/cancel", headers=owner)
+    fixed = api.patch(f"/campaigns/{campaign}", json={"name": "x"}, headers=owner)
+    assert fixed.status_code == 409 and fixed.json()["detail"] == "a finished campaign is fixed"
+
+
+def test_a_running_campaign_changes_its_hours_retries_and_pace_but_not_its_rules(
+    api: TestClient, migrated_url: str
+) -> None:
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, ["9876543210"])
+    settings = dict(get(api, owner, campaign)["settings"])  # type: ignore[call-overload]
+    live = {
+        **settings,
+        "window_start_min": 10 * 60,
+        "window_end_min": 18 * 60,
+        "days": [0, 1, 2, 3, 4],
+        "holidays": ["2026-12-25"],
+        "concurrency": 5,
+        "retries": 4,
+    }
+    changed = api.patch(
+        f"/campaigns/{campaign}", json={"name": "Renamed", "settings": live}, headers=owner
+    )
+    assert changed.status_code == 200 and changed.json()["status"] == "running"
+    assert changed.json()["settings"] == live and changed.json()["name"] == "Renamed"
+    for locked in ({"skip_dnc": False}, {"dedupe_days": 0}, {"repeat": "daily"}):
+        refused = api.patch(
+            f"/campaigns/{campaign}", json={"settings": {**live, **locked}}, headers=owner
+        )
+        assert refused.status_code == 409 and next(iter(locked)) in refused.json()["detail"]
+    purpose = api.patch(f"/campaigns/{campaign}", json={"purpose": "transactional"}, headers=owner)
+    assert purpose.status_code == 409 and "purpose" in purpose.json()["detail"]
+    assert get(api, owner, campaign)["settings"] == live  # nothing refused was saved
 
 
 def test_settings_outside_the_limits_are_refused_with_a_422(

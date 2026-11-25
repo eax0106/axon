@@ -42,6 +42,27 @@ def test_it_places_calls_up_to_the_campaigns_concurrency(
     assert states(migrated_url)[A] == "done" and states(migrated_url)[C] == "calling"
 
 
+def test_an_edit_to_a_running_campaign_applies_from_the_next_dial(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, LOCAL, concurrency=1)
+    assert len(tick(migrated_url, adapter, NOW)) == 1
+    settings = api.get(f"/campaigns/{campaign}", headers=owner).json()["settings"]
+    wider = api.patch(
+        f"/campaigns/{campaign}", json={"settings": {**settings, "concurrency": 3}}, headers=owner
+    )
+    assert wider.status_code == 200
+    assert len(tick(migrated_url, adapter, NOW + timedelta(seconds=5))) == 2  # 3 lines now
+    shut = {**settings, "concurrency": 3, "days": [1, 2, 3, 4]}  # NOW is a Monday
+    assert api.patch(f"/campaigns/{campaign}", json={"settings": shut}, headers=owner).is_success
+    for call in open_calls(migrated_url):
+        end_call(migrated_url, fake, adapter, call, NOW + timedelta(seconds=40), answered=True)
+    assert tick(migrated_url, adapter, NOW + timedelta(seconds=50)) == []  # Monday is shut now
+    assert len(fake.placed) == 3
+
+
 def test_the_call_is_a_bulk_call_of_the_campaign_with_its_lead_and_number(
     api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
 ) -> None:
