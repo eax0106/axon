@@ -143,3 +143,14 @@ def test_without_lead_values_there_is_no_details_block() -> None:
         ScriptBundle(pre_call_variables=["city"])
     )
     assert "plain data" not in build()
+
+
+def test_each_spoken_language_brings_its_own_courtesy_and_indian_formats() -> None:
+    telugu = build(language="te")
+    assert "మీరు" in telugu and "అండి" in telugu and "आप" not in telugu
+    both = build(language="hi", extra=["te"])
+    assert "आप" in both and "మీరు" in both
+    english = build(language="en")
+    assert "మీరు" not in english and "आप" not in english
+    for prompt in (telugu, both, english):
+        assert "lakh and crore" in prompt and "day first" in prompt

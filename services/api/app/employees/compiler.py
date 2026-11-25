@@ -144,6 +144,25 @@ def _incoming_conduct(context: CallContext) -> list[str]:
     return rules
 
 
+# How a courteous speaker of each language talks to a customer. Our own words; the Telugu and
+# Hindi forms are part of the native-speaker check (WIRING_CHECKLIST).
+ETIQUETTE = {
+    "Telugu": (
+        "In Telugu, always use the respectful మీరు, never నువ్వు; soften answers and requests "
+        "with అండి as a polite Telugu speaker does, and add గారు after the caller's name."
+    ),
+    "Hindi": (
+        "In Hindi, always say आप, never तुम or तू; use respectful verb forms such as बताइए and "
+        "कीजिए, and add जी after the caller's name."
+    ),
+}
+INDIAN_FORMATS = (
+    "Say amounts the Indian way: lakh and crore, not hundred thousand or million, and money in "
+    "rupees. Say dates day first (5th March) and times in the 12-hour clock with morning, "
+    "afternoon or evening."
+)
+
+
 def _languages(language: str, extra: list[str]) -> str:
     names = [LANGUAGE_NAMES[language]]
     names += [LANGUAGE_NAMES[x] for x in extra if x != language and x in LANGUAGE_NAMES]
@@ -154,7 +173,8 @@ def _languages(language: str, extra: list[str]) -> str:
         f"switching between {', '.join(names)} as they do. If the caller mixes in English "
         "words, that is fine; match their mix."
     )
-    return lead
+    manners = [ETIQUETTE[n] for n in names if n in ETIQUETTE]
+    return "\n".join([lead, *manners, INDIAN_FORMATS])
 
 
 def compile_prompt(
