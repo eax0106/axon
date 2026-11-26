@@ -565,9 +565,10 @@ export interface paths {
         put?: never;
         /**
          * Reset Second Factor
-         * @description For a staff member who lost both the authenticator app and the recovery codes: their next
-         *     sign-in sets up a new one, and every session they have is signed out. Never one's own (use a
-         *     recovery code), and logged under the staff member who did it.
+         * @description For someone who lost both the authenticator app and the recovery codes: a staff member's
+         *     next sign-in sets up a new one; an owner's or member's second factor is turned off (they may
+         *     turn it on again). Every session they have is signed out. Never one's own (use a recovery
+         *     code), and logged under the staff member who did it.
          */
         post: operations["reset_second_factor_admin_users__user_id__second_factor_reset_post"];
         delete?: never;
@@ -785,6 +786,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/second-factor/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable
+         * @description Turn the second factor off. Needs a current code from the app (not a recovery code), so a
+         *     session left open on a shared computer cannot remove it.
+         */
+        post: operations["disable_auth_second_factor_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/second-factor/enrol": {
         parameters: {
             query?: never;
@@ -800,6 +822,48 @@ export interface paths {
          *     seed, so the key on screen always matches the one kept.
          */
         post: operations["enrol_auth_second_factor_enrol_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/second-factor/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Setup
+         * @description An owner or member starts turning on the authenticator app from a signed-in session. Asking
+         *     again answers the same unconfirmed seed.
+         */
+        post: operations["setup_auth_second_factor_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/second-factor/setup/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Setup Confirm
+         * @description Finish turning it on with the first code from the app. Answers the recovery codes; this
+         *     session carries on, and every later sign-in asks for a code.
+         */
+        post: operations["setup_confirm_auth_second_factor_setup_confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4407,6 +4471,11 @@ export interface components {
             /** Razorpay Signature */
             razorpay_signature: string;
         };
+        /** Code */
+        Code: {
+            /** Code */
+            code: string;
+        };
         /** CodeAnswer */
         CodeAnswer: {
             /** Challenge */
@@ -5421,6 +5490,11 @@ export interface components {
             /** Rating */
             rating: number;
         };
+        /** Recovery */
+        Recovery: {
+            /** Recovery Codes */
+            recovery_codes: string[];
+        };
         /** RequestOut */
         RequestOut: {
             /**
@@ -5621,8 +5695,9 @@ export interface components {
         };
         /**
          * SignIn
-         * @description A session, or for staff a challenge: send it with a code to /auth/second-factor/verify, or
-         *     (`enrol`, the first sign-in after the second factor became required) set one up first.
+         * @description A session, or a challenge when the user has a second factor (always for staff): send it
+         *     with a code to /auth/second-factor/verify, or (`enrol`, a staff member's first sign-in after
+         *     the second factor became required) set one up first.
          */
         SignIn: {
             /** Access Token */
@@ -7573,6 +7648,37 @@ export interface operations {
             };
         };
     };
+    disable_auth_second_factor_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Code"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     enrol_auth_second_factor_enrol_post: {
         parameters: {
             query?: never;
@@ -7593,6 +7699,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Enrolment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    setup_auth_second_factor_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Enrolment"];
+                };
+            };
+        };
+    };
+    setup_confirm_auth_second_factor_setup_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Code"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recovery"];
                 };
             };
             /** @description Validation Error */

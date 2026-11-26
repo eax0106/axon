@@ -6,7 +6,7 @@ import { useAction } from "../lib/useAction";
 import { Field, SubmitButton } from "../ui/Field";
 import { ErrorState, Skeleton } from "../ui/states";
 import { Dnc } from "./account/Dnc";
-import { Business, Password } from "./account/Settings";
+import { Business, Password, TwoFactor } from "./account/Settings";
 
 export default function Account() {
   const me = useMe();
@@ -52,6 +52,7 @@ export default function Account() {
         </section>
         <Business />
         <Password />
+        <TwoFactor />
       </div>
       <div className="mt-6 max-w-4xl">
         <Dnc />

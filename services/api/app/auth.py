@@ -86,8 +86,8 @@ def issue_challenge(user: User, now: datetime | None = None) -> str:
 
 
 async def user_of_challenge(session: AsyncSession, challenge: str) -> User:
-    """The staff member a challenge was issued to. Refused once it expires, after a password
-    change or a second-factor reset, or when the user is no longer staff."""
+    """The user a challenge was issued to. Refused once it expires, after a password change or a
+    second-factor reset, or when the user is neither staff nor has a second factor turned on."""
     try:
         claims = jwt.decode(
             challenge,
@@ -100,7 +100,9 @@ async def user_of_challenge(session: AsyncSession, challenge: str) -> User:
     except (jwt.InvalidTokenError, ValueError) as exc:
         raise _unauthorized("sign in again") from exc
     user = await session.get(User, user_id)
-    if user is None or not user.is_platform_admin or _revoked(user, claims["iat"]):
+    # Staff always have a second factor; owners and members only once they turned one on.
+    has_one = user is not None and (user.is_platform_admin or user.totp_enabled_at is not None)
+    if user is None or not has_one or _revoked(user, claims["iat"]):
         raise _unauthorized("sign in again")
     return user
 
@@ -231,8 +233,9 @@ class Token(BaseModel):
 
 
 class SignIn(BaseModel):
-    """A session, or for staff a challenge: send it with a code to /auth/second-factor/verify, or
-    (`enrol`, the first sign-in after the second factor became required) set one up first."""
+    """A session, or a challenge when the user has a second factor (always for staff): send it
+    with a code to /auth/second-factor/verify, or (`enrol`, a staff member's first sign-in after
+    the second factor became required) set one up first."""
 
     access_token: str | None = None
     token_type: str = "bearer"  # noqa: S105 - OAuth2 token type, not a secret
@@ -286,8 +289,8 @@ async def login(body: Credentials, session: Session, request: Request) -> SignIn
     if _hasher.check_needs_rehash(user.password_hash):
         user.password_hash = await asyncio.to_thread(_hasher.hash, body.password)
         await session.commit()
-    if user.is_platform_admin:
-        enrolled = user.totp_enabled_at is not None
+    enrolled = user.totp_enabled_at is not None
+    if user.is_platform_admin or enrolled:  # owners and members only when they turned it on
         return SignIn(
             second_factor="verify" if enrolled else "enrol", challenge=issue_challenge(user)
         )
@@ -336,6 +339,8 @@ async def me(
             "staff": user.is_platform_admin,
             # Whether this session was signed in with the staff second factor (opens the console).
             "second_factor": bool(request.state.second_factor),
+            # Whether sign-in asks this user for an authenticator code.
+            "two_factor": user.totp_enabled_at is not None,
             "support_session": request.state.impersonator is not None,
         },
         # The verified owner phone ("" until verified): free test calls ring only this number.

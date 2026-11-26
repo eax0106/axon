@@ -96,11 +96,11 @@ export function AccountDetail() {
       return "";
     });
   }
-  function resetSecondFactor(user: { id: string; email: string }) {
+  function resetSecondFactor(user: { id: string; email: string; staff: boolean }) {
     reset.write(async () => {
       await unwrap(api.POST("/admin/users/{user_id}/second-factor/reset", { params: { path: { user_id: user.id } } }));
       await queryClient.invalidateQueries({ queryKey: ["admin", "account", id] });
-      return `Reset. ${user.email} is signed out everywhere and sets up a new authenticator app at the next sign-in.`;
+      return `Reset. ${user.email} is signed out everywhere${user.staff ? " and sets up a new authenticator app at the next sign-in" : "; their two-step sign-in is off"}.`;
     });
   }
   return (
@@ -139,12 +139,12 @@ export function AccountDetail() {
             {a.users.map((u) => (
               <li key={u.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <span className="truncate text-ink">{u.email}</span>
-                <span className="text-ink-muted">{u.role}{u.staff && ` · staff · second factor ${u.second_factor ? "on" : "not set up"}`}</span>
-                {u.staff && u.second_factor && (
+                <span className="text-ink-muted">{u.role}{u.staff ? ` · staff · second factor ${u.second_factor ? "on" : "not set up"}` : u.second_factor ? " · two-step sign-in on" : ""}</span>
+                {u.second_factor && (
                   <Confirm
                     trigger={<button type="button" className={btn.quiet} disabled={reset.busy}>Reset second factor</button>}
                     title={`Reset ${u.email}'s second factor?`}
-                    body="Only for a staff member who lost both their authenticator app and their recovery codes, and whom you have confirmed is really them. They are signed out everywhere and set up a new app at their next sign-in. This is logged under your name."
+                    body={`Only for someone who lost both their authenticator app and their recovery codes, and whom you have confirmed is really them. They are signed out everywhere and ${u.staff ? "set up a new app at their next sign-in" : "sign in with their password alone until they turn it on again"}. This is logged under your name.`}
                     action="Reset"
                     danger
                     onConfirm={() => resetSecondFactor(u)}

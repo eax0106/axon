@@ -6,6 +6,12 @@ staff sign-in after this shipped enrols everyone; after that every sign-in needs
 (`verify`). Only a session made here opens the admin console (app.auth.require_admin). A staff
 member who lost the phone and the recovery codes is reset by another staff member
 (app.admin.accounts), which is logged.
+
+Owners and members may turn the same second factor on from Account settings (`/setup`, then
+`/setup/confirm`, from a signed-in session); from then on their sign-in asks for a code too. They
+turn it off with a current code (`/disable`). One who lost the phone and the recovery codes is
+reset by ALTERX staff the same way (the reset turns it off), and that is logged. Developer API
+keys are separate credentials and are not affected.
 """
 
 import hashlib
@@ -17,7 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import ratelimit, totp
-from app.auth import issue_token, user_of_challenge
+from app.auth import OwnUser, issue_token, user_of_challenge
 from app.db import Session
 from app.models import AuditEntry, User
 
@@ -145,3 +151,72 @@ async def verify(body: CodeAnswer, session: Session, request: Request) -> Signed
     await ratelimit.clear(request, key)
     await session.commit()
     return Signed(access_token=issue_token(user, second_factor=True))
+
+
+class Recovery(BaseModel):
+    recovery_codes: list[str]  # shown this once; each works one time instead of a code
+
+
+class Code(BaseModel):
+    code: str = Field(min_length=6, max_length=40)
+
+
+def _not_staff(user: User) -> None:
+    if user.is_platform_admin:  # staff set theirs up at sign-in and cannot turn it off
+        raise HTTPException(status.HTTP_409_CONFLICT, "staff second factors are set at sign-in")
+
+
+@router.post("/setup")
+async def setup(user: OwnUser, session: Session) -> Enrolment:
+    """An owner or member starts turning on the authenticator app from a signed-in session. Asking
+    again answers the same unconfirmed seed."""
+    _not_staff(user)
+    await session.refresh(user, with_for_update=True)
+    if user.totp_enabled_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "a second factor is already set up")
+    seed = user.totp_secret or totp.new_seed()
+    user.totp_secret = seed
+    await session.commit()
+    return Enrolment(secret=seed, otpauth_uri=totp.otpauth_uri(seed, user.email))
+
+
+@router.post("/setup/confirm")
+async def setup_confirm(body: Code, user: OwnUser, session: Session, request: Request) -> Recovery:
+    """Finish turning it on with the first code from the app. Answers the recovery codes; this
+    session carries on, and every later sign-in asks for a code."""
+    _not_staff(user)
+    key = await _count_try(session, request, user)
+    if user.totp_enabled_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "a second factor is already set up")
+    if user.totp_secret is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "start the set-up first")
+    now = datetime.now(UTC)
+    step = totp.match(user.totp_secret, body.code, now.timestamp(), None)
+    if step is None:
+        raise _wrong_code()
+    await ratelimit.clear(request, key)
+    codes, hashes = new_recovery_codes()
+    user.totp_enabled_at, user.totp_last_step, user.recovery_code_hashes = now, step, hashes
+    _audit(session, user, "second_factor_enrolled")
+    await session.commit()
+    return Recovery(recovery_codes=codes)
+
+
+@router.post("/disable", status_code=status.HTTP_204_NO_CONTENT)
+async def disable(body: Code, user: OwnUser, session: Session, request: Request) -> None:
+    """Turn the second factor off. Needs a current code from the app (not a recovery code), so a
+    session left open on a shared computer cannot remove it."""
+    _not_staff(user)
+    key = await _count_try(session, request, user)
+    if user.totp_enabled_at is None or user.totp_secret is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "no second factor is set up")
+    if (
+        totp.match(user.totp_secret, body.code, datetime.now(UTC).timestamp(), user.totp_last_step)
+        is None
+    ):
+        raise _wrong_code()
+    await ratelimit.clear(request, key)
+    user.totp_secret = user.totp_enabled_at = user.totp_last_step = None
+    user.recovery_code_hashes = []
+    _audit(session, user, "second_factor_disabled")
+    await session.commit()
