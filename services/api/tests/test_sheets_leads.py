@@ -15,6 +15,7 @@ from app.providers.base import ProviderKind
 from app.providers.google.oauth import TOKEN_URL
 from app.providers.google.sheets import SCOPE, GoogleSheets, consent_url
 from app.providers.registry import ADAPTERS, require
+from app.secretbox import seal, unseal
 
 from .conftest import sql
 from .helpers import live_employee, run_db, seed, signup
@@ -132,7 +133,7 @@ def test_connecting_exchanges_the_code_and_stores_the_refresh_token(
     form = parse_qs(exchange.content.decode())
     assert form["code"] == ["auth-code"] and form["client_secret"] == ["client-secret"]
     assert form["redirect_uri"] == ["https://app.example.in/cb"]
-    assert sql(migrated_url, "SELECT google_refresh_token FROM lead_connections") == "rt-1"
+    assert unseal(sql(migrated_url, "SELECT google_refresh_token FROM lead_connections")) == "rt-1"
 
 
 def test_existing_rows_are_skipped_at_connect_and_new_rows_become_leads(
@@ -300,8 +301,8 @@ def test_one_revoked_sheet_does_not_stop_the_others(
     first = sql(migrated_url, "SELECT id FROM lead_connections ORDER BY created_at LIMIT 1")
     sql(
         migrated_url,
-        "UPDATE lead_connections SET google_refresh_token = 'revoked' WHERE id = :i",
-        {"i": first},
+        "UPDATE lead_connections SET google_refresh_token = :t WHERE id = :i",
+        {"i": first, "t": seal("revoked")},
     )
     google.revoked.add("revoked")
     assert poll(migrated_url) == 1  # the healthy connection still delivered its row

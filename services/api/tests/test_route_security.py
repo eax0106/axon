@@ -31,6 +31,9 @@ PROOF = {
     "POST /webhooks/razorpay": "Razorpay's payment webhook: signature",
     "GET /public/otp/{token}": "the one-time page a phone owner opens: random token",
     "POST /public/otp/{token}": "the one-time page a phone owner opens: random token",
+    "POST /auth/second-factor/enrol": "a staff sign-in challenge, issued for the right password",
+    "POST /auth/second-factor/confirm": "a staff sign-in challenge, issued for the right password",
+    "POST /auth/second-factor/verify": "a staff sign-in challenge, issued for the right password",
 }
 APP_DIR = Path(__file__).parents[1] / "app"
 SAMPLE_ID = "00000000-0000-0000-0000-000000000001"
