@@ -32,6 +32,7 @@ services:
     image: axon-api:dev
     build: { context: .., dockerfile: deploy/Dockerfile, args: { SERVICE: api } }
     command: ["sh", "-c", "alembic -c services/api/alembic.ini upgrade head && python -m app.voices"]
+    env_file: [{ path: ../.env, required: false }]  # AXON_SECRETS_KEY: migrations encrypt secrets
     environment: *app-env
     depends_on:
       postgres: { condition: service_healthy }

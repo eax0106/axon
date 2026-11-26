@@ -47,6 +47,9 @@ from app.numbers.router import router as numbers_router
 from app.phone_verify import router as phone_verify_router
 from app.providers.base import ProviderNotConfiguredError
 from app.providers.registry import report_all
+from app.second_factor import router as second_factor_router
+from app.secretbox import SecretsNotConfiguredError
+from app.secretbox import check as check_secrets_key
 from app.settings import get_settings
 from app.support import router as support_router
 from app.support import staff_router as support_staff_router
@@ -60,6 +63,7 @@ DB_CONNECT_TIMEOUT_S = 15.0
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    check_secrets_key()  # no key, no start: every stored secret needs it (app/secretbox.py)
     settings = get_settings()
     app.state.db = create_async_engine(
         settings.database_url, pool_pre_ping=True, connect_args={"timeout": DB_CONNECT_TIMEOUT_S}
@@ -77,6 +81,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Axon Voice Engine API", lifespan=lifespan)
 app.add_middleware(BodyLimit)
 app.include_router(auth_router)
+app.include_router(second_factor_router)
 app.include_router(live_router)
 app.include_router(employees_router)
 app.include_router(ai_router)
@@ -120,6 +125,18 @@ async def auth_not_configured(_: Request, __: AuthNotConfiguredError) -> JSONRes
             "error": "auth_not_configured",
             "missing_keys": ["AXON_JWT_SECRET"],
             "detail": "AXON_JWT_SECRET must be set (at least 32 characters)",
+        },
+    )
+
+
+@app.exception_handler(SecretsNotConfiguredError)
+async def secrets_not_configured(_: Request, exc: SecretsNotConfiguredError) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "secrets_not_configured",
+            "missing_keys": ["AXON_SECRETS_KEY"],
+            "detail": str(exc),
         },
     )
 

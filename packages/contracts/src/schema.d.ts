@@ -554,6 +554,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}/second-factor/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Second Factor
+         * @description For a staff member who lost both the authenticator app and the recovery codes: their next
+         *     sign-in sets up a new one, and every session they have is signed out. Never one's own (use a
+         *     recovery code), and logged under the staff member who did it.
+         */
+        post: operations["reset_second_factor_admin_users__user_id__second_factor_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/voices": {
         parameters: {
             query?: never;
@@ -736,6 +758,68 @@ export interface paths {
          *     answer is a fresh session for this one.
          */
         post: operations["change_password_auth_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/second-factor/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm
+         * @description Finish setting up: the first code from the app proves it holds the seed. Answers a session
+         *     and the recovery codes.
+         */
+        post: operations["confirm_auth_second_factor_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/second-factor/enrol": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enrol
+         * @description Start setting up the authenticator app. Asking again (a reload) answers the same unconfirmed
+         *     seed, so the key on screen always matches the one kept.
+         */
+        post: operations["enrol_auth_second_factor_enrol_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/second-factor/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify
+         * @description Sign in with a code from the app, or with one unused recovery code (then spent).
+         */
+        post: operations["verify_auth_second_factor_verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4244,6 +4328,11 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** Challenge */
+        Challenge: {
+            /** Challenge */
+            challenge: string;
+        };
         /**
          * Channel
          * @enum {string}
@@ -4288,6 +4377,13 @@ export interface components {
             razorpay_payment_id: string;
             /** Razorpay Signature */
             razorpay_signature: string;
+        };
+        /** CodeAnswer */
+        CodeAnswer: {
+            /** Challenge */
+            challenge: string;
+            /** Code */
+            code: string;
         };
         /** CodeBody */
         CodeBody: {
@@ -4645,6 +4741,25 @@ export interface components {
             role_title?: string | null;
             /** Voice Id */
             voice_id?: string | null;
+        };
+        /** Enrolled */
+        Enrolled: {
+            /** Access Token */
+            access_token: string;
+            /** Recovery Codes */
+            recovery_codes: string[];
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+        };
+        /** Enrolment */
+        Enrolment: {
+            /** Otpauth Uri */
+            otpauth_uri: string;
+            /** Secret */
+            secret: string;
         };
         /** ExclusionBody */
         ExclusionBody: {
@@ -5453,6 +5568,34 @@ export interface components {
             redirect_uri: string;
             /** State */
             state: string;
+        };
+        /**
+         * SignIn
+         * @description A session, or for staff a challenge: send it with a code to /auth/second-factor/verify, or
+         *     (`enrol`, the first sign-in after the second factor became required) set one up first.
+         */
+        SignIn: {
+            /** Access Token */
+            access_token?: string | null;
+            /** Challenge */
+            challenge?: string | null;
+            /** Second Factor */
+            second_factor?: ("verify" | "enrol") | null;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+        };
+        /** Signed */
+        Signed: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
         };
         /** Signup */
         Signup: {
@@ -6961,6 +7104,35 @@ export interface operations {
             };
         };
     };
+    reset_second_factor_admin_users__user_id__second_factor_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_voice_admin_voices_post: {
         parameters: {
             query?: never;
@@ -7271,7 +7443,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Token"];
+                    "application/json": components["schemas"]["SignIn"];
                 };
             };
             /** @description Validation Error */
@@ -7305,6 +7477,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Token"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_auth_second_factor_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Enrolled"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enrol_auth_second_factor_enrol_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Challenge"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Enrolment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_auth_second_factor_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Signed"];
                 };
             };
             /** @description Validation Error */

@@ -2,7 +2,7 @@
 
 **What to back up.** Postgres: everything that matters (accounts, ledger, calls, leads, scripts, secrets). Redis holds only queues and live events: nothing to back up, and a lost Redis only drops waiting work (waiting dials are rebuilt from their database rows by the worker). Recordings live in object storage (Cloudflare R2): turn on its versioning or replication there.
 
-**A dump holds every customer secret** (webhook signing secrets, lead-intake secrets, Google and Meta tokens, tool keys), unencrypted, because the database stores them that way (see `docs/phases/b14-security-review.md`, F5). Keep dumps in encrypted storage with the access of the person who can already read the database. `backups/` and `*.dump` are in `.gitignore`.
+**A dump holds every customer secret** (webhook signing secrets, lead-intake secrets, Google and Meta tokens, tool keys, staff second-factor seeds) encrypted under `AXON_SECRETS_KEY` (see `docs/phases/b14-security-review.md`, F5), so a dump alone does not reveal them; it still holds every account's data. Keep the key apart from the dumps (never in the same storage), and keep dumps in encrypted storage with the access of the person who can already read the database. A restore needs the key that was in use when the dump was taken (or a key list that still contains it). `backups/` and `*.dump` are in `.gitignore`.
 
 ## Take a backup
 
