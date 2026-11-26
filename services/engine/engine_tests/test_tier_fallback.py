@@ -73,14 +73,14 @@ def test_a_vendor_that_cannot_be_built_is_skipped(
     monkeypatch.delenv("SARVAM_API_KEY")
     stt, llm, tts = voice_legs("te", VoiceTier.PREMIUM)
     assert order(tts) == ["cartesia", "smallest"]
-    assert order(stt) == ["smallest"] and order(llm) == ["gemini"]
+    assert order(stt) == ["smallest", "soniox", "elevenlabs"] and order(llm) == ["gemini"]
 
 
 def test_unhealthy_vendors_are_tried_last(keys: None) -> None:
     down = frozenset({("tts", "cartesia"), ("stt", "sarvam")})
     stt, llm, tts = voice_legs("en", VoiceTier.PREMIUM, down=down)
     assert order(tts) == ["sarvam", "smallest", "cartesia"]
-    assert order(stt) == ["smallest", "sarvam"]
+    assert order(stt) == ["smallest", "soniox", "elevenlabs", "sarvam"]
     assert order(llm) == ["gemini", "sarvam"]
 
 
@@ -138,7 +138,12 @@ def test_the_call_stack_picks_the_vendor_and_model_each_leg_starts_on(
     # A Value voice (Sarvam) still loses the lead to the stack's Cartesia; it stays as backup.
     stt, llm, tts = voice_legs("te", VoiceTier.VALUE, stack=picked)
     assert order(tts) == ["cartesia", "sarvam", "smallest"]
-    assert order(llm) == ["sarvam", "gemini"] and order(stt) == ["sarvam", "smallest"]
+    assert order(llm) == ["sarvam", "gemini"] and order(stt) == [
+        "sarvam",
+        "smallest",
+        "soniox",
+        "elevenlabs",
+    ]
     models = [getattr(s, "_settings").model for s in llm.services]  # noqa: B009
     assert models[0] == "sarvam-105b-conversations"
     assert models[1] != "sarvam-105b-conversations"  # the backup keeps its own default

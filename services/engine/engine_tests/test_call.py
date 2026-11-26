@@ -10,7 +10,13 @@ from typing import Any, ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
-from pipecat.frames.frames import Frame, InputAudioRawFrame, TTSAudioRawFrame, TTSStoppedFrame
+from pipecat.frames.frames import (
+    Frame,
+    InputAudioRawFrame,
+    TTSAudioRawFrame,
+    TTSSpeakFrame,
+    TTSStoppedFrame,
+)
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from starlette.websockets import WebSocketDisconnect
 
@@ -199,9 +205,21 @@ def test_call_runs_end_to_end_and_the_length_cap_hangs_up(
 def test_silence_after_the_bot_speaks_ends_the_call(
     providers: None, events: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(engine.call, "STILL_THERE_S", 1.0)
+    spoken: list[str] = []
+
+    class _Voice(_Passthrough):
+        async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+            if isinstance(frame, TTSSpeakFrame):
+                spoken.append(frame.text)
+            await super().process_frame(frame, direction)
+
+    monkeypatch.setitem(SERVICES, (ProviderKind.TTS, "testleg"), lambda *_: _Voice())
     _call(monkeypatch, events, max_call_s=30.0, silence_timeout_s=1.0)
     assert events[-1] == {"type": "ended", "reason": "silence"}
     assert len(_Carrier.hangups) == 1
+    # "Are you still there?", then a goodbye before the hang-up: never a silent click.
+    assert spoken == [engine.call.STILL_THERE["te"], engine.call.SILENT_GOODBYE["te"]]
 
 
 def test_stream_for_a_call_the_carrier_does_not_have_is_refused(

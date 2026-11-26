@@ -1,7 +1,7 @@
 """What an employee is made of: the script bundle (publish-gated) and the settings (instant)."""
 
 import uuid
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -12,6 +12,23 @@ AMBIENCES = ("none", "office", "call_center", "restaurant", "quiet_room", "retai
 LANGUAGES = ("te", "hi", "en")
 # The bundle is also stored as JSON in employee_versions, so keep it small and bounded.
 MAX_SECTIONS, MAX_FAQ, MAX_VARIABLES, MAX_CAPTURE = 20, 50, 30, 20
+MAX_OUTCOMES = 8
+# What the post-call analysis may say happened on any call. They never change, so the dashboard's
+# figures stay comparable across employees; an employee's own outcomes each count as one of them.
+OUTCOMES = (
+    "interested",
+    "not_interested",
+    "callback_requested",
+    "wrong_number",
+    "do_not_call",
+    "no_conversation",
+    "other",
+)
+# A custom outcome cannot count as do_not_call (that needs the caller's own words and adds them to
+# the do-not-call list) or no_conversation (a call where nobody spoke is never analysed).
+CountsAs = Literal["interested", "not_interested", "callback_requested", "wrong_number", "other"]
+COUNTS_AS: tuple[str, ...] = get_args(CountsAs)
+RESERVED_OUTCOMES = (*OUTCOMES, "no_outcome")  # no_outcome is the leads board's "not called yet"
 
 
 def _identifier(value: str) -> str:
@@ -75,6 +92,22 @@ class CaptureField(BaseModel):
         return _identifier(value)
 
 
+class CustomOutcome(BaseModel):
+    """An outcome of the owner's own, e.g. site_visit_booked. The analysis picks it when the
+    description fits the call better than a built-in outcome does."""
+
+    name: str = Field(max_length=40)
+    description: str = Field(min_length=1, max_length=200)
+    counts_as: CountsAs = "interested"
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if value in RESERVED_OUTCOMES:
+            raise ValueError(f"{value!r} is a built-in outcome; choose another name")
+        return _identifier(value)
+
+
 class EmployeeSettings(BaseModel):
     """Delivery and bookkeeping: applied to live calls at once, never part of the content."""
 
@@ -87,6 +120,7 @@ class EmployeeSettings(BaseModel):
     power_prompting: bool = False
     ai_acknowledgement: bool = False
     capture: list[CaptureField] = Field(default_factory=list, max_length=MAX_CAPTURE)
+    outcomes: list[CustomOutcome] = Field(default_factory=list, max_length=MAX_OUTCOMES)
 
     @field_validator("capture")
     @classmethod
@@ -94,3 +128,10 @@ class EmployeeSettings(BaseModel):
         if len({f.name for f in fields}) != len(fields):
             raise ValueError("duplicate capture field name")
         return fields
+
+    @field_validator("outcomes")
+    @classmethod
+    def _unique_outcomes(cls, outcomes: list[CustomOutcome]) -> list[CustomOutcome]:
+        if len({o.name for o in outcomes}) != len(outcomes):
+            raise ValueError("duplicate outcome name")
+        return outcomes

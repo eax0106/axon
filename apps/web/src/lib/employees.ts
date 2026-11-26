@@ -28,6 +28,12 @@ export const useEmployees = () =>
 export const useEmployee = (id: string) =>
   useQuery({ queryKey: ["employee", id], queryFn: () => unwrap(api.GET("/employees/{employee_id}", path(id))) });
 
+/** Every custom outcome the account's employees have, by name: for outcome filters. */
+export function useOwnOutcomes() {
+  const employees = useEmployees().data ?? [];
+  return [...new Set(employees.flatMap((e) => (e.settings.outcomes ?? []).map((o) => o.name)))].sort();
+}
+
 export const useVoices = () =>
   useQuery({ queryKey: ["voices"], queryFn: () => unwrap(api.GET("/voices")), staleTime: 10 * 60_000 });
 

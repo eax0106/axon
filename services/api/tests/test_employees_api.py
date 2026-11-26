@@ -333,3 +333,28 @@ def test_the_list_costs_the_same_queries_however_many_employees_and_matches_each
     assert listed == [api.get(f"/employees/{i}", headers=owner).json() for i in ids]
     assert [e["published_version"] for e in listed] == [None, None, 1]
     assert listed[1]["voice"]["id"] == other_voice["id"] != listed[0]["voice"]["id"]
+
+
+def test_custom_outcomes_apply_without_a_publish_and_are_validated(api: TestClient) -> None:
+    owner = signup(api)
+    employee = hire(api, owner)
+    path = f"/employees/{employee['id']}"
+    api.post(path + "/publish", headers=owner)
+    visit = {"name": "site_visit_booked", "description": "Agreed a date for a site visit"}
+    updated = api.put(path + "/settings", json={"outcomes": [visit]}, headers=owner).json()
+    assert updated["settings"]["outcomes"] == [{**visit, "counts_as": "interested"}]
+    assert updated["has_pending_edits"] is False  # a setting, not part of the script
+    ok = {"name": "x", "description": "d"}
+    bad: list[list[dict[str, Any]]] = [
+        [{"name": "interested", "description": "d"}],  # a built-in
+        [{"name": "no_outcome", "description": "d"}],  # the board's "not called yet"
+        [{"name": "Site Visit", "description": "d"}],
+        [{"name": "x", "description": ""}],
+        [ok, ok],
+        [{**ok, "counts_as": "do_not_call"}],
+        [{**ok, "counts_as": "no_conversation"}],
+        [{"name": f"o{i}", "description": "d"} for i in range(9)],
+    ]
+    for outcomes in bad:
+        response = api.put(path + "/settings", json={"outcomes": outcomes}, headers=owner)
+        assert response.status_code == 422, outcomes
