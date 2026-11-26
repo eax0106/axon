@@ -1236,6 +1236,20 @@
         "title": "CaptureField",
         "type": "object"
       },
+      "Challenge": {
+        "properties": {
+          "challenge": {
+            "maxLength": 2000,
+            "title": "Challenge",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge"
+        ],
+        "title": "Challenge",
+        "type": "object"
+      },
       "Channel": {
         "enum": [
           "instant",
@@ -1348,6 +1362,27 @@
           "razorpay_signature"
         ],
         "title": "Checkout",
+        "type": "object"
+      },
+      "CodeAnswer": {
+        "properties": {
+          "challenge": {
+            "maxLength": 2000,
+            "title": "Challenge",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 40,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge",
+          "code"
+        ],
+        "title": "CodeAnswer",
         "type": "object"
       },
       "CodeBody": {
@@ -2291,6 +2326,50 @@
           }
         },
         "title": "EmployeeUpdate",
+        "type": "object"
+      },
+      "Enrolled": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recovery Codes",
+            "type": "array"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "recovery_codes"
+        ],
+        "title": "Enrolled",
+        "type": "object"
+      },
+      "Enrolment": {
+        "properties": {
+          "otpauth_uri": {
+            "title": "Otpauth Uri",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret",
+          "otpauth_uri"
+        ],
+        "title": "Enrolment",
         "type": "object"
       },
       "ExclusionBody": {
@@ -4315,6 +4394,73 @@
           "redirect_uri"
         ],
         "title": "SheetsConnect",
+        "type": "object"
+      },
+      "SignIn": {
+        "description": "A session, or for staff a challenge: send it with a code to /auth/second-factor/verify, or\n(`enrol`, the first sign-in after the second factor became required) set one up first.",
+        "properties": {
+          "access_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Token"
+          },
+          "challenge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Challenge"
+          },
+          "second_factor": {
+            "anyOf": [
+              {
+                "enum": [
+                  "verify",
+                  "enrol"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Factor"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "title": "SignIn",
+        "type": "object"
+      },
+      "Signed": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token"
+        ],
+        "title": "Signed",
         "type": "object"
       },
       "Signup": {
@@ -7236,6 +7382,45 @@
         "summary": "System Health"
       }
     },
+    "/admin/users/{user_id}/second-factor/reset": {
+      "post": {
+        "description": "For a staff member who lost both the authenticator app and the recovery codes: their next\nsign-in sets up a new one, and every session they have is signed out. Never one's own (use a\nrecovery code), and logged under the staff member who did it.",
+        "operationId": "reset_second_factor_admin_users__user_id__second_factor_reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset Second Factor"
+      }
+    },
     "/admin/voices": {
       "post": {
         "operationId": "create_voice_admin_voices_post",
@@ -7663,7 +7848,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Token"
+                  "$ref": "#/components/schemas/SignIn"
                 }
               }
             },
@@ -7725,6 +7910,123 @@
           }
         ],
         "summary": "Change Password"
+      }
+    },
+    "/auth/second-factor/confirm": {
+      "post": {
+        "description": "Finish setting up: the first code from the app proves it holds the seed. Answers a session\nand the recovery codes.",
+        "operationId": "confirm_auth_second_factor_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeAnswer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrolled"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm"
+      }
+    },
+    "/auth/second-factor/enrol": {
+      "post": {
+        "description": "Start setting up the authenticator app. Asking again (a reload) answers the same unconfirmed\nseed, so the key on screen always matches the one kept.",
+        "operationId": "enrol_auth_second_factor_enrol_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Challenge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrolment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enrol"
+      }
+    },
+    "/auth/second-factor/verify": {
+      "post": {
+        "description": "Sign in with a code from the app, or with one unused recovery code (then spent).",
+        "operationId": "verify_auth_second_factor_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeAnswer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Signed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify"
       }
     },
     "/auth/signup": {

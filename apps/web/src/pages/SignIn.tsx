@@ -5,6 +5,7 @@ import { ApiError, api, unwrap } from "../lib/api";
 import { signIn } from "../lib/queries";
 import { Field, SubmitButton } from "../ui/Field";
 import { AuthLayout } from "./AuthLayout";
+import { EnrolCode, VerifyCode } from "./SecondFactor";
 
 function reason(error: unknown): string {
   if (!(error instanceof ApiError)) return "Couldn't reach Axon. Check your connection and try again.";
@@ -19,6 +20,13 @@ export default function SignIn() {
   const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Staff only: the password was right; the second factor comes next.
+  const [step, setStep] = useState<{ kind: "verify" | "enrol"; challenge: string } | null>(null);
+
+  function enter(token: string) {
+    signIn(token);
+    navigate(from, { replace: true });
+  }
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -26,17 +34,33 @@ export default function SignIn() {
     setBusy(true);
     setError(null);
     try {
-      const { access_token } = await unwrap(
+      const r = await unwrap(
         api.POST("/auth/login", {
           body: { email: String(form.get("email")), password: String(form.get("password")) },
         }),
       );
-      signIn(access_token);
-      navigate(from, { replace: true });
+      if (r.access_token) enter(r.access_token);
+      else if (r.second_factor && r.challenge) setStep({ kind: r.second_factor, challenge: r.challenge });
+      else throw new Error("Axon answered without a session. Try again.");
     } catch (err) {
       setError(reason(err));
       setBusy(false);
     }
+  }
+
+  if (step?.kind === "verify") {
+    return (
+      <AuthLayout eyebrow="Second factor" title="One more step." sub="Enter the code from your authenticator app.">
+        <VerifyCode challenge={step.challenge} onSession={enter} />
+      </AuthLayout>
+    );
+  }
+  if (step?.kind === "enrol") {
+    return (
+      <AuthLayout eyebrow="Second factor" title="Protect your staff account." sub="Set it up once; every sign-in then asks for a code.">
+        <EnrolCode challenge={step.challenge} onSession={enter} />
+      </AuthLayout>
+    );
   }
 
   return (
