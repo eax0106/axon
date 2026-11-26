@@ -342,8 +342,13 @@ def _suggestion(row: TrainingSuggestion) -> SuggestionOut:
 
 @router.get("/employees/{employee_id}/training/suggestions")
 async def suggestions(
-    employee_id: uuid.UUID, user: CurrentUser, session: Session
+    employee_id: uuid.UUID,
+    user: CurrentUser,
+    session: Session,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[SuggestionOut]:
+    """Open suggestions, newest first, one page at a time (`limit`, `offset`)."""
     employee = await load(session, user, employee_id)
     rows = await session.scalars(
         select(TrainingSuggestion)
@@ -351,7 +356,9 @@ async def suggestions(
             TrainingSuggestion.employee_id == employee.id,
             TrainingSuggestion.status == SuggestionStatus.OPEN,
         )
-        .order_by(TrainingSuggestion.created_at.desc())
+        .order_by(TrainingSuggestion.created_at.desc(), TrainingSuggestion.id)
+        .limit(limit)
+        .offset(offset)
     )
     return [_suggestion(r) for r in rows]
 
