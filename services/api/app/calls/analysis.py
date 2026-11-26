@@ -14,18 +14,10 @@ from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 from app.employees.ai import AiOutputError, parse_json
-from app.employees.script import CaptureField
+from app.employees.compiler import clean_value
+from app.employees.script import OUTCOMES, CaptureField, CustomOutcome
 from app.providers.base import LLMProvider
 
-OUTCOMES = (
-    "interested",
-    "not_interested",
-    "callback_requested",
-    "wrong_number",
-    "do_not_call",
-    "no_conversation",
-    "other",
-)
 SENTIMENTS = ("positive", "neutral", "negative")
 IST = timezone(timedelta(minutes=330))
 MIN_CALLER_CHARS = 3  # less than this of caller speech is not a conversation
@@ -57,6 +49,7 @@ class Analysis:
     summary: str | None = None
     sentiment: str | None = None
     outcome: str | None = None
+    custom_outcome: str | None = None  # one of the employee's own; `outcome` is what it counts as
     captured: dict[str, str | None] = field(default_factory=dict)
     callback_at: datetime | None = None
     do_not_call: bool = False
@@ -138,7 +131,8 @@ SYSTEM = (
     "in this shape:\n"
     '{"summary": "two or three plain sentences about what happened, or null",'
     ' "sentiment": "positive | neutral | negative | null",'
-    ' "outcome": "one of: OUTCOME_LIST, or null",'
+    ' "outcome": "one of: OUTCOME_LIST, or one of the business\'s own outcomes when one is'
+    ' listed and fits better, or null",'
     ' "captured": {"<field name>": {"value": "what the caller said, or null",'
     ' "quote": "the exact words from the transcript that show it, or null"}},'
     ' "callback": {"at": "ISO 8601 date and time with offset when the caller asked to be called'
@@ -168,14 +162,23 @@ SYSTEM = (
 
 
 def build_user_prompt(
-    turns: Turns, capture: list[CaptureField], now: datetime, old_memory: str | None, remember: bool
+    turns: Turns,
+    capture: list[CaptureField],
+    now: datetime,
+    old_memory: str | None,
+    remember: bool,
+    outcomes: list[CustomOutcome] | None = None,
 ) -> str:
     wanted = "\n".join(f"- {c.name}: {c.description}" for c in capture) or "(none)"
+    # The owner wrote these descriptions: one clean line each, never read as instructions.
+    own = "\n".join(f"- {o.name}: {clean_value(o.description)}" for o in outcomes or []) or "(none)"
     local = now.astimezone(IST).strftime("%A %d %B %Y, %H:%M")
     memory = (old_memory or "nothing yet") if remember else "(memory is off: answer null)"
     return (
         f"Now (India time, UTC+05:30): {local}. Work out a callback time from this.\n\n"
-        f"Fields to capture:\n{wanted}\n\nWhat we remembered before this call: {memory}\n\n"
+        f"Fields to capture:\n{wanted}\n\n"
+        f"The business's own outcomes (name: when it applies):\n{own}\n\n"
+        f"What we remembered before this call: {memory}\n\n"
         f"Transcript:\n{transcript_text(turns)}"
     )
 
@@ -198,6 +201,7 @@ def parse(
     now: datetime,
     *,
     remember: bool,
+    outcomes: list[CustomOutcome] | None = None,
 ) -> Analysis:
     try:
         data = parse_json(reply)
@@ -206,8 +210,13 @@ def parse(
     result = Analysis(
         summary=_clean(data.get("summary"), MAX_SUMMARY),
         sentiment=data.get("sentiment") if data.get("sentiment") in SENTIMENTS else None,
-        outcome=data.get("outcome") if data.get("outcome") in OUTCOMES else None,
     )
+    picked = data.get("outcome")
+    own = {o.name: o for o in outcomes or []}
+    if isinstance(picked, str) and picked in own:
+        result.outcome, result.custom_outcome = own[picked].counts_as, picked
+    elif picked in OUTCOMES:
+        result.outcome = picked
     given = _entry(data.get("captured"))
     for wanted in capture:  # only declared fields; a field the model skipped is simply null
         entry = _entry(given.get(wanted.name))
@@ -235,7 +244,7 @@ def parse(
     if result.outcome == "do_not_call" and not result.do_not_call:
         result.outcome = None  # the model said so but nothing the caller said backs it
     if result.do_not_call:
-        result.outcome = "do_not_call"
+        result.outcome, result.custom_outcome = "do_not_call", None
     if remember:
         result.memory = _clean(data.get("memory"), MAX_MEMORY)
     result.struggles = _struggles(data.get("struggles"), turns)
@@ -284,11 +293,12 @@ async def analyse(
     *,
     old_memory: str | None = None,
     remember: bool = True,
+    outcomes: list[CustomOutcome] | None = None,
 ) -> Analysis:
     """The analysis of one call. A call with no caller speech is a `no_conversation` and the model
     is not asked."""
     if not has_caller_speech(turns):
         return Analysis(outcome="no_conversation", captured=dict.fromkeys(c.name for c in capture))
-    prompt = build_user_prompt(turns, capture, now, old_memory, remember)
+    prompt = build_user_prompt(turns, capture, now, old_memory, remember, outcomes)
     reply = await llm.complete(SYSTEM, [{"role": "user", "content": prompt}], json_output=True)
-    return parse(reply, turns, capture, now, remember=remember)
+    return parse(reply, turns, capture, now, remember=remember, outcomes=outcomes)

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Link } from "react-router";
 
 import { api, unwrap } from "../../lib/api";
-import { type LeadRow, OUTCOME, download, useBoard, useLeads } from "../../lib/data";
+import { type LeadRow, OUTCOME, boardColumns, columnLabel, download, outcomeLabel, useBoard, useLeads } from "../../lib/data";
+import { useOwnOutcomes } from "../../lib/employees";
 import { useAction } from "../../lib/useAction";
 import { btn } from "../../ui/buttons";
 import { Confirm } from "../../ui/Confirm";
@@ -12,7 +13,7 @@ import { ErrorState, Skeleton } from "../../ui/states";
 
 type View = "table" | "cards" | "board";
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "–");
-const BASE = ["phone", "name", "created_at", "calls", "last_call_at", "last_outcome", "summary", "memory"];
+const BASE = ["phone", "name", "created_at", "calls", "last_call_at", "last_outcome", "last_custom_outcome", "summary", "memory"];
 
 export default function Leads() {
   const [view, setView] = useState<View>(() => {
@@ -24,6 +25,7 @@ export default function Leads() {
   });
   const [q, setQ] = useState("");
   const [outcome, setOutcome] = useState("");
+  const own = useOwnOutcomes();
   const pick = (v: View) => {
     setView(v);
     try {
@@ -56,6 +58,7 @@ export default function Leads() {
             className="h-10 rounded-ctl border border-line bg-surface px-2 text-sm text-ink">
             <option value="">Any outcome</option>
             {Object.entries(OUTCOME).filter(([k]) => k !== "no_outcome").map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            {own.map((k) => <option key={k} value={k}>{columnLabel(k)}</option>)}
           </select>
         )}
         <div role="radiogroup" aria-label="View" className="ml-auto flex gap-1 rounded-ctl border border-line p-1">
@@ -104,7 +107,7 @@ function List({ q, outcome, cards }: { q: string; outcome: string; cards: boolea
                 <Link to={`/leads/${l.id}`} className="block text-ink-strong hover:text-accent">{l.name || l.phone}</Link>
                 {l.name && <span className="num text-xs text-ink-muted">{l.phone}</span>}
               </td>
-              <td className="px-4 py-3 text-ink">{l.last_outcome ? OUTCOME[l.last_outcome] ?? l.last_outcome : "–"}</td>
+              <td className="px-4 py-3 text-ink">{outcomeLabel(l.last_outcome, l.last_custom_outcome)}</td>
               <td className="num px-4 py-3 text-right text-ink">{l.calls}</td>
               <td className="px-4 py-3 text-right text-ink-muted">{when(l.last_call_at)}</td>
             </tr>
@@ -121,7 +124,7 @@ function LeadCard({ lead: l }: { lead: LeadRow }) {
       <p className="truncate font-medium text-ink-strong">{l.name || l.phone}</p>
       <p className="num text-xs text-ink-muted">{l.phone}</p>
       <p className="mt-3 flex justify-between text-sm">
-        <span className="text-ink">{l.last_outcome ? OUTCOME[l.last_outcome] ?? l.last_outcome : "Not called yet"}</span>
+        <span className="text-ink">{outcomeLabel(l.last_outcome, l.last_custom_outcome, "Not called yet")}</span>
         <span className="text-ink-muted">{l.calls} call{l.calls === 1 ? "" : "s"}</span>
       </p>
     </Link>
@@ -133,13 +136,13 @@ function Board({ q }: { q: string }) {
   const board = useBoard(q);
   if (board.error) return <ErrorState error={board.error} retry={() => void board.refetch()} />;
   if (!board.data) return <Skeleton className="h-64 rounded-card" />;
-  const keys = Object.keys(OUTCOME).filter((k) => board.data.counts[k]);
+  const keys = boardColumns(board.data.counts);
   if (keys.length === 0) return <p className="rounded-card border border-dashed border-line p-10 text-center text-sm text-ink-muted">No leads yet.</p>;
   return (
     <div className="flex gap-4 overflow-x-auto pb-2" tabIndex={0} role="region" aria-label="Leads by outcome">
       {keys.map((k) => (
-        <section key={k} aria-label={OUTCOME[k]} className="w-72 shrink-0">
-          <h2 className="eyebrow flex justify-between px-1"><span>{OUTCOME[k]}</span><span className="num text-ink-muted">{board.data.counts[k]}</span></h2>
+        <section key={k} aria-label={columnLabel(k)} className="w-72 shrink-0">
+          <h2 className="eyebrow flex justify-between px-1"><span>{columnLabel(k)}</span><span className="num text-ink-muted">{board.data.counts[k]}</span></h2>
           <ul className="mt-3 space-y-2">
             {(board.data.columns[k] ?? []).map((l) => <li key={l.id}><LeadCard lead={l} /></li>)}
           </ul>

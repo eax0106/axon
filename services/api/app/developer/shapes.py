@@ -6,8 +6,9 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from app.employees.script import OUTCOMES
 from app.models import Call, Campaign, Lead
 
 
@@ -27,7 +28,14 @@ class CallOut(BaseModel):
     answered_at: datetime | None
     ended_at: datetime | None
     duration_s: int | None
-    outcome: str | None
+    outcome: str | None = Field(
+        description=f"What happened, always one of: {', '.join(OUTCOMES)}. Null until the call "
+        "is analysed."
+    )
+    custom_outcome: str | None = Field(
+        description="One of the employee's own outcomes (e.g. site_visit_booked) when the "
+        "analysis picked one; `outcome` is then the built-in outcome it counts as. Null otherwise."
+    )
     sentiment: str | None
     summary: str | None
     captured: dict[str, Any]
@@ -77,6 +85,7 @@ def call_out(call: Call, phone: str | None) -> CallOut:
         ended_at=call.ended_at,
         duration_s=call.duration_s,
         outcome=call.outcome,
+        custom_outcome=call.custom_outcome,
         sentiment=call.sentiment,
         summary=call.summary,
         captured=call.captured or {},

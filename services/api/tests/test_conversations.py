@@ -248,3 +248,27 @@ def test_csv_cells_with_leading_spaces_before_a_formula_are_neutralised_too() ->
     for fine in ("hello", "  hello", "a=b", "100", None):
         assert not cell(fine).startswith("'"), fine
     assert cell(None) == ""
+
+
+def test_a_custom_outcome_is_shown_filtered_and_exported(
+    api: TestClient, migrated_url: str
+) -> None:
+    owner, w = world(api, migrated_url)
+    visit = add_call(
+        migrated_url, w["account"], w["asha"], None, outcome="interested",
+        custom_outcome="site_visit_booked", created_at=T0 + timedelta(days=5),
+    )  # fmt: skip
+    rows = {i["id"]: i for i in api.get("/calls", headers=owner).json()["items"]}
+    assert rows[str(visit)]["custom_outcome"] == "site_visit_booked"
+    assert rows[w["calls"]["interested"]]["custom_outcome"] is None
+    assert ids(api.get("/calls?outcome=site_visit_booked", headers=owner)) == [str(visit)]
+    # The built-in filter still finds every call that counts as it.
+    assert sorted(ids(api.get("/calls?outcome=interested", headers=owner))) == sorted(
+        [str(visit), w["calls"]["interested"]]
+    )
+    export = api.get("/calls/export.csv?outcome=site_visit_booked", headers=owner).text
+    header, line = list(csv.reader(io.StringIO(export)))
+    assert line[header.index("outcome")] == "interested"
+    assert line[header.index("custom_outcome")] == "site_visit_booked"
+    share = api.get(f"/calls/{visit}/share-text", headers=owner).text
+    assert "Outcome: site_visit_booked" in share

@@ -43,8 +43,9 @@ export const KIND: Record<string, string> = {
 
 export const useRates = () =>
   useQuery({ queryKey: ["billing", "rates"], queryFn: () => unwrap<Rates>(api.GET("/billing/rates")), staleTime: 5 * 60_000 });
-export const useTransactions = (limit = 200) =>
+export const useTransactions = (limit = 200, enabled = true) =>
   useQuery({
+    enabled,
     queryKey: ["billing", "transactions", limit],
     queryFn: () => unwrap<{ items: Entry[] }>(api.GET("/billing/transactions", { params: { query: { limit } } })),
   });
@@ -82,6 +83,14 @@ export function dailySpend(entries: Entry[], days: number, now = Date.now()): nu
     if (slot >= 0 && slot < days) out[slot] = (out[slot] ?? 0) - amount;
   }
   return out.map((v) => Math.round(v * 100) / 100);
+}
+
+/** "about N days of calling left", from the last 30 days of spend; null when nothing is spent. */
+export function runwayWords(balance: number, entries: Entry[], now = Date.now()): string | null {
+  const days = runwayDays(balance, dailySpend(entries, 30, now));
+  if (days === null) return null;
+  if (days < 1) return "less than a day of calling left";
+  return `about ${days} ${days === 1 ? "day" : "days"} of calling left`;
 }
 
 /** Days the balance lasts at the recent average daily spend; null when nothing is being spent. */

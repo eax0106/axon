@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router";
 
 import { api, unwrap } from "../../lib/api";
-import { OUTCOME, SENTIMENT, duration, useCall } from "../../lib/data";
+import { SENTIMENT, duration, outcomeLabel, useCall } from "../../lib/data";
 import { credits } from "../../lib/format";
 import { describe } from "../../lib/timeline";
 import { useAction } from "../../lib/useAction";
@@ -38,7 +38,7 @@ export default function CallDetail() {
 
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-4">
           {[
-            ["Outcome", c.outcome ? OUTCOME[c.outcome] ?? c.outcome : "–"],
+            ["Outcome", outcomeLabel(c.outcome, c.custom_outcome)],
             ["Sentiment", c.sentiment ? SENTIMENT[c.sentiment] ?? c.sentiment : "–"],
             ["Talk time", duration(c.duration_s)],
             ["Credits", credits(String(c.credits_charged))],

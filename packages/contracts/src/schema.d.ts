@@ -3055,7 +3055,8 @@ export interface paths {
         };
         /**
          * Board
-         * @description Leads grouped by the outcome of their latest call (a kanban: one column per outcome).
+         * @description Leads grouped by the outcome of their latest call (a kanban: one column per outcome). A
+         *     custom outcome gets its own column rather than joining the built-in it counts as.
          */
         get: operations["board_leads_board_get"];
         put?: never;
@@ -4069,6 +4070,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Custom Outcome
+             * @description One of the employee's own outcomes (e.g. site_visit_booked) when the analysis picked one; `outcome` is then the built-in outcome it counts as. Null otherwise.
+             */
+            custom_outcome: string | null;
             /** Direction */
             direction: string;
             /** Duration S */
@@ -4088,7 +4094,10 @@ export interface components {
             lead_id: string | null;
             /** Miss Reason */
             miss_reason: string | null;
-            /** Outcome */
+            /**
+             * Outcome
+             * @description What happened, always one of: interested, not_interested, callback_requested, wrong_number, do_not_call, no_conversation, other. Null until the call is analysed.
+             */
             outcome: string | null;
             /** Phone */
             phone: string | null;
@@ -4109,7 +4118,8 @@ export interface components {
         };
         /**
          * CallFilters
-         * @description Also what a user's remembered conversation filters are made of.
+         * @description Also what a user's remembered conversation filters are made of. `outcome` matches a
+         *     built-in outcome (including the custom outcomes that count as it) or a custom outcome.
          */
         CallFilters: {
             /** Campaign Id */
@@ -4163,6 +4173,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Custom Outcome
+             * @description One of the employee's own outcomes (e.g. site_visit_booked) when the analysis picked one; `outcome` is then the built-in outcome it counts as. Null otherwise.
+             */
+            custom_outcome: string | null;
             /** Direction */
             direction: string;
             /** Duration S */
@@ -4182,7 +4197,10 @@ export interface components {
             lead_id: string | null;
             /** Miss Reason */
             miss_reason: string | null;
-            /** Outcome */
+            /**
+             * Outcome
+             * @description What happened, always one of: interested, not_interested, callback_requested, wrong_number, do_not_call, no_conversation, other. Null until the call is analysed.
+             */
             outcome: string | null;
             /** Phone */
             phone: string | null;
@@ -4384,6 +4402,23 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * CustomOutcome
+         * @description An outcome of the owner's own, e.g. site_visit_booked. The analysis picks it when the
+         *     description fits the call better than a built-in outcome does.
+         */
+        CustomOutcome: {
+            /**
+             * Counts As
+             * @default interested
+             * @enum {string}
+             */
+            counts_as: "interested" | "not_interested" | "callback_requested" | "wrong_number" | "other";
+            /** Description */
+            description: string;
+            /** Name */
+            name: string;
         };
         /** DeliveryDetail */
         DeliveryDetail: {
@@ -4671,6 +4706,8 @@ export interface components {
             ambience_volume: number;
             /** Capture */
             capture?: components["schemas"]["CaptureField"][];
+            /** Outcomes */
+            outcomes?: components["schemas"]["CustomOutcome"][];
             /**
              * Power Prompting
              * @default false

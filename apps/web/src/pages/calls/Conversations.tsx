@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
 import { api, unwrap } from "../../lib/api";
-import { type Filters, OUTCOME, SENTIMENT, cleanFilters, download, duration, useCalls } from "../../lib/data";
-import { CHANNELS, useEmployees } from "../../lib/employees";
+import { type Filters, OUTCOME, SENTIMENT, cleanFilters, columnLabel, download, duration, outcomeLabel, useCalls } from "../../lib/data";
+import { CHANNELS, useEmployees, useOwnOutcomes } from "../../lib/employees";
 import { credits } from "../../lib/format";
 import { useAction } from "../../lib/useAction";
 import { btn } from "../../ui/buttons";
@@ -69,6 +69,7 @@ function Export({ filters }: { filters: Filters }) {
 
 function FilterBar({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
   const employees = useEmployees().data ?? [];
+  const own = useOwnOutcomes();
   const set = (patch: Filters) => onChange(cleanFilters({ ...filters, ...patch }));
   const select = (label: string, key: keyof Filters, options: [string, string][]) => (
     <label className="block min-w-0">
@@ -96,7 +97,10 @@ function FilterBar({ filters, onChange }: { filters: Filters; onChange: (f: Filt
           <input type="search" placeholder="Name, phone or words in the summary" value={filters.q ?? ""} onChange={(e) => set({ q: e.target.value })}
             className="mt-1 h-9 w-full rounded-ctl border border-line bg-bg px-3 text-sm text-ink-strong outline-none focus:border-accent" />
         </label>
-        {select("Outcome", "outcome", Object.entries(OUTCOME).filter(([k]) => k !== "no_outcome"))}
+        {select("Outcome", "outcome", [
+          ...Object.entries(OUTCOME).filter(([k]) => k !== "no_outcome"),
+          ...own.map((k): [string, string] => [k, columnLabel(k)]),
+        ])}
         {select("Sentiment", "sentiment", Object.entries(SENTIMENT))}
         {select("Employee", "employee_id", employees.map((e) => [e.id, e.name]))}
         {select("Channel", "channel", Object.entries(CHANNELS).map(([k, v]) => [k, v.label]))}
@@ -148,7 +152,7 @@ function List({ filters, limit, more }: { filters: Filters; limit: number; more:
                 <span className="block truncate text-ink-strong">{c.name || c.phone || "Unknown caller"}{c.is_test && <span className="eyebrow ml-2 text-ink-muted">Test</span>}</span>
                 <span className="block truncate text-sm text-ink-muted">{c.summary || c.miss_reason || `${c.employee_name ?? "Employee"} · ${c.status.replaceAll("_", " ")}`}</span>
               </span>
-              <span className="text-sm text-ink">{c.outcome ? OUTCOME[c.outcome] ?? c.outcome : "–"}</span>
+              <span className="text-sm text-ink">{outcomeLabel(c.outcome, c.custom_outcome)}</span>
               <span className="num text-right text-sm text-ink-muted">{duration(c.duration_s)}</span>
               <span className="num text-right text-sm text-ink-muted">{credits(String(c.credits_charged))}</span>
             </Link>
