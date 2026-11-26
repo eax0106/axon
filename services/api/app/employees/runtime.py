@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.schema import Action
-from app.employees import service
+from app.employees import keyterms, service
 from app.employees.compiler import CallContext, Knowledge, compile_prompt
 from app.employees.script import ScriptBundle
 from app.models import Account, Employee, EmployeeVersion, Voice
@@ -34,6 +34,8 @@ class CallPlan:
     extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
     # (language, word, say like): how the voice says a word; the transcript keeps the word.
     pronunciations: tuple[tuple[str, str, str], ...] = ()
+    keyterms: tuple[str, ...] = ()  # names the speech-to-text should hear right (keyterms.py)
+    is_test: bool = False  # a test call (it runs the draft): left out of latency figures
 
 
 async def business_name(session: AsyncSession, employee: Employee) -> str:
@@ -96,6 +98,20 @@ async def plan_for(
     taught = await load_knowledge(session, employee.id)
     account = await session.get(Account, employee.account_id)
     assert account is not None  # FK guarantees it
+    values = variables or {}
+    hints = keyterms.build(
+        lead_name=values.get("name") or party_name,
+        business=account.business_name or account.name,
+        employee=employee.name,
+        # Only the lead details the script declares, as in the prompt: no other field leaves.
+        lead_values=[values[n] for n in bundle.pre_call_variables if n in values],
+        script=[
+            bundle.welcome_message,
+            bundle.agent_information,
+            *(text for section in bundle.sections for text in (section.title, section.body)),
+            *(text for item in bundle.faq for text in (item.question, item.answer)),
+        ],
+    )
     return CallPlan(
         employee_id=employee.id,
         account_id=employee.account_id,
@@ -117,4 +133,6 @@ async def plan_for(
         max_call_s=account.max_call_s,
         extra_languages=tuple(employee.extra_languages),
         pronunciations=tuple((p.language, p.word, p.say) for p in settings.pronunciations),
+        keyterms=hints,
+        is_test=use_draft,
     )

@@ -24,7 +24,7 @@ from engine.call import register_tools
 from engine.main import app
 from engine.services import SERVICES
 
-from .test_call import SILENCE_ULAW, _Passthrough, events, providers  # noqa: F401
+from .test_call import SILENCE_ULAW, _Passthrough, events, providers, signed  # noqa: F401
 from .test_inbound_engine import form, stream_of
 from .test_vobiz import START
 
@@ -120,7 +120,7 @@ def _call_with_action(
     assert api.post(f"/employees/{employee}/publish", headers=owner).status_code == 200
     sql(url, "UPDATE voices SET provider = 'testleg'")
     with TestClient(app) as client:
-        answered = client.post("/vobiz/inbound", data=form())
+        answered = client.post("/vobiz/inbound", headers=signed(), data=form())
         _, query = stream_of(answered.text)
         link = f"/vobiz/stream?lang=en&call={query['call'][0]}&employee={query['employee'][0]}"
         with client.websocket_connect(link) as ws:

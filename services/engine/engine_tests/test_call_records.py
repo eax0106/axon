@@ -19,7 +19,7 @@ from engine.call import CallSettings
 from engine.main import app
 from engine.records import MAX_EVENTS, CallRecorder, TranscriptBuilder
 
-from .test_call import SILENCE_ULAW, _Carrier, events, providers  # noqa: F401
+from .test_call import SILENCE_ULAW, _Carrier, any_call_streams, events, providers  # noqa: F401
 from .test_vobiz import START
 
 CARRIER_ID = START["start"]["callId"]
@@ -335,6 +335,7 @@ def run_call(monkeypatch: pytest.MonkeyPatch, call_id: Any, events_: list[dict[s
         "CallSettings",
         lambda language: CallSettings(language=language, max_call_s=2.0, silence_timeout_s=60.0),
     )
+    any_call_streams(monkeypatch)
     with (
         TestClient(app) as client,
         client.websocket_connect(f"/vobiz/stream?lang=te&call={call_id}") as ws,
