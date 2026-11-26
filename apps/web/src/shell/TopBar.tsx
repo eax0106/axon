@@ -31,13 +31,53 @@ export function CreditChip() {
 }
 
 export function LiveIndicator() {
-  const live = useLiveCalls().data ?? 0;
-  if (live === 0) return null;
+  const live = useLiveCalls().data;
+  if (!live?.total) return null;
   return (
-    <span className="eyebrow inline-flex items-center gap-2" aria-live="polite">
-      <span aria-hidden className="live-dot size-2 rounded-full bg-accent" />
-      <span className="num">{live}</span> live
-    </span>
+    <Popover.Root>
+      <Popover.Trigger
+        aria-label={`${live.total} live ${live.total === 1 ? "call" : "calls"}, show them`}
+        className="eyebrow inline-flex h-8 items-center gap-2 rounded-ctl px-2 transition-colors duration-150 hover:bg-accent-soft"
+      >
+        <span aria-hidden className="live-dot size-2 rounded-full bg-accent" />
+        <span className="num" aria-live="polite">{live.total}</span> live
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={8}
+          collisionPadding={16}
+          className="pop-in z-30 w-[min(340px,calc(100vw-32px))] rounded-card border border-line-accent bg-surface"
+        >
+          <p className="eyebrow border-b border-line px-4 py-3">On a call now</p>
+          <ul className="max-h-96 overflow-y-auto">
+            {live.items.map((c) => (
+              <li key={c.id} className="border-b border-line last:border-0">
+                <Popover.Close asChild>
+                  <Link
+                    to={`/calls/${c.id}/live`}
+                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm transition-colors duration-150 hover:bg-accent-soft"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-ink-strong">{c.employee_name ?? "Employee"}</span>
+                      <span className="num block truncate text-ink-muted">{c.name || c.phone || "Unknown caller"}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-ink-muted">{c.status === "ringing" ? "ringing" : ago(c.created_at)}</span>
+                  </Link>
+                </Popover.Close>
+              </li>
+            ))}
+          </ul>
+          {live.total > live.items.length && (
+            <Popover.Close asChild>
+              <Link to="/calls" className="block px-4 py-3 text-center text-xs text-ink-muted hover:text-accent">
+                {live.total - live.items.length} more in Conversations
+              </Link>
+            </Popover.Close>
+          )}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
