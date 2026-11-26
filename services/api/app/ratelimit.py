@@ -9,8 +9,9 @@ load test.
 import logging
 import os
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, status
 from redis.exceptions import RedisError
+from starlette.requests import HTTPConnection
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ def _enabled() -> bool:
     return os.environ.get(OFF_ENV, "").lower() != "off"
 
 
-def client_address(request: Request) -> str:
+def client_address(request: HTTPConnection) -> str:
     # Behind a proxy, uvicorn's FORWARDED_ALLOW_IPS decides whose X-Forwarded-For is believed.
     return request.client.host if request.client else "unknown"
 
@@ -41,7 +42,7 @@ def _too_many(retry_after: int) -> HTTPException:
     )
 
 
-async def hit(request: Request, key: str, limit: int, window_s: int = WINDOW_S) -> None:
+async def hit(request: HTTPConnection, key: str, limit: int, window_s: int = WINDOW_S) -> None:
     """Count one attempt on `key` and refuse with 429 once it is past `limit` in its window (which
     starts at the first attempt). Counting before the check keeps parallel guesses inside it."""
     if not _enabled():
@@ -59,7 +60,7 @@ async def hit(request: Request, key: str, limit: int, window_s: int = WINDOW_S) 
         raise _too_many(max(ttl, 1))
 
 
-async def clear(request: Request, key: str) -> None:
+async def clear(request: HTTPConnection, key: str) -> None:
     if not _enabled():
         return
     try:
