@@ -1424,6 +1424,21 @@
         "title": "Checkout",
         "type": "object"
       },
+      "Code": {
+        "properties": {
+          "code": {
+            "maxLength": 40,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "Code",
+        "type": "object"
+      },
       "CodeAnswer": {
         "properties": {
           "challenge": {
@@ -4096,6 +4111,22 @@
         "title": "Rating",
         "type": "object"
       },
+      "Recovery": {
+        "properties": {
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recovery Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recovery_codes"
+        ],
+        "title": "Recovery",
+        "type": "object"
+      },
       "RequestOut": {
         "properties": {
           "created_at": {
@@ -4604,7 +4635,7 @@
         "type": "object"
       },
       "SignIn": {
-        "description": "A session, or for staff a challenge: send it with a code to /auth/second-factor/verify, or\n(`enrol`, the first sign-in after the second factor became required) set one up first.",
+        "description": "A session, or a challenge when the user has a second factor (always for staff): send it\nwith a code to /auth/second-factor/verify, or (`enrol`, a staff member's first sign-in after\nthe second factor became required) set one up first.",
         "properties": {
           "access_token": {
             "anyOf": [
@@ -7591,7 +7622,7 @@
     },
     "/admin/users/{user_id}/second-factor/reset": {
       "post": {
-        "description": "For a staff member who lost both the authenticator app and the recovery codes: their next\nsign-in sets up a new one, and every session they have is signed out. Never one's own (use a\nrecovery code), and logged under the staff member who did it.",
+        "description": "For someone who lost both the authenticator app and the recovery codes: a staff member's\nnext sign-in sets up a new one; an owner's or member's second factor is turned off (they may\nturn it on again). Every session they have is signed out. Never one's own (use a recovery\ncode), and logged under the staff member who did it.",
         "operationId": "reset_second_factor_admin_users__user_id__second_factor_reset_post",
         "parameters": [
           {
@@ -8158,6 +8189,43 @@
         "summary": "Confirm"
       }
     },
+    "/auth/second-factor/disable": {
+      "post": {
+        "description": "Turn the second factor off. Needs a current code from the app (not a recovery code), so a\nsession left open on a shared computer cannot remove it.",
+        "operationId": "disable_auth_second_factor_disable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Code"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disable"
+      }
+    },
     "/auth/second-factor/enrol": {
       "post": {
         "description": "Start setting up the authenticator app. Asking again (a reload) answers the same unconfirmed\nseed, so the key on screen always matches the one kept.",
@@ -8195,6 +8263,74 @@
           }
         },
         "summary": "Enrol"
+      }
+    },
+    "/auth/second-factor/setup": {
+      "post": {
+        "description": "An owner or member starts turning on the authenticator app from a signed-in session. Asking\nagain answers the same unconfirmed seed.",
+        "operationId": "setup_auth_second_factor_setup_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrolment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Setup"
+      }
+    },
+    "/auth/second-factor/setup/confirm": {
+      "post": {
+        "description": "Finish turning it on with the first code from the app. Answers the recovery codes; this\nsession carries on, and every later sign-in asks for a code.",
+        "operationId": "setup_confirm_auth_second_factor_setup_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Code"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recovery"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Setup Confirm"
       }
     },
     "/auth/second-factor/verify": {

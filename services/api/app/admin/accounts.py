@@ -221,14 +221,15 @@ async def adjust_credits(
 
 @router.post("/users/{user_id}/second-factor/reset", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_second_factor(user_id: uuid.UUID, staff: Staff, session: Session) -> None:
-    """For a staff member who lost both the authenticator app and the recovery codes: their next
-    sign-in sets up a new one, and every session they have is signed out. Never one's own (use a
-    recovery code), and logged under the staff member who did it."""
+    """For someone who lost both the authenticator app and the recovery codes: a staff member's
+    next sign-in sets up a new one; an owner's or member's second factor is turned off (they may
+    turn it on again). Every session they have is signed out. Never one's own (use a recovery
+    code), and logged under the staff member who did it."""
     if user_id == staff.id:
         raise HTTPException(status.HTTP_409_CONFLICT, "another staff member must reset yours")
     user = await session.get(User, user_id, with_for_update=True)
-    if user is None or not user.is_platform_admin:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no staff member with that id")
+    if user is None or not (user.is_platform_admin or user.totp_enabled_at is not None):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no user with a second factor and that id")
     user.totp_secret = user.totp_enabled_at = user.totp_last_step = None
     user.recovery_code_hashes = []
     user.tokens_valid_after = datetime.now(UTC)

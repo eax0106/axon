@@ -22,7 +22,8 @@ export function signIn(token: string): void {
 
 export type Me = {
   // second_factor: this session was signed in with the staff second factor (the console needs it).
-  user: { id: string; email: string; role: "owner" | "member"; staff: boolean; second_factor: boolean; support_session: boolean };
+  // two_factor: sign-in asks this user for an authenticator code.
+  user: { id: string; email: string; role: "owner" | "member"; staff: boolean; second_factor: boolean; two_factor: boolean; support_session: boolean };
   account: { id: string; name: string; owner_phone: string }; // "" until verified
 };
 export type Wallet = {
