@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router";
 import { api, unwrap } from "../../lib/api";
 import { SENTIMENT, duration, outcomeLabel, useCall } from "../../lib/data";
 import { credits } from "../../lib/format";
+import { describe } from "../../lib/timeline";
 import { useAction } from "../../lib/useAction";
 import { btn } from "../../ui/buttons";
 import { ErrorState, Skeleton } from "../../ui/states";
@@ -98,10 +99,13 @@ export default function CallDetail() {
               ...([["Started", c.started_at], ["Answered", c.answered_at], ["Ended", c.ended_at]] as const)
                 .filter(([, at]) => at)
                 .map(([type, at]) => ({ type, at })),
-              ...c.timeline.filter((t) => t.type !== "caller_said" && t.type !== "agent_said"),
+              ...c.timeline
+                .filter((t) => t.type !== "caller_said" && t.type !== "agent_said")
+                .map((t) => ({ type: describe(t), at: t.at }))
+                .filter((t): t is { type: string; at: string | null } => t.type !== null),
             ].sort((x, y) => String(x.at).localeCompare(String(y.at))).map((t, i) => (
               <li key={i}>
-                <span className="text-ink">{t.type.replaceAll("_", " ")}</span>
+                <span className="text-ink">{t.type}</span>
                 <span className="ml-2 text-xs text-ink-muted">{when(t.at)}</span>
               </li>
             ))}
