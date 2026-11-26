@@ -177,9 +177,17 @@ def verified_holder(url: str, account: Any, name: str = "Asha Rao") -> Any:
 
 def staff(client: TestClient, url: str, email: str = "staff@alterx.in") -> dict[str, str]:
     """A platform admin (ALTERX staff), in an account of their own."""
-    headers = signup(client, email=email, account="ALTERX")
-    sql(url, "UPDATE users SET is_platform_admin = true WHERE email = :e", {"e": email})
-    return headers
+    signup(client, email=email, account="ALTERX")
+    return staff_session(url, email)
+
+
+def staff_session(url: str, email: str) -> dict[str, str]:
+    """Make `email` staff and sign them in as if past the second factor (tested in
+    test_second_factor.py), which the admin console needs."""
+    user = sql(
+        url, "UPDATE users SET is_platform_admin = true WHERE email = :e RETURNING id", {"e": email}
+    )
+    return {"Authorization": f"Bearer {issue_token(User(id=user), second_factor=True)}"}
 
 
 def support_session(url: str, email: str, staff_email: str = "staff@alterx.in") -> dict[str, str]:

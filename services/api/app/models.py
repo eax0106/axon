@@ -31,6 +31,7 @@ from sqlalchemy.dialects.postgresql import JSONB, REAL
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
+from app.secretbox import EncryptedText, SealedBundle
 
 Credits = Numeric(14, 4)  # 1 credit = ₹1; four decimals for per-second metering
 
@@ -220,6 +221,13 @@ class User(Base):
     is_platform_admin: Mapped[bool] = mapped_column(server_default=text("false"))
     # Sessions issued before this moment are refused (set when the password changes).
     tokens_valid_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Staff second factor (TOTP, app/second_factor.py). The seed is set when enrolment starts and
+    # counts once `totp_enabled_at` is set; the last 30-second step used stops a code's replay.
+    totp_secret: Mapped[str | None] = mapped_column(EncryptedText)
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger)
+    # SHA-256 of each unused one-time recovery code (random, so a fast hash is enough).
+    recovery_code_hashes: Mapped[list[str]] = mapped_column(ARRAY(String(64)), server_default="{}")
     created_at: Mapped[datetime] = _created()
 
 
@@ -299,7 +307,7 @@ class Employee(Base):
         ForeignKey("numbers.id", ondelete="SET NULL"), unique=True
     )
     # The editable script bundle. What calls use is the newest row in employee_versions.
-    draft: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    draft: Mapped[dict[str, Any]] = mapped_column(SealedBundle, server_default="{}")
     # Voice, ambience, toggles and capture fields: applied to live calls immediately, no publish.
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     # Instant dialer rules (window, delay, out-of-window rule, retry ladder); see instant/rules.py.
@@ -320,7 +328,7 @@ class EmployeeVersion(Base):
         ForeignKey("employees.id", ondelete="CASCADE"), index=True
     )
     version: Mapped[int]
-    bundle: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    bundle: Mapped[dict[str, Any]] = mapped_column(SealedBundle)
     published_at: Mapped[datetime] = _created()
 
 
@@ -530,14 +538,14 @@ class LeadConnection(Base):
     employee_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("employees.id", ondelete="CASCADE"), unique=True
     )
-    # Stored as written because the owner can reveal it again; compared in constant time.
-    secret: Mapped[str] = mapped_column(String(64))
+    # Encrypted (the owner can reveal it again); compared in constant time after loading the row.
+    secret: Mapped[str] = mapped_column(EncryptedText)
     rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     meta_form_id: Mapped[str | None] = mapped_column(String(50), unique=True)
-    meta_page_token: Mapped[str | None] = mapped_column(Text)
+    meta_page_token: Mapped[str | None] = mapped_column(EncryptedText)
     sheet_id: Mapped[str | None] = mapped_column(String(100))
     sheet_range: Mapped[str | None] = mapped_column(String(100))
-    google_refresh_token: Mapped[str | None] = mapped_column(Text)
+    google_refresh_token: Mapped[str | None] = mapped_column(EncryptedText)
     sheet_cursor: Mapped[int] = mapped_column(server_default="0")  # rows already taken, header too
     created_at: Mapped[datetime] = _created()
 
@@ -549,7 +557,7 @@ class GoogleConnection(Base):
     account_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
     )
-    refresh_token: Mapped[str] = mapped_column(Text)
+    refresh_token: Mapped[str] = mapped_column(EncryptedText)
     scopes: Mapped[list[str]] = mapped_column(ARRAY(String(200)), server_default="{}")
     created_at: Mapped[datetime] = _created()
 
@@ -791,9 +799,9 @@ class WebhookEndpoint(Base):
     id: Mapped[uuid.UUID] = _pk()
     account_id: Mapped[uuid.UUID] = _account_fk()
     url: Mapped[str] = mapped_column(String(2000))
-    # Stored as written, like every other secret we must send back out (action secrets, tokens):
-    # signing needs it. Shown to the owner only when it is made or rotated.
-    secret: Mapped[str] = mapped_column(String(100))
+    # Encrypted, like every other secret we must send back out (action secrets, tokens): signing
+    # needs it. Shown to the owner only when it is made or rotated.
+    secret: Mapped[str] = mapped_column(EncryptedText)
     events: Mapped[list[str]] = mapped_column(ARRAY(String(50)))
     active: Mapped[bool] = mapped_column(server_default="true")
     description: Mapped[str | None] = mapped_column(String(200))
@@ -857,7 +865,7 @@ class WebhookDelivery(Base):
         ForeignKey("employees.id", ondelete="CASCADE")
     )
     target_url: Mapped[str] = mapped_column(String(2000))
-    target_secret: Mapped[str | None] = mapped_column(String(500))  # employee webhooks only
+    target_secret: Mapped[str | None] = mapped_column(EncryptedText)  # employee webhooks only
     event: Mapped[str] = mapped_column(String(50))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)  # the whole envelope that is sent
     status: Mapped[DeliveryStatus] = mapped_column(

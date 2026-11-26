@@ -115,12 +115,13 @@ def test_token_for_a_deleted_user_is_rejected(db_client: TestClient, migrated_ur
 def test_admin_providers_needs_the_platform_admin_flag_not_an_account_role(
     db_client: TestClient, migrated_url: str, role: str, platform_admin: bool, expected: int
 ) -> None:
-    token = _signup(db_client)
-    sql(
+    _signup(db_client)
+    user = sql(
         migrated_url,
-        "UPDATE users SET role = :r, is_platform_admin = :p",
+        "UPDATE users SET role = :r, is_platform_admin = :p RETURNING id",
         {"r": role, "p": platform_admin},
     )
+    token = issue_token(User(id=user), second_factor=True)  # as staff sign in (second factor)
     assert db_client.get("/admin/providers", headers=_auth(token)).status_code == expected
 
 
