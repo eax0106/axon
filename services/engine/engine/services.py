@@ -18,7 +18,7 @@ from pipecat.services.sarvam.stt import SarvamSTTService
 from pipecat.services.sarvam.tts import SarvamTTSService
 from pipecat.services.smallest.stt import SmallestSTTService
 from pipecat.services.smallest.tts import SmallestTTSService
-from pipecat.services.soniox.stt import SonioxSTTService
+from pipecat.services.soniox.stt import SonioxContextObject, SonioxSTTService
 from pipecat.transcriptions.language import Language
 
 from app.providers.base import ProviderKind, ProviderNotConfiguredError
@@ -45,6 +45,7 @@ class Delivery:
     voice_id: str | None = None
     speed: float = 1.0
     model: str | None = None
+    keyterms: tuple[str, ...] = ()  # names the speech-to-text should hear right (STT legs only)
 
 
 def language(code: str) -> Language:
@@ -54,12 +55,13 @@ def language(code: str) -> Language:
 
 
 def _sarvam_stt(code: str, delivery: Delivery) -> FrameProcessor:
+    model = delivery.model or sarvam.STT_MODEL
     return SarvamSTTService(
         api_key=os.environ["SARVAM_API_KEY"],
         mode="codemix",
-        settings=SarvamSTTService.Settings(
-            model=delivery.model or sarvam.STT_MODEL, language=language(code)
-        ),
+        # Only Saaras v4 takes keyterms; an older model would refuse the connection.
+        keyterms=list(delivery.keyterms) if delivery.keyterms and model == "saaras:v4" else None,
+        settings=SarvamSTTService.Settings(model=model, language=language(code)),
     )
 
 
@@ -115,6 +117,9 @@ def _soniox_stt(code: str, delivery: Delivery) -> FrameProcessor:
         settings=SonioxSTTService.Settings(
             model=delivery.model or soniox.RT_MODEL,
             language_hints=[language(hint) for hint in soniox.hints(code)],
+            context=SonioxContextObject(terms=list(delivery.keyterms))
+            if delivery.keyterms
+            else None,
         ),
     )
 
@@ -123,7 +128,9 @@ def _elevenlabs_stt(code: str, delivery: Delivery) -> FrameProcessor:
     return ElevenLabsRealtimeSTTService(
         api_key=os.environ["ELEVENLABS_API_KEY"],
         settings=ElevenLabsRealtimeSTTService.Settings(
-            model=delivery.model or elevenlabs.RT_MODELS[0], language=language(code)
+            model=delivery.model or elevenlabs.RT_MODELS[0],
+            language=language(code),
+            keyterms=list(delivery.keyterms) if delivery.keyterms else None,
         ),
     )
 
