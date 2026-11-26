@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { seriousA11yIssues } from "./a11y";
+import { freeCredits } from "./stack";
 
 test("hire, write and publish a script, keep versions, tune the voice and behaviour", async ({ page, request }) => {
   const signup = await request.post("/api/auth/signup", {
@@ -8,6 +9,7 @@ test("hire, write and publish a script, keep versions, tune the voice and behavi
   });
   expect(signup.ok()).toBeTruthy();
   const { access_token } = await signup.json();
+  freeCredits(access_token);
   await page.addInitScript((t) => localStorage.setItem("axon.token", t), access_token);
 
   // Empty team: the one showpiece, then the hire flow.
