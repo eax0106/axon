@@ -38,6 +38,7 @@ from app.live import channel
 
 EventSink = Callable[[dict[str, Any]], Awaitable[None]]
 Meter = tuple[str, str, str]  # (kind, vendor, unit): what a vendor's usage is priced in
+MIN_WORDS = 2  # a barge-in followed by fewer words than this was noise, not the caller
 
 
 def redis_sink(redis: Redis, call_id: str) -> EventSink:
@@ -61,6 +62,10 @@ class Usage:
     # leaving the engine (the carrier's own delay comes on top). Speed work is measured from this.
     response_ms: list[int] = field(default_factory=list)
     ttfb_ms: dict[str, list[int]] = field(default_factory=dict)  # leg kind -> each request's
+    # The caller talked over the bot, and how often that turn then held fewer than two words (or
+    # none): a horn, a cough or street noise taken for speech. Noise work is measured from this.
+    interruptions: int = 0
+    false_interruptions: int = 0
     # Per caller turn: how long the turn detector held it after the caller's last sound, and
     # whether the silence fallback ended it (Smart Turn had judged it unfinished). In Pipecat
     # this wait is otherwise folded into the STT time.
@@ -124,6 +129,8 @@ class CallObserver(BaseObserver):
         self._listening = listening
         self._seen: set[int] = set()
         self._caller_quiet_at: float | None = None  # the caller's last sound, until a reply starts
+        self._bot_speaking = False
+        self._barged_words: int | None = None  # words heard since the caller cut the bot off
         self._turn_quiet_at: float | None = None  # the same, until the caller's turn ends
         self._turn_complete: bool | None = None  # Smart Turn's last verdict on this turn
 
@@ -156,6 +163,16 @@ class CallObserver(BaseObserver):
             # The VAD only calls speech over after stop_secs of silence; the wait began then.
             self._caller_quiet_at = self._turn_quiet_at = time.monotonic() - frame.stop_secs
             return {}
+        if isinstance(frame, InterruptionFrame) and self._bot_speaking:
+            self.usage.interruptions += 1
+            self._barged_words = 0
+        elif isinstance(frame, TranscriptionFrame) and self._barged_words is not None:
+            self._barged_words += len(frame.text.split())
+        elif isinstance(frame, UserStoppedSpeakingFrame) and self._barged_words is not None:
+            self.usage.false_interruptions += self._barged_words < MIN_WORDS
+            self._barged_words = None
+        if isinstance(frame, BotStartedSpeakingFrame | BotStoppedSpeakingFrame):
+            self._bot_speaking = isinstance(frame, BotStartedSpeakingFrame)
         if isinstance(frame, UserStoppedSpeakingFrame) and self._turn_quiet_at is not None:
             held_ms = round((time.monotonic() - self._turn_quiet_at) * 1000)
             # Smart Turn judges at the VAD stop; when it said "unfinished" the turn could only
