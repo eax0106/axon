@@ -36,6 +36,7 @@ from app.providers.base import (
     TelephonyProvider,
 )
 from app.providers.registry import require
+from app.secretbox import check as check_secrets_key
 from app.settings import get_settings
 
 log = logging.getLogger("axon.worker")
@@ -47,6 +48,7 @@ async def ping(_ctx: dict[str, Any]) -> str:
 
 
 async def startup(ctx: dict[str, Any]) -> None:
+    check_secrets_key()  # webhooks, Sheets polling and actions read encrypted secrets
     engine = create_async_engine(get_settings().database_url, pool_pre_ping=True)
     ctx["db"] = engine
     ctx["factory"] = async_sessionmaker(engine, expire_on_commit=False)

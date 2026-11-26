@@ -3,6 +3,8 @@
 | Secret | Where it lives | Rotate by | Effect |
 |---|---|---|---|
 | `AXON_JWT_SECRET` | Environment of `api` | Set a new 32+ character value on every `api`, restart | Every signed-in session ends; people sign in again. Do this at once if it leaks: anyone holding it can forge a session for any user, staff included |
+| `AXON_SECRETS_KEY` | Environment of `migrate`, `api`, `engine`, `worker` (comma-separated Fernet keys, newest first) | Put a new key first (`uv run python -m app.secretbox new-key`, then `new,old`), restart all four, run `uv run --env-file .env python -m app.secretbox rotate` once (re-encrypts every stored secret under the new key, table by table), then remove the old key and restart | Nothing visible. If it leaks, rotate at once and also rotate the customer secrets below: anyone with the key and a dump can read them. If it is lost, every stored secret is lost: customers must re-enter tokens and re-connect Google and Meta, and staff re-enrol their second factor |
+| A staff member's second factor | Database (TOTP seed encrypted, recovery codes as SHA-256) | Another staff member resets it from the account's page in the console; the next sign-in sets up a new one | They are signed out everywhere. Logged as `second_factor_reset` |
 | A user's password | Database (argon2 hash) | `POST /auth/password`; it signs out every older session | |
 | Vendor keys (Vobiz, Sarvam, Gemini, Smallest, Cartesia, Razorpay, R2, email, WhatsApp) | Environment | New key at the vendor, set it, restart `api`, `engine`, `worker`, then revoke the old key | `GET /admin/providers` shows `configured` again |
 | Razorpay webhook secret, Meta app secret and verify token | Environment | New value at the vendor and here at the same time | Webhooks from the vendor are refused (400 or 401) between the two changes |
@@ -12,6 +14,6 @@
 | Postgres and Redis passwords | `DATABASE_URL`, `REDIS_URL` | New password on the server, set the URL, restart | |
 | A staff member's admin rights | `users.is_platform_admin` | `UPDATE users SET is_platform_admin = false WHERE email = ...` | Their open support sessions stop working at once |
 
-**What a leaked database dump exposes:** account data, call transcripts and recordings' storage keys, and, unencrypted, each account's webhook secrets, lead-intake secrets, Google and Meta tokens and tool keys (F5 in `docs/phases/b14-security-review.md`). Password hashes are argon2 and API keys are hashed. After such a leak, rotate everything in the table above and tell the affected customers to rotate theirs.
+**What a leaked database dump exposes:** account data, call transcripts and recordings' storage keys. Each account's webhook secrets, lead-intake secrets, Google and Meta tokens, tool keys and staff second-factor seeds are encrypted under `AXON_SECRETS_KEY` (F5 in `docs/phases/b14-security-review.md`), so they are exposed only if the key leaked too. Password hashes are argon2, API keys and recovery codes are hashed. After a dump leak, rotate `AXON_SECRETS_KEY` and the JWT secret; if the key may have leaked as well, rotate everything in the table above and tell the affected customers to rotate theirs.
 
 Nothing here ever goes in git: `.env`, dumps and keys are ignored, and `test_env_example.py` fails if a `.env` file is tracked.

@@ -6,7 +6,7 @@ The same containers run everywhere: `api`, `engine`, `worker` (built from `deplo
 
 1. **Network.** Publish only the API and the engine, behind a reverse proxy that does TLS. Do not publish Postgres or Redis (the Compose file publishes them for development with the password `axon`). Give both a private network and real passwords in `DATABASE_URL` and `REDIS_URL`.
 2. **Proxy.** Set `FORWARDED_ALLOW_IPS` to the proxy's address. Without it every user looks like the proxy and shares one sign-in limit of 100 tries per 15 minutes. Set the proxy's request body limit at or under 10 MB (the API refuses larger bodies with 413 anyway) and do not log query strings: the live-call WebSocket carries the session token in its URL.
-3. **Settings.** Copy `.env.example`; set `AXON_JWT_SECRET` (32+ random characters), `AXON_ENGINE_PUBLIC_URL`, `AXON_API_PUBLIC_URL` (both https, reachable by Vobiz), and each vendor key you have. Leave `AXON_AUTH_RATE_LIMIT` unset: `off` is for load tests.
+3. **Settings.** Copy `.env.example`; set `AXON_JWT_SECRET` (32+ random characters), `AXON_SECRETS_KEY` (`uv run python -m app.secretbox new-key`; the API, worker and migration refuse to run without it, and losing it loses every stored secret, so keep a copy outside the host), `AXON_ENGINE_PUBLIC_URL`, `AXON_API_PUBLIC_URL` (both https, reachable by Vobiz), and each vendor key you have. Leave `AXON_AUTH_RATE_LIMIT` unset: `off` is for load tests.
 4. **Region.** An India region (Mumbai or Hyderabad) for Vobiz and Sarvam latency.
 
 ## One VM in Mumbai (the chosen setup)
@@ -46,6 +46,8 @@ The `migrate` service applies every migration and seeds the voice catalog; both 
 ```sql
 UPDATE users SET is_platform_admin = true WHERE email = 'you@example.com';
 ```
+
+Then sign in again: staff set up an authenticator app at their first sign-in and give a code at every sign-in after (only such a session opens the console). Store the ten recovery codes it shows. A staff member who lost both is reset by another staff member from the account's page in the console (`POST /admin/users/{user_id}/second-factor/reset`, logged); if no other staff member can sign in, clear it in SQL: `UPDATE users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, recovery_code_hashes = '{}', tokens_valid_after = now() WHERE email = '...'`.
 
 ## Upgrade
 
