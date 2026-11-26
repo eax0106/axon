@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { seriousA11yIssues } from "./a11y";
+import { freeCredits } from "./stack";
 
 
 test("a real account signs in and the shell shows its real data", async ({ page, request }) => {
@@ -10,6 +11,7 @@ test("a real account signs in and the shell shows its real data", async ({ page,
     data: { email, password: "correct horse battery", account_name: account },
   });
   expect(signup.ok()).toBeTruthy();
+  freeCredits((await signup.json()).access_token);
 
   await page.goto("/");
   await expect(page).toHaveURL(/\/sign-in$/);

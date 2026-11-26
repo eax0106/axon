@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { seriousA11yIssues } from "./a11y";
+import { freeCredits } from "./stack";
 
 test("training and actions: teach, facts and rules, documents, an HTTP action, the result webhook", async ({ page, request }) => {
   const signup = await request.post("/api/auth/signup", {
     data: { email: `f10-${Date.now()}@example.com`, password: "correct horse battery", account_name: "Kokapet Homes" },
   });
   const { access_token } = await signup.json();
+  freeCredits(access_token);
   const auth = { Authorization: `Bearer ${access_token}` };
   const emp = await (await request.post("/api/employees", { headers: auth, data: { channel: "instant", language: "te", name: "Priya" } })).json();
   await page.addInitScript((t) => localStorage.setItem("axon.token", t), access_token);

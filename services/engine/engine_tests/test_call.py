@@ -5,6 +5,7 @@ the duration of a test); B3 brings the real speech and LLM adapters."""
 import base64
 import json
 import time
+import uuid
 from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar
 
@@ -84,7 +85,9 @@ class _Carrier(TelephonyProvider):
         return "test-call"
 
     def callback_is_authentic(self, url: str, headers: Mapping[str, str]) -> bool:
-        return True
+        return {"x-vobiz-signature-v3", "x-vobiz-signature-v3-nonce"} <= {
+            k.lower() for k in headers
+        }
 
     async def call_detail(self, call_uuid: str) -> None:
         return None
@@ -109,6 +112,21 @@ class _Carrier(TelephonyProvider):
             _Carrier.failures -= 1
             raise RuntimeError("carrier said 500")
         self.hangups.append(call_uuid)
+
+
+def signed() -> dict[str, str]:
+    """Headers the test carrier takes as its signature, with a nonce never used before."""
+    return {"X-Vobiz-Signature-V3": "test", "X-Vobiz-Signature-V3-Nonce": uuid.uuid4().hex}
+
+
+def any_call_streams(monkeypatch: pytest.MonkeyPatch) -> None:
+    """For tests of the call itself, which have no call row: let a stream skip the check that it
+    belongs to its row (test_stream_binding.py tests that check)."""
+
+    async def bound(*_: Any) -> bool:
+        return True
+
+    monkeypatch.setattr(engine.main, "_is_bound", bound)
 
 
 @pytest.fixture
@@ -158,6 +176,7 @@ def _call(
     monkeypatch.setattr(
         engine.main, "CallSettings", lambda language: CallSettings(language=language, **settings)
     )
+    any_call_streams(monkeypatch)
     sent: list[dict[str, Any]] = []
     with TestClient(app) as client, client.websocket_connect("/vobiz/stream?lang=te") as ws:
         ws.send_text(json.dumps(START))
@@ -223,8 +242,9 @@ def test_silence_after_the_bot_speaks_ends_the_call(
 
 
 def test_stream_for_a_call_the_carrier_does_not_have_is_refused(
-    providers: None, events: list[dict[str, Any]]
+    providers: None, events: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    any_call_streams(monkeypatch)
     _Carrier.live = False
     with TestClient(app) as client, client.websocket_connect("/vobiz/stream") as ws:
         ws.send_text(json.dumps(START))
@@ -236,7 +256,7 @@ def test_stream_for_a_call_the_carrier_does_not_have_is_refused(
 
 def test_answer_returns_stream_xml_when_every_leg_is_ready(providers: None) -> None:
     with TestClient(app) as client:
-        response = client.post("/vobiz/answer?lang=hi")
+        response = client.post("/vobiz/answer?lang=hi", headers=signed())
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/xml")
     assert "wss://engine.example.in/vobiz/stream?lang=hi&amp;call=</Stream>" in response.text
@@ -246,20 +266,21 @@ def test_without_providers_answer_is_503_and_stream_closes(monkeypatch: pytest.M
     for key in ("SARVAM_API_KEY", "AXON_STT_PROVIDER", "AXON_LLM_PROVIDER", "AXON_TTS_PROVIDER"):
         monkeypatch.delenv(key, raising=False)
     with TestClient(app) as client:
-        response = client.post("/vobiz/answer")
+        response = client.post("/vobiz/answer", headers=signed())
         with client.websocket_connect("/vobiz/stream") as ws:
             with pytest.raises(WebSocketDisconnect) as closed:
                 ws.receive_text()
     assert response.status_code == 503
     assert response.json()["error"] == "provider_not_configured"
-    assert response.json()["missing_keys"] == ["SARVAM_API_KEY"]
+    # The signature is checked before anything else, and the signed URL is the public one.
+    assert response.json()["missing_keys"] == ["AXON_ENGINE_PUBLIC_URL"]
     assert closed.value.code == 1011
 
 
 def test_public_url_is_required_to_answer(providers: None, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AXON_ENGINE_PUBLIC_URL")
     with TestClient(app) as client:
-        response = client.post("/vobiz/answer")
+        response = client.post("/vobiz/answer", headers=signed())
     assert response.status_code == 503
     assert response.json()["missing_keys"] == ["AXON_ENGINE_PUBLIC_URL"]
 
@@ -278,6 +299,7 @@ def test_caller_hanging_up_ends_the_call(
     monkeypatch.setattr(
         engine.main, "CallSettings", lambda language: CallSettings(language=language)
     )
+    any_call_streams(monkeypatch)
     with TestClient(app) as client:
         with client.websocket_connect("/vobiz/stream") as ws:
             ws.send_text(json.dumps(START))

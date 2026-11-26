@@ -24,7 +24,12 @@ from pipecat.frames.frames import (
     VADUserStartedSpeakingFrame,
     VADUserStoppedSpeakingFrame,
 )
-from pipecat.metrics.metrics import LLMUsageMetricsData, TTFBMetricsData, TTSUsageMetricsData
+from pipecat.metrics.metrics import (
+    LLMUsageMetricsData,
+    TTFBMetricsData,
+    TTSUsageMetricsData,
+    TurnMetricsData,
+)
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 from pipecat.processors.frame_processor import FrameProcessor
 from redis.asyncio import Redis
@@ -61,6 +66,11 @@ class Usage:
     # none): a horn, a cough or street noise taken for speech. Noise work is measured from this.
     interruptions: int = 0
     false_interruptions: int = 0
+    # Per caller turn: how long the turn detector held it after the caller's last sound, and
+    # whether the silence fallback ended it (Smart Turn had judged it unfinished). In Pipecat
+    # this wait is otherwise folded into the STT time.
+    turn_ends: list[dict[str, Any]] = field(default_factory=list)
+    test: bool = False  # a test call: left out of latency figures (calls.is_test)
     # The same usage per vendor, for provider costs: a call that failed over used two vendors.
     meters: dict[Meter, float] = field(default_factory=lambda: defaultdict(float))
 
@@ -107,11 +117,12 @@ class CallObserver(BaseObserver):
         audio_source: FrameProcessor,
         vendor_of: Callable[[str], tuple[str, str] | None] = lambda _: None,
         listening: Callable[[], str | None] = lambda: None,
+        test: bool = False,
     ) -> None:
         """`vendor_of` names the (kind, vendor) of a processor by its name; `listening` is the
         speech-to-text vendor active now, which the caller's audio is streamed to."""
         super().__init__()
-        self.usage = Usage()
+        self.usage = Usage(test=test)
         self._publish = publish
         self._audio_source = audio_source
         self._vendor_of = vendor_of
@@ -120,6 +131,8 @@ class CallObserver(BaseObserver):
         self._caller_quiet_at: float | None = None  # the caller's last sound, until a reply starts
         self._bot_speaking = False
         self._barged_words: int | None = None  # words heard since the caller cut the bot off
+        self._turn_quiet_at: float | None = None  # the same, until the caller's turn ends
+        self._turn_complete: bool | None = None  # Smart Turn's last verdict on this turn
 
     async def on_push_frame(self, data: FramePushed) -> None:
         frame = data.frame
@@ -144,11 +157,11 @@ class CallObserver(BaseObserver):
     def _event(self, frame: Any) -> dict[str, Any] | None:
         """The event to publish for `frame`, {} to only meter it, None to ignore it."""
         if isinstance(frame, VADUserStartedSpeakingFrame):
-            self._caller_quiet_at = None
+            self._caller_quiet_at = self._turn_quiet_at = self._turn_complete = None
             return {}
         if isinstance(frame, VADUserStoppedSpeakingFrame):
             # The VAD only calls speech over after stop_secs of silence; the wait began then.
-            self._caller_quiet_at = time.monotonic() - frame.stop_secs
+            self._caller_quiet_at = self._turn_quiet_at = time.monotonic() - frame.stop_secs
             return {}
         if isinstance(frame, InterruptionFrame) and self._bot_speaking:
             self.usage.interruptions += 1
@@ -160,6 +173,13 @@ class CallObserver(BaseObserver):
             self._barged_words = None
         if isinstance(frame, BotStartedSpeakingFrame | BotStoppedSpeakingFrame):
             self._bot_speaking = isinstance(frame, BotStartedSpeakingFrame)
+        if isinstance(frame, UserStoppedSpeakingFrame) and self._turn_quiet_at is not None:
+            held_ms = round((time.monotonic() - self._turn_quiet_at) * 1000)
+            # Smart Turn judges at the VAD stop; when it said "unfinished" the turn could only
+            # have ended on the silence fallback (SmartTurnParams.stop_secs).
+            fallback = self._turn_complete is False
+            self.usage.turn_ends.append({"wait_ms": held_ms, "fallback": fallback})
+            self._turn_quiet_at = self._turn_complete = None
         if isinstance(frame, BotStartedSpeakingFrame) and self._caller_quiet_at is not None:
             waited = time.monotonic() - self._caller_quiet_at
             self.usage.response_ms.append(round(waited * 1000))
@@ -173,7 +193,9 @@ class CallObserver(BaseObserver):
         if isinstance(frame, MetricsFrame):
             for item in frame.data:
                 named = self._vendor_of(item.processor)
-                if isinstance(item, LLMUsageMetricsData):
+                if isinstance(item, TurnMetricsData):
+                    self._turn_complete = item.is_complete
+                elif isinstance(item, LLMUsageMetricsData):
                     self.usage.llm_prompt_tokens += item.value.prompt_tokens
                     self.usage.llm_completion_tokens += item.value.completion_tokens
                     if named:
