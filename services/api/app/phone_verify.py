@@ -8,6 +8,7 @@ check the answer against.
 
 import hashlib
 import hmac
+import os
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -16,7 +17,8 @@ from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, StringConstraints
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, jwt_secret, not_impersonating
 from app.billing import ledger
@@ -24,7 +26,15 @@ from app.billing.config import free_signup_credits
 from app.db import Session
 from app.employees.limits import take
 from app.employees.router import OwnerUser
-from app.models import Account, DncEntry, LedgerKind, NumberStatus, PhoneNumber, PhoneOtp
+from app.models import (
+    Account,
+    DncEntry,
+    LedgerKind,
+    NumberStatus,
+    PhoneNumber,
+    PhoneOtp,
+    User,
+)
 from app.numbers import channels
 from app.providers.base import ProviderKind, TelephonyProvider
 from app.providers.registry import require
@@ -34,6 +44,10 @@ router = APIRouter()
 TTL = timedelta(minutes=10)
 MAX_ATTEMPTS = 5
 CALLS_PER_HOUR = 3
+CODES_PER_PHONE_PER_HOUR = 3  # across all accounts: the shared number must not ring anyone at will
+# ALTERX's own number for code calls, so a new owner proves their phone (and gets the free
+# credits) before buying a number. Unset: the code is spoken from one of the owner's numbers.
+VERIFY_FROM_ENV = "AXON_VERIFY_FROM_NUMBER"
 INDIAN_MOBILE = re.compile(r"^\+91[6-9]\d{9}$")
 
 
@@ -50,16 +64,8 @@ class PhoneBody(BaseModel):
     phone: Annotated[str, StringConstraints(pattern=INDIAN_MOBILE.pattern)]
 
 
-@router.post(
-    "/accounts/owner-phone",
-    status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(not_impersonating)],
-)
-async def send_code(body: PhoneBody, user: OwnerUser, session: Session) -> dict[str, int]:
-    """Ring `phone` and read out a six-digit code."""
-    telephony = require(ProviderKind.TELEPHONY)
-    assert isinstance(telephony, TelephonyProvider)
-    base = api_public_url()
+async def _owner_number(session: AsyncSession, user: User) -> str:
+    """One of the owner's own numbers with a free channel, to speak the code from."""
     held = await session.scalars(
         select(PhoneNumber)
         .where(PhoneNumber.account_id == user.account_id, PhoneNumber.status == NumberStatus.ACTIVE)
@@ -80,6 +86,20 @@ async def send_code(body: PhoneBody, user: OwnerUser, session: Session) -> dict[
             status.HTTP_409_CONFLICT,
             "every channel of your numbers is on a call: try again in a moment",
         )
+    return from_number
+
+
+@router.post(
+    "/accounts/owner-phone",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(not_impersonating)],
+)
+async def send_code(body: PhoneBody, user: OwnerUser, session: Session) -> dict[str, int]:
+    """Ring `phone` and read out a six-digit code."""
+    telephony = require(ProviderKind.TELEPHONY)
+    assert isinstance(telephony, TelephonyProvider)
+    base = api_public_url()
+    from_number = os.environ.get(VERIFY_FROM_ENV, "").strip() or await _owner_number(session, user)
     on_dnc = await session.scalar(
         select(DncEntry.id).where(
             DncEntry.account_id == user.account_id, DncEntry.phone == body.phone
@@ -89,6 +109,16 @@ async def send_code(body: PhoneBody, user: OwnerUser, session: Session) -> dict[
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "that number is on the do-not-call list: remove it there before verifying it",
+        )
+    since = datetime.now(UTC) - timedelta(hours=1)
+    rung = await session.scalar(
+        select(func.count())
+        .select_from(PhoneOtp)
+        .where(PhoneOtp.phone == body.phone, PhoneOtp.created_at > since)
+    )
+    if (rung or 0) >= CODES_PER_PHONE_PER_HOUR:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "too many codes sent to this phone: try in an hour"
         )
     await take(session, user, "owner_phone_code", CALLS_PER_HOUR)
     token = secrets.token_urlsafe(32)
@@ -128,12 +158,24 @@ async def verify_code(body: CodeBody, user: CurrentUser, session: Session) -> di
     account = await session.get(Account, user.account_id)
     assert account is not None  # FK guarantees it
     account.owner_phone, account.owner_phone_verified_at = otp.phone, datetime.now(UTC)
-    # The free credits wait for a phone proven real, so made-up sign-ups cannot farm them. The
-    # reference is the one sign-up used to post under, so an account gets them once, ever.
-    await ledger.post(
-        session, account.id, LedgerKind.BONUS, free_signup_credits(),
-        ref_type="signup", ref_id=str(account.id), note="free credits",
-    )  # fmt: skip
+    # The free credits wait for a phone proven real, so made-up sign-ups cannot farm them: once
+    # per account (the reference sign-up used to post under) and once per phone (no other account
+    # proved it first). ponytail: two accounts proving one phone at the same instant could both
+    # get them; a unique index on verified phones closes that if it is ever seen.
+    claimed = await session.scalar(
+        select(Account.id)
+        .where(
+            Account.owner_phone == otp.phone,
+            Account.owner_phone_verified_at.is_not(None),
+            Account.id != account.id,
+        )
+        .limit(1)
+    )
+    if claimed is None:
+        await ledger.post(
+            session, account.id, LedgerKind.BONUS, free_signup_credits(),
+            ref_type="signup", ref_id=str(account.id), note="free credits",
+        )  # fmt: skip
     await session.execute(delete(PhoneOtp).where(PhoneOtp.account_id == user.account_id))
     await session.commit()
     return {"owner_phone": account.owner_phone}
