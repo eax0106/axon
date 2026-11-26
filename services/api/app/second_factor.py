@@ -99,7 +99,8 @@ async def _count_try(session: AsyncSession, request: Request, user: User) -> str
     """Count one code tried, then lock the user's row: two requests with the same code cannot both
     pass the replay check or both spend one recovery code."""
     key = f"second-factor:{user.id}"
-    await ratelimit.hit(request, key, TRIES_PER_USER)
+    # Fails closed: without a count, six-digit codes could be guessed without end.
+    await ratelimit.hit(request, key, TRIES_PER_USER, fail_closed=True)
     await session.refresh(user, with_for_update=True)
     return key
 

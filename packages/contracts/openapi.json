@@ -2323,6 +2323,14 @@
             "title": "Power Prompting",
             "type": "boolean"
           },
+          "pronunciations": {
+            "items": {
+              "$ref": "#/components/schemas/Pronunciation"
+            },
+            "maxItems": 100,
+            "title": "Pronunciations",
+            "type": "array"
+          },
           "style_pack": {
             "default": false,
             "title": "Style Pack",
@@ -3888,6 +3896,39 @@
           "text"
         ],
         "title": "PreviewBody",
+        "type": "object"
+      },
+      "Pronunciation": {
+        "description": "Say `word` like `say` in this language's replies: a respelling, usually in the language's\nown script. Only what the caller hears changes; transcripts keep `word`.",
+        "properties": {
+          "language": {
+            "enum": [
+              "te",
+              "hi",
+              "en"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "say": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Say",
+            "type": "string"
+          },
+          "word": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "language",
+          "word",
+          "say"
+        ],
+        "title": "Pronunciation",
         "type": "object"
       },
       "Proposal": {

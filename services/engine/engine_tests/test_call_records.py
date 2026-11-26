@@ -19,7 +19,7 @@ from engine.call import CallSettings
 from engine.main import app
 from engine.records import MAX_EVENTS, CallRecorder, TranscriptBuilder
 
-from .test_call import SILENCE_ULAW, _Carrier, events, providers  # noqa: F401
+from .test_call import SILENCE_ULAW, _Carrier, any_call_streams, events, providers  # noqa: F401
 from .test_vobiz import START
 
 CARRIER_ID = START["start"]["callId"]
@@ -53,6 +53,20 @@ def test_the_agents_words_are_gathered_until_it_stops_speaking() -> None:
         ("assistant", "Asha from SunBright."),
     ]
     assert all(t["at"] for t in turns)
+
+
+def test_the_transcript_keeps_the_owners_word_where_the_voice_said_a_respelling() -> None:
+    from engine.pronounce import Pronouncer
+
+    builder = TranscriptBuilder()
+    builder.restore = Pronouncer([("en", "Skyline", "Sky line")]).restore
+    for event in (
+        {"type": "bot_text", "text": "Welcome to Sky"},  # word by word, as Cartesia reports it
+        {"type": "bot_text", "text": "line Habitats."},
+        {"type": "bot_stopped_speaking"},
+    ):
+        builder.feed(event)
+    assert texts(builder.turns()) == [("assistant", "Welcome to Skyline Habitats.")]
 
 
 def test_an_interrupted_agent_turn_keeps_what_was_said_and_empty_events_are_ignored() -> None:
@@ -321,6 +335,7 @@ def run_call(monkeypatch: pytest.MonkeyPatch, call_id: Any, events_: list[dict[s
         "CallSettings",
         lambda language: CallSettings(language=language, max_call_s=2.0, silence_timeout_s=60.0),
     )
+    any_call_streams(monkeypatch)
     with (
         TestClient(app) as client,
         client.websocket_connect(f"/vobiz/stream?lang=te&call={call_id}") as ws,

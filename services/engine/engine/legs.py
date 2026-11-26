@@ -145,6 +145,7 @@ def voice_legs(
     speed: float = 1.0,
     down: frozenset[tuple[str, str]] = frozenset(),
     stack: dict[ProviderKind, Choice] | None = None,
+    keyterms: tuple[str, ...] = (),
 ) -> tuple[ServiceLeg, LLMLeg, ServiceLeg]:
     """STT, LLM and TTS legs for a call, or ProviderNotConfiguredError (served as 503).
 
@@ -153,7 +154,8 @@ def voice_legs(
     default voice. Fallback voices are each vendor's default voice for the language, at the same
     speed. `down` holds the (kind, vendor) pairs that are unhealthy right now: tried last.
     `stack` (the admin call stack) names the vendor and model each leg starts on, ahead of the
-    voice's own vendor; a voice from another vendor then plays in that vendor's default voice."""
+    voice's own vendor; a voice from another vendor then plays in that vendor's default voice.
+    `keyterms` go to every speech-to-text vendor, so a failover keeps them."""
     plain = Delivery(speed=speed)
     tier = voice.tier if voice is not None else tier
     own = (voice.provider, Delivery(voice.provider_voice_id, speed)) if voice else None
@@ -164,7 +166,8 @@ def voice_legs(
         if pick is not None:
             vendors = list(dict.fromkeys([pick.vendor, *vendors]))
         mine = own if kind is ProviderKind.TTS else None
-        return _candidates(kind, ordered(kind, vendors, down), language, plain, mine, pick)
+        base = replace(plain, keyterms=keyterms) if kind is ProviderKind.STT else plain
+        return _candidates(kind, ordered(kind, vendors, down), language, base, mine, pick)
 
     return (
         ServiceLeg(ProviderKind.STT, legs(ProviderKind.STT)),
