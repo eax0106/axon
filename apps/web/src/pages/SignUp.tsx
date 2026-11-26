@@ -58,7 +58,7 @@ export default function SignUp() {
     <AuthLayout
       eyebrow="Create your account"
       title="Hire your first AI employee."
-      sub="Free credits to start. No card needed."
+      sub="Free credits once you verify your phone. No card needed."
     >
       <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
         <Field

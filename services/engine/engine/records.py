@@ -6,6 +6,7 @@ there. The engine only writes what it saw: it never summarises or interprets.
 
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -23,6 +24,7 @@ COMPLETED_REASONS = {
     "max_length",
     "silence",
     "pipeline_finished",
+    "voicemail",
 }
 KEPT_EVENTS = {
     "started",
@@ -35,10 +37,12 @@ KEPT_EVENTS = {
     "failover",
     "tier_fallback",
     "provider_failure",
+    "voicemail",
 }
 MAX_EVENTS = 500
 HANDED_OVER = "transferred"  # how a call ends that the AI passed to a person
 PROVIDER_FAILURE = "provider_failure"  # a leg had no vendor left: the call was given up
+VOICEMAIL = "voicemail"  # a machine picked up an outbound call (engine.voicemail): hung up on
 OPEN = (CallStatus.QUEUED, CallStatus.RINGING, CallStatus.IN_PROGRESS)
 
 
@@ -49,6 +53,8 @@ class TranscriptBuilder:
     interrupted, or the caller speaks."""
 
     def __init__(self) -> None:
+        # Turns a voice's respellings back into the owner's words (engine.pronounce).
+        self.restore: Callable[[str], str] = lambda text: text
         self._turns: list[dict[str, Any]] = []
         self._bot: list[str] = []
         self._bot_at: str | None = None
@@ -70,7 +76,7 @@ class TranscriptBuilder:
 
     def _flush_bot(self) -> None:
         if self._bot:
-            text = " ".join(" ".join(self._bot).split())
+            text = self.restore(" ".join(" ".join(self._bot).split()))
             self._turns.append({"role": "assistant", "text": text, "at": self._bot_at})
         self._bot, self._bot_at = [], None
 
@@ -137,6 +143,13 @@ class CallRecorder:
             health.record(session, kind, vendor, ok=False, at=datetime.now(UTC))
             await session.commit()
 
+    async def voicemail(self) -> None:
+        """A machine picked up: marked at once, so whichever settles the call (this engine or the
+        carrier's hang-up callback) puts it back on the retry ladder."""
+        async with self._factory() as session:
+            await session.execute(update(Call).where(*self._ours()).values(voicemail=True))
+            await session.commit()
+
     async def bill_at(self, tier: str) -> None:
         """The call fell back to a cheaper voice: the whole call is billed at that tier."""
         async with self._factory() as session:
@@ -162,15 +175,17 @@ class CallRecorder:
         async with self._factory() as session:
             for kind, vendor in (served or {}).items():
                 health.record(session, kind, vendor, ok=True, at=now)
-            if reason == PROVIDER_FAILURE:
-                # Our fault, not the caller's: the attempt is settled like a failed dial, so an
-                # outgoing call is tried again later along its retry ladder.
+            if reason in (PROVIDER_FAILURE, VOICEMAIL):
+                # Our fault, not the caller's, or a machine answered: the attempt is settled now
+                # so an outgoing call is tried again later along its retry ladder. A voicemail
+                # was picked up (billed like any answered call) and is retried for that mark.
                 row = await session.scalar(
                     select(Call).where(*self._ours(), Call.status.in_(OPEN)).with_for_update()
                 )
                 if row is not None:
                     duration = round(time.monotonic() - self._started)
-                    await dialer.settle(session, row, CallStatus.FAILED, now, duration)
+                    settled = CallStatus.FAILED if reason == PROVIDER_FAILURE else status
+                    await dialer.settle(session, row, settled, now, duration)
             elif reason != HANDED_OVER:  # a handed-over call is still up: the carrier settles it
                 await session.execute(
                     update(Call)

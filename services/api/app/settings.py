@@ -12,6 +12,7 @@ from app.providers.base import ProviderKind, ProviderNotConfiguredError
 
 PUBLIC_URL_ENV = "AXON_ENGINE_PUBLIC_URL"
 API_URL_ENV = "AXON_API_PUBLIC_URL"
+APP_URL_ENV = "AXON_APP_PUBLIC_URL"
 
 
 @dataclass(frozen=True)
@@ -69,3 +70,17 @@ def max_concurrent_calls() -> int:
         return max(1, int(os.environ.get(MAX_CALLS_ENV, DEFAULT_MAX_CALLS)))
     except ValueError:
         return DEFAULT_MAX_CALLS
+
+
+def app_public_url() -> str:
+    """The dashboard's public https URL, which emailed links (invites, password resets) open, or
+    a 503."""
+    url = os.environ.get(APP_URL_ENV, "").rstrip("/")
+    if not url.startswith("https://"):
+        raise ProviderNotConfiguredError(
+            ProviderKind.EMAIL,
+            "resend",
+            [APP_URL_ENV],
+            f"{APP_URL_ENV} must be the dashboard's public https URL (emailed links open it)",
+        )
+    return url

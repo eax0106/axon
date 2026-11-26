@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { seriousA11yIssues } from "./a11y";
-import { publish, sql } from "./stack";
+import { freeCredits, publish, sql } from "./stack";
 
 test("a live call streams its stages and words; test calls show what to connect", async ({ page, request }) => {
   const signup = await request.post("/api/auth/signup", {
     data: { email: `f4-${Date.now()}@example.com`, password: "correct horse battery", account_name: "Kokapet Homes" },
   });
   const { access_token } = await signup.json();
+  freeCredits(access_token);
   const auth = { Authorization: `Bearer ${access_token}` };
   const me = await (await request.get("/api/accounts/me", { headers: auth })).json();
   await page.addInitScript((t) => localStorage.setItem("axon.token", t), access_token);

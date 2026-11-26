@@ -1,13 +1,14 @@
 """Read an employee's call plan from the database for a call that is starting."""
 
 import uuid
+from dataclasses import replace
 
 from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.employees.runtime import CallPlan, plan_for
 from app.inbound.plan import extras
-from app.models import Account, Call, CallStatus, CampaignContact, Employee, Lead
+from app.models import Account, Call, CallStatus, CampaignContact, Direction, Employee, Lead
 
 
 def _uuid(value: str) -> uuid.UUID | None:
@@ -56,7 +57,7 @@ async def load_plan(db: AsyncEngine, employee: str, call: str = "") -> CallPlan 
         added = await extras(session, row, record, lead) if own and record else None
         if added is not None and lead is not None:
             variables = {**(variables or {}), **added.variables}
-        return await plan_for(
+        plan = await plan_for(
             session,
             row,
             use_draft=is_test,
@@ -69,6 +70,8 @@ async def load_plan(db: AsyncEngine, employee: str, call: str = "") -> CallPlan 
             party_phone=(lead.phone if lead else record.caller_phone) if own and record else None,
             party_name=lead.name if lead else None,
         )
+        outbound = own and record is not None and record.direction is Direction.OUTBOUND
+        return replace(plan, outbound=True) if plan is not None and outbound else plan
 
 
 async def claim_test_call(db: AsyncEngine, call_id: uuid.UUID, account_id: uuid.UUID) -> bool:

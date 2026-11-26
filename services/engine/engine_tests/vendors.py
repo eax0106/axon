@@ -38,7 +38,7 @@ from engine.call import CallSettings
 from engine.main import app
 from engine.services import SERVICES
 
-from .test_call import SILENCE_ULAW, _Carrier
+from .test_call import SILENCE_ULAW, _Carrier, any_call_streams
 from .test_vobiz import START
 
 REPLY = ["Hello", " there", "."]
@@ -234,6 +234,7 @@ def wire(
         monkeypatch.setitem(registry.VENDOR_KEYS[ProviderKind.TELEPHONY], "testcarrier", ())
         monkeypatch.setitem(registry.ADAPTERS, carrier, _Carrier)
         monkeypatch.setenv("AXON_TELEPHONY_PROVIDER", "testcarrier")
+        any_call_streams(monkeypatch)
         monkeypatch.setenv("AXON_ENGINE_PUBLIC_URL", "https://engine.example.in")
         monkeypatch.setattr(engine.call, "MIN_CALL_S", 0)
         monkeypatch.setattr(

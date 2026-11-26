@@ -6,7 +6,8 @@ import { useAction } from "../lib/useAction";
 import { Field, SubmitButton } from "../ui/Field";
 import { ErrorState, Skeleton } from "../ui/states";
 import { Dnc } from "./account/Dnc";
-import { Business, Password } from "./account/Settings";
+import { Business, Password, TwoFactor } from "./account/Settings";
+import { Team } from "./account/Team";
 
 export default function Account() {
   const me = useMe();
@@ -46,12 +47,14 @@ export default function Account() {
             Your phone
           </h2>
           <p className="mt-2 text-sm text-ink-muted">
-            Free test calls ring only this number. We prove it's yours by calling it and reading out a 6-digit code.
+            Free test calls ring only this number. We prove it's yours by calling it and reading out a 6-digit code. Your free credits arrive once it's verified.
           </p>
           {me.data ? <OwnerPhone verified={me.data.account.owner_phone} /> : <Skeleton className="mt-6 h-12" />}
         </section>
         <Business />
         <Password />
+        <TwoFactor />
+        <Team />
       </div>
       <div className="mt-6 max-w-4xl">
         <Dnc />
@@ -95,6 +98,7 @@ function OwnerPhone({ verified }: { verified: string }) {
     void run(async () => {
       await unwrap(api.POST("/accounts/owner-phone/verify", { body: { code } }));
       await queryClient.invalidateQueries({ queryKey: ["me"] });
+      void queryClient.invalidateQueries({ queryKey: ["wallet"] }); // the free credits come with it
       setStep("show");
     });
   }

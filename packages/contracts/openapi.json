@@ -1,24 +1,6 @@
 {
   "components": {
     "schemas": {
-      "Accept": {
-        "properties": {
-          "text": {
-            "anyOf": [
-              {
-                "maxLength": 300,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
-          }
-        },
-        "title": "Accept",
-        "type": "object"
-      },
       "AccountOut": {
         "properties": {
           "credit_balance": {
@@ -1424,6 +1406,21 @@
         "title": "Checkout",
         "type": "object"
       },
+      "Code": {
+        "properties": {
+          "code": {
+            "maxLength": 40,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "Code",
+        "type": "object"
+      },
       "CodeAnswer": {
         "properties": {
           "challenge": {
@@ -2326,6 +2323,14 @@
             "title": "Power Prompting",
             "type": "boolean"
           },
+          "pronunciations": {
+            "items": {
+              "$ref": "#/components/schemas/Pronunciation"
+            },
+            "maxItems": 100,
+            "title": "Pronunciations",
+            "type": "array"
+          },
           "style_pack": {
             "default": false,
             "title": "Style Pack",
@@ -2881,6 +2886,38 @@
         "title": "IntakeStatus",
         "type": "string"
       },
+      "InviteIn": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "InviteIn",
+        "type": "object"
+      },
+      "InviteInfo": {
+        "properties": {
+          "account_name": {
+            "title": "Account Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "account_name"
+        ],
+        "title": "InviteInfo",
+        "type": "object"
+      },
       "ItemOut": {
         "properties": {
           "created_at": {
@@ -3216,6 +3253,21 @@
         "title": "LibraryVoice",
         "type": "object"
       },
+      "LinkIn": {
+        "properties": {
+          "token": {
+            "maxLength": 100,
+            "minLength": 20,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "LinkIn",
+        "type": "object"
+      },
       "ListBody": {
         "properties": {
           "mapping": {
@@ -3281,6 +3333,40 @@
           "phone"
         ],
         "title": "Mapping",
+        "type": "object"
+      },
+      "Member": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "joined_at": {
+            "format": "date-time",
+            "title": "Joined At",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "two_factor": {
+            "title": "Two Factor",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "two_factor",
+          "joined_at"
+        ],
+        "title": "Member",
         "type": "object"
       },
       "MemorySetting": {
@@ -3727,6 +3813,37 @@
         "title": "PasswordChange",
         "type": "object"
       },
+      "PendingInvite": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "sent_at": {
+            "format": "date-time",
+            "title": "Sent At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "expires_at",
+          "sent_at"
+        ],
+        "title": "PendingInvite",
+        "type": "object"
+      },
       "PhoneBody": {
         "properties": {
           "phone": {
@@ -3779,6 +3896,39 @@
           "text"
         ],
         "title": "PreviewBody",
+        "type": "object"
+      },
+      "Pronunciation": {
+        "description": "Say `word` like `say` in this language's replies: a respelling, usually in the language's\nown script. Only what the caller hears changes; transcripts keep `word`.",
+        "properties": {
+          "language": {
+            "enum": [
+              "te",
+              "hi",
+              "en"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "say": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Say",
+            "type": "string"
+          },
+          "word": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "language",
+          "word",
+          "say"
+        ],
+        "title": "Pronunciation",
         "type": "object"
       },
       "Proposal": {
@@ -4055,6 +4205,22 @@
         "title": "Rating",
         "type": "object"
       },
+      "Recovery": {
+        "properties": {
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recovery Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recovery_codes"
+        ],
+        "title": "Recovery",
+        "type": "object"
+      },
       "RequestOut": {
         "properties": {
           "created_at": {
@@ -4107,6 +4273,42 @@
         "title": "RequestOut",
         "type": "object"
       },
+      "ResetConfirm": {
+        "properties": {
+          "password": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 100,
+            "minLength": 20,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ],
+        "title": "ResetConfirm",
+        "type": "object"
+      },
+      "ResetRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ResetRequest",
+        "type": "object"
+      },
       "ResultWebhook": {
         "properties": {
           "secret": {
@@ -4136,6 +4338,15 @@
         ],
         "title": "ResultWebhook",
         "type": "object"
+      },
+      "Role": {
+        "description": "A user's role inside their own account. Platform staff is a separate flag on User.",
+        "enum": [
+          "owner",
+          "member"
+        ],
+        "title": "Role",
+        "type": "string"
       },
       "RuleBody": {
         "properties": {
@@ -4563,7 +4774,7 @@
         "type": "object"
       },
       "SignIn": {
-        "description": "A session, or for staff a challenge: send it with a code to /auth/second-factor/verify, or\n(`enrol`, the first sign-in after the second factor became required) set one up first.",
+        "description": "A session, or a challenge when the user has a second factor (always for staff): send it\nwith a code to /auth/second-factor/verify, or (`enrol`, a staff member's first sign-in after\nthe second factor became required) set one up first.",
         "properties": {
           "access_token": {
             "anyOf": [
@@ -4913,6 +5124,30 @@
           "text"
         ],
         "title": "TeachText",
+        "type": "object"
+      },
+      "Team": {
+        "properties": {
+          "invites": {
+            "items": {
+              "$ref": "#/components/schemas/PendingInvite"
+            },
+            "title": "Invites",
+            "type": "array"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            },
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": [
+          "members",
+          "invites"
+        ],
+        "title": "Team",
         "type": "object"
       },
       "Terms": {
@@ -5557,6 +5792,28 @@
         "title": "WhatsApp",
         "type": "object"
       },
+      "app__account__team__Accept": {
+        "properties": {
+          "password": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 100,
+            "minLength": 20,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ],
+        "title": "Accept",
+        "type": "object"
+      },
       "app__actions__router__TestBody": {
         "properties": {
           "args": {
@@ -6115,6 +6372,24 @@
           "call_id"
         ],
         "title": "IntakeOut",
+        "type": "object"
+      },
+      "app__training__router__Accept": {
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "Accept",
         "type": "object"
       }
     },
@@ -7550,7 +7825,7 @@
     },
     "/admin/users/{user_id}/second-factor/reset": {
       "post": {
-        "description": "For a staff member who lost both the authenticator app and the recovery codes: their next\nsign-in sets up a new one, and every session they have is signed out. Never one's own (use a\nrecovery code), and logged under the staff member who did it.",
+        "description": "For someone who lost both the authenticator app and the recovery codes: a staff member's\nnext sign-in sets up a new one; an owner's or member's second factor is turned off (they may\nturn it on again). Every session they have is signed out. Never one's own (use a recovery\ncode), and logged under the staff member who did it.",
         "operationId": "reset_second_factor_admin_users__user_id__second_factor_reset_post",
         "parameters": [
           {
@@ -7996,6 +8271,84 @@
         "summary": "Translate"
       }
     },
+    "/auth/invites/accept": {
+      "post": {
+        "description": "Join the account as a member with a new password; answers a session.",
+        "operationId": "accept_invite_auth_invites_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__account__team__Accept"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Invite"
+      }
+    },
+    "/auth/invites/check": {
+      "post": {
+        "description": "Who an invite link is for, to show before the password is chosen. Uses nothing up.",
+        "operationId": "check_invite_auth_invites_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Invite"
+      }
+    },
     "/auth/login": {
       "post": {
         "operationId": "login_auth_login_post",
@@ -8078,6 +8431,82 @@
         "summary": "Change Password"
       }
     },
+    "/auth/password-reset": {
+      "post": {
+        "description": "Email a reset link if `email` has a sign-in. The answer is the same either way, so it does\nnot tell who has one.",
+        "operationId": "request_reset_auth_password_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "const": "sent",
+                    "type": "string"
+                  },
+                  "title": "Response Request Reset Auth Password Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Reset"
+      }
+    },
+    "/auth/password-reset/confirm": {
+      "post": {
+        "description": "Set the new password. Every session is signed out and every other reset link stops\nworking; sign in again (with the second factor, if it is on).",
+        "operationId": "confirm_reset_auth_password_reset_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Reset"
+      }
+    },
     "/auth/second-factor/confirm": {
       "post": {
         "description": "Finish setting up: the first code from the app proves it holds the seed. Answers a session\nand the recovery codes.",
@@ -8117,6 +8546,43 @@
         "summary": "Confirm"
       }
     },
+    "/auth/second-factor/disable": {
+      "post": {
+        "description": "Turn the second factor off. Needs a current code from the app (not a recovery code), so a\nsession left open on a shared computer cannot remove it.",
+        "operationId": "disable_auth_second_factor_disable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Code"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disable"
+      }
+    },
     "/auth/second-factor/enrol": {
       "post": {
         "description": "Start setting up the authenticator app. Asking again (a reload) answers the same unconfirmed\nseed, so the key on screen always matches the one kept.",
@@ -8154,6 +8620,74 @@
           }
         },
         "summary": "Enrol"
+      }
+    },
+    "/auth/second-factor/setup": {
+      "post": {
+        "description": "An owner or member starts turning on the authenticator app from a signed-in session. Asking\nagain answers the same unconfirmed seed.",
+        "operationId": "setup_auth_second_factor_setup_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrolment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Setup"
+      }
+    },
+    "/auth/second-factor/setup/confirm": {
+      "post": {
+        "description": "Finish turning it on with the first code from the app. Answers the recovery codes; this\nsession carries on, and every later sign-in asks for a code.",
+        "operationId": "setup_confirm_auth_second_factor_setup_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Code"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recovery"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Setup Confirm"
       }
     },
     "/auth/second-factor/verify": {
@@ -15067,7 +15601,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Accept"
+                "$ref": "#/components/schemas/app__training__router__Accept"
               }
             }
           },
@@ -17695,6 +18229,150 @@
           }
         ],
         "summary": "Rate Call"
+      }
+    },
+    "/team": {
+      "get": {
+        "operationId": "team_team_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Team"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Team"
+      }
+    },
+    "/team/invites": {
+      "post": {
+        "description": "Email a link that lets `email` join this account as a member. Asking again for the same\nemail cancels the earlier link. Refused for an email that already has an Axon sign-in.",
+        "operationId": "invite_team_invites_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingInvite"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Invite"
+      }
+    },
+    "/team/invites/{invite_id}": {
+      "delete": {
+        "operationId": "revoke_team_invites__invite_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke"
+      }
+    },
+    "/team/members/{user_id}": {
+      "delete": {
+        "description": "Remove a member. Their sign-in is deleted, so every session of theirs stops at once; what\nthey wrote (notes, audit entries) stays, without their name.",
+        "operationId": "remove_team_members__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove"
       }
     },
     "/v1/account": {

@@ -102,6 +102,22 @@ def test_expired_tampered_and_foreign_tokens_are_rejected(
     assert db_client.get("/accounts/me").status_code == 401
 
 
+def test_only_a_token_typed_as_a_session_signs_in(db_client: TestClient, migrated_url: str) -> None:
+    """The same secret signs tickets and challenges; one that carries `sub` must still not pass
+    as a login (security test 26 Nov, L5). Sessions from before `typ` are refused too."""
+    token = _signup(db_client)
+    assert jwt.decode(token, options={"verify_signature": False})["typ"] == "session"
+    user = _user(migrated_url)
+    now = datetime.now(UTC)
+    claims = {"sub": str(user.id), "iat": now.timestamp(), "exp": now + TOKEN_TTL}
+    for typ in (None, "ticket", "Session"):
+        other = jwt.encode(
+            claims if typ is None else {**claims, "typ": typ}, TEST_JWT_SECRET, algorithm="HS256"
+        )
+        assert db_client.get("/accounts/me", headers=_auth(other)).status_code == 401, typ
+    assert db_client.get("/accounts/me", headers=_auth(token)).status_code == 200
+
+
 def test_token_for_a_deleted_user_is_rejected(db_client: TestClient, migrated_url: str) -> None:
     token = _signup(db_client)
     sql(migrated_url, "DELETE FROM users")

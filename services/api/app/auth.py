@@ -16,10 +16,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import ratelimit
-from app.billing import ledger
-from app.billing.config import free_signup_credits
 from app.db import Session
-from app.models import Account, AuditEntry, LedgerKind, Role, User
+from app.models import Account, AuditEntry, Role, User
 from app.settings import get_settings
 
 TOKEN_TTL = timedelta(hours=12)
@@ -27,6 +25,8 @@ IMPERSONATION_TTL = timedelta(minutes=30)
 # A staff member's password opens only this: five minutes to give the second factor.
 CHALLENGE_TTL = timedelta(minutes=5)
 CHALLENGE_AUDIENCE = "axon:second-factor"
+# Marks a session. Sessions from before it was added are refused, so everyone signs in once more.
+SESSION_TYPE = "session"
 MIN_SECRET_LEN = 32
 # Hashing takes tens of milliseconds of CPU: callers run it in a thread (argon2 releases the GIL)
 # so one sign-in never stalls every other request on the worker.
@@ -62,6 +62,7 @@ def issue_token(
     # `iat` keeps its fraction of a second, so a password change revokes every older session.
     claims: dict[str, object] = {
         "sub": str(user.id),
+        "typ": SESSION_TYPE,
         "iat": now.timestamp(),
         "exp": now + TOKEN_TTL,
     }
@@ -86,8 +87,8 @@ def issue_challenge(user: User, now: datetime | None = None) -> str:
 
 
 async def user_of_challenge(session: AsyncSession, challenge: str) -> User:
-    """The staff member a challenge was issued to. Refused once it expires, after a password
-    change or a second-factor reset, or when the user is no longer staff."""
+    """The user a challenge was issued to. Refused once it expires, after a password change or a
+    second-factor reset, or when the user is neither staff nor has a second factor turned on."""
     try:
         claims = jwt.decode(
             challenge,
@@ -100,7 +101,9 @@ async def user_of_challenge(session: AsyncSession, challenge: str) -> User:
     except (jwt.InvalidTokenError, ValueError) as exc:
         raise _unauthorized("sign in again") from exc
     user = await session.get(User, user_id)
-    if user is None or not user.is_platform_admin or _revoked(user, claims["iat"]):
+    # Staff always have a second factor; owners and members only once they turned one on.
+    has_one = user is not None and (user.is_platform_admin or user.totp_enabled_at is not None)
+    if user is None or not has_one or _revoked(user, claims["iat"]):
         raise _unauthorized("sign in again")
     return user
 
@@ -145,7 +148,8 @@ async def user_from_token(session: AsyncSession, token: str) -> User:
 async def _session_of(session: AsyncSession, token: str) -> tuple[User, uuid.UUID | None, bool]:
     """The user a token speaks for, the staff member impersonating them (if any), and whether it
     was signed in with a second factor. Refused when the token was issued before the user's last
-    password change, or when the impersonator is no longer platform staff."""
+    password change, or when the impersonator is no longer platform staff. Only a session counts:
+    the same secret signs other tokens, so the type is checked, not guessed from the claims."""
     try:
         claims = jwt.decode(
             token,
@@ -153,6 +157,8 @@ async def _session_of(session: AsyncSession, token: str) -> tuple[User, uuid.UUI
             algorithms=["HS256"],
             options={"require": ["sub", "exp", "iat"]},
         )
+        if claims.get("typ") != SESSION_TYPE:
+            raise jwt.InvalidTokenError("not a session")
         user_id = uuid.UUID(claims["sub"])
         impersonator_id = uuid.UUID(claims["imp"]) if "imp" in claims else None
     except (jwt.InvalidTokenError, ValueError) as exc:
@@ -207,6 +213,18 @@ async def not_impersonating(user: CurrentUser, request: Request) -> User:
 OwnUser = Annotated[User, Depends(not_impersonating)]
 
 
+def clean_email(value: str) -> str:
+    value = value.strip().lower()
+    local, _, domain = value.partition("@")
+    if not local or "." not in domain or " " in value:
+        raise ValueError("not an email address")
+    return value
+
+
+async def hash_password(password: str) -> str:
+    return await asyncio.to_thread(_hasher.hash, password)
+
+
 class Credentials(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(min_length=8, max_length=128)
@@ -214,11 +232,7 @@ class Credentials(BaseModel):
     @field_validator("email")
     @classmethod
     def _email(cls, value: str) -> str:
-        value = value.strip().lower()
-        local, _, domain = value.partition("@")
-        if not local or "." not in domain or " " in value:
-            raise ValueError("not an email address")
-        return value
+        return clean_email(value)
 
 
 class Signup(Credentials):
@@ -231,8 +245,9 @@ class Token(BaseModel):
 
 
 class SignIn(BaseModel):
-    """A session, or for staff a challenge: send it with a code to /auth/second-factor/verify, or
-    (`enrol`, the first sign-in after the second factor became required) set one up first."""
+    """A session, or a challenge when the user has a second factor (always for staff): send it
+    with a code to /auth/second-factor/verify, or (`enrol`, a staff member's first sign-in after
+    the second factor became required) set one up first."""
 
     access_token: str | None = None
     token_type: str = "bearer"  # noqa: S105 - OAuth2 token type, not a secret
@@ -247,11 +262,7 @@ async def signup(body: Signup, session: Session, request: Request) -> Token:
     await ratelimit.hit(request, key, ratelimit.SIGNUPS_PER_HOUR, window_s=3600)
     account = Account(name=body.account_name)
     session.add(account)
-    await session.flush()
-    await ledger.post(
-        session, account.id, LedgerKind.BONUS, free_signup_credits(),
-        ref_type="signup", ref_id=str(account.id), note="free credits",
-    )  # fmt: skip
+    await session.flush()  # free credits come with the owner's verified phone (phone_verify.py)
     user = User(
         account_id=account.id,
         email=body.email,
@@ -286,8 +297,8 @@ async def login(body: Credentials, session: Session, request: Request) -> SignIn
     if _hasher.check_needs_rehash(user.password_hash):
         user.password_hash = await asyncio.to_thread(_hasher.hash, body.password)
         await session.commit()
-    if user.is_platform_admin:
-        enrolled = user.totp_enabled_at is not None
+    enrolled = user.totp_enabled_at is not None
+    if user.is_platform_admin or enrolled:  # owners and members only when they turned it on
         return SignIn(
             second_factor="verify" if enrolled else "enrol", challenge=issue_challenge(user)
         )
@@ -336,6 +347,8 @@ async def me(
             "staff": user.is_platform_admin,
             # Whether this session was signed in with the staff second factor (opens the console).
             "second_factor": bool(request.state.second_factor),
+            # Whether sign-in asks this user for an authenticator code.
+            "two_factor": user.totp_enabled_at is not None,
             "support_session": request.state.impersonator is not None,
         },
         # The verified owner phone ("" until verified): free test calls ring only this number.

@@ -20,6 +20,7 @@ OPEN = {
     "GET /readyz": "readiness probe",
     "GET /v1/openapi.json": "public API reference",
     "GET /v1/postman.json": "public API reference",
+    "POST /auth/password-reset": "emails a reset link; the same answer for every email",
 }
 # Called by outside services or people with no session. Each must refuse a call that carries no
 # proof, and a caller who does not match is never answered 2xx.
@@ -34,6 +35,9 @@ PROOF = {
     "POST /auth/second-factor/enrol": "a staff sign-in challenge, issued for the right password",
     "POST /auth/second-factor/confirm": "a staff sign-in challenge, issued for the right password",
     "POST /auth/second-factor/verify": "a staff sign-in challenge, issued for the right password",
+    "POST /auth/invites/check": "an emailed invite link: random token",
+    "POST /auth/invites/accept": "an emailed invite link: random token",
+    "POST /auth/password-reset/confirm": "an emailed reset link: random token",
 }
 APP_DIR = Path(__file__).parents[1] / "app"
 SAMPLE_ID = "00000000-0000-0000-0000-000000000001"
