@@ -12,18 +12,23 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlencode
 
-from fastapi import FastAPI, Request, Response, WebSocket
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from starlette.requests import HTTPConnection
 from starlette.websockets import WebSocketState
 
+from app import ratelimit
 from app.actions.tools import ActionContext, build_tools
 from app.employees.tickets import issue_call_ticket, read_call_ticket
 from app.employees.tickets import read as read_ticket
 from app.inbound import transfer as transferring
 from app.inbound.routing import route
+from app.instant.public import _fresh as fresh_nonce
 from app.main import provider_not_configured
+from app.models import Call
 from app.providers import health, stack
 from app.providers.base import ProviderKind, ProviderNotConfiguredError, TelephonyProvider
 from app.providers.registry import require
@@ -49,6 +54,10 @@ START_TIMEOUT_S = 10.0  # Vobiz sends `start` right after connecting
 TRANSFER_TICKET_TTL = timedelta(minutes=2)  # the carrier fetches the transfer XML at once
 RESULT_TICKET_TTL = timedelta(seconds=transferring.DIAL_LIMIT_S + 3600)  # it answers after the talk
 SUPPORTED_LANGUAGES = {"te", "hi", "en"}
+# Opens of each public Vobiz URL per address per minute. Vobiz reaches us from a few addresses of
+# its own, so this sits far above our call rate. ponytail: one fixed window per route; raise it
+# (or key it per carrier range) if a busy launch ever meets it.
+PER_ADDRESS_PER_MINUTE = 120
 
 
 @asynccontextmanager
@@ -147,14 +156,63 @@ async def vobiz_answer(
 
     `call` is our calls.id when the dialer (B5) or inbound routing (B9) created the row; live
     events are published under it, else under the carrier's call id. `employee` selects whose
-    script, voice and settings the call runs on.
+    script, voice and settings the call runs on. Only Vobiz's signed requests are answered; the
+    carrier's id for the call is kept on our row, and only that call may then open the stream.
     """
+    await _limit(request, "answer")
+    await _check_signature(request)
     try:
         _, settings = await _setup(request.app, lang, employee, call)
     except _NoPlanError:
         return Response("employee not found or not published", status_code=404)
     _telephony()
+    form = parse_qs((await request.body()).decode("utf-8", "replace"))
+    await _bind(request.app.state.db, call, employee, (form.get("CallUUID") or [""])[0])
     return _stream_response(settings.language, call, employee)
+
+
+async def _limit(conn: HTTPConnection, route_name: str) -> None:
+    address = ratelimit.client_address(conn)
+    await ratelimit.hit(conn, f"engine:{route_name}:{address}", PER_ADDRESS_PER_MINUTE, 60)
+
+
+async def _check_signature(request: Request) -> None:
+    """401 unless Vobiz signed this request (as the API checks /vobiz/events), before any work."""
+    url = engine_public_url() + request.url.path  # Vobiz signs the URL without its query
+    if not _telephony().callback_is_authentic(url, request.headers):
+        raise HTTPException(401, "bad signature")
+    if not await fresh_nonce(request, request.headers.get("x-vobiz-signature-v3-nonce", "")):
+        raise HTTPException(409, "nonce already used")
+
+
+async def _bind(db: AsyncEngine, call: str, employee: str, carrier_id: str) -> None:
+    """Note the carrier's own id for the call on our row (the dial request's id may differ)."""
+    call_id, employee_id = _call_id(call), _call_id(employee)
+    if call_id is None or employee_id is None or not carrier_id:
+        return
+    async with async_sessionmaker(db)() as session:
+        await session.execute(
+            update(Call)
+            .where(Call.id == call_id, Call.employee_id == employee_id)
+            .where(Call.carrier_leg_id.is_(None))
+            .values(carrier_leg_id=carrier_id)
+        )
+        await session.commit()
+
+
+async def _is_bound(db: AsyncEngine, call: str, employee: str, carrier_id: str) -> bool:
+    """Whether our row `call` runs `employee`'s script and waits for this very carrier call: the
+    stream URL is public, so a live call id alone must not open another call's row."""
+    call_id, employee_id = _call_id(call), _call_id(employee)
+    if call_id is None or employee_id is None:
+        return False
+    async with async_sessionmaker(db)() as session:
+        row = await session.get(Call, call_id)
+    return (
+        row is not None
+        and row.employee_id == employee_id
+        and carrier_id in (row.carrier_call_id, row.carrier_leg_id)
+    )
 
 
 def _stream_response(language: str, call: str, employee: str) -> Response:
@@ -174,8 +232,10 @@ async def vobiz_inbound(request: Request) -> Response:
     """Answer URL of the voice application our numbers are routed to: a call has arrived. The call
     is answered when the employee can take it, and turned away (rejected) otherwise; either way
     it is recorded."""
+    await _limit(request, "inbound")
     telephony = _telephony()
     engine_public_url()  # 503 now, rather than an answer the carrier cannot follow
+    await _check_signature(request)
     form = parse_qs((await request.body()).decode("utf-8", "replace"))
     factory = async_sessionmaker(request.app.state.db, expire_on_commit=False)
     carrier_id = (form.get("CallUUID") or [""])[0]
@@ -242,23 +302,36 @@ async def vobiz_stream(
 ) -> None:
     await websocket.accept()
     try:
-        legs, settings = await _setup(websocket.app, lang, employee, call)
+        await _limit(websocket, "stream")
         telephony = _telephony()
+    except HTTPException:
+        await websocket.close(code=1008, reason="too many requests")
+        return
     except ProviderNotConfiguredError as exc:
         await websocket.close(code=1011, reason=f"provider_not_configured: {exc.detail}"[:120])
-        return
-    except _NoPlanError:
-        await websocket.close(code=1008, reason="employee not found or not published")
         return
     try:
         start = await asyncio.wait_for(_read_start(websocket), START_TIMEOUT_S)
     except (TimeoutError, json.JSONDecodeError, KeyError):
         await websocket.close(code=1008, reason="no valid start message")
         return
-    # The stream URL is public, so only serve calls the carrier really has up.
+    # The stream URL is public: serve only the call our row was made for, and only while the
+    # carrier really has it up.
+    if not await _is_bound(websocket.app.state.db, call, employee, start.call_id):
+        logger.warning(f"vobiz stream for {start.call_id} does not match call {call!r}: refused")
+        await websocket.close(code=1008, reason="unknown call")
+        return
     if not await telephony.is_live(start.call_id):
         logger.warning(f"vobiz stream for unknown call {start.call_id} refused")
         await websocket.close(code=1008, reason="unknown call")
+        return
+    try:
+        legs, settings = await _setup(websocket.app, lang, employee, call)
+    except ProviderNotConfiguredError as exc:
+        await websocket.close(code=1011, reason=f"provider_not_configured: {exc.detail}"[:120])
+        return
+    except _NoPlanError:
+        await websocket.close(code=1008, reason="employee not found or not published")
         return
 
     async def hang_up() -> None:

@@ -61,7 +61,7 @@ Each row is ticked by the builder of the phase in brackets, and confirmed by tha
 - [x] Notifications (bell), auto-DNC confirmation, announcements — B6: bell, unread count, mark read, callback and auto-DNC confirmations; B7: low-balance bell entry; B13: announcements from the admin console reach every account's bell
 
 ## Billing and numbers [B7]
-- [x] Prepaid credits, 1 credit = ₹1, never expire, 50 free credits; top-up presets or custom amount by card or UPI
+- [x] Prepaid credits, 1 credit = ₹1, never expire, 50 free credits (after the owner verifies their phone); top-up presets or custom amount by card or UPI
 - [x] Billing from pickup only (ringing, busy and no-answer are free); per-second metering; tier rates; AI-use fee; hourly spend cap
 - [x] Low-balance email (about ₹50, at most once a day) and a warning on the credit chip
 - [x] Statements (this month and last), transactions with running balance, per-employee usage, invoices with GST

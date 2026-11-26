@@ -15,6 +15,7 @@ from pipecat.services.sarvam.tts import SarvamTTSService
 from pipecat.services.smallest.tts import SmallestTTSService
 from sqlalchemy.ext.asyncio import create_async_engine
 from tests.helpers import seed, signup
+from tests.test_vobiz_events import sign
 
 from app.providers.base import ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import VENDOR_KEYS
@@ -210,11 +211,16 @@ def test_answer_url_and_stream_url_carry_the_employee(api: TestClient, migrated_
     api.post(f"/employees/{employee['id']}/publish", headers=owner)
     with TestClient(engine_app) as engine:
         engine_app.state.db = create_async_engine(migrated_url)
-        missing = engine.post("/vobiz/answer?employee=" + str(uuid_zero()))
+        missing = engine.post("/vobiz/answer?employee=" + str(uuid_zero()), headers=answer())
         assert missing.status_code == 404
-        ok = engine.post(f"/vobiz/answer?employee={employee['id']}")
+        ok = engine.post(f"/vobiz/answer?employee={employee['id']}", headers=answer())
     assert ok.status_code == 200
     assert f"employee={employee['id']}" in ok.text and "lang=hi" in ok.text
+
+
+def answer() -> dict[str, str]:
+    """Vobiz's signature for the answer URL, under the test key the `api` fixture sets."""
+    return sign(PUBLIC + "/vobiz/answer", token="test-key")  # noqa: S106 - test credential
 
 
 def uuid_zero() -> str:

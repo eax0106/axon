@@ -5,9 +5,11 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from redis.asyncio import Redis
 
-from app import secretbox, totp
+from app import ratelimit, secretbox, totp
 from app.auth import issue_token
+from app.main import app
 from app.models import User
 from app.second_factor import RECOVERY_CODES, TRIES_PER_USER
 
@@ -243,6 +245,24 @@ def test_codes_are_limited_per_staff_member(
     assert (
         _verify(db_client, totp.code_at(seed, time.time())).status_code == 429
     )  # even a right one
+
+
+def test_codes_are_refused_while_redis_cannot_count_them_but_sign_in_still_works(
+    db_client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Security test 26 Nov, L1: a second factor that fails open could be guessed without end."""
+    _make_staff(db_client, migrated_url)
+    seed, _ = _enrol(db_client)
+    _last_step_back(migrated_url)
+    monkeypatch.delenv(ratelimit.OFF_ENV)
+    monkeypatch.setattr(app.state, "redis", Redis.from_url("redis://127.0.0.1:1/0"))
+    challenge = _login(db_client)["challenge"]  # sign-in fails open, as documented
+    right = totp.code_at(seed, time.time())
+    for route in ("verify", "confirm"):
+        answer = db_client.post(
+            f"/auth/second-factor/{route}", json={"challenge": challenge, "code": right}
+        )
+        assert answer.status_code == 503, route
 
 
 def test_a_signed_in_staff_session_is_not_downgraded_by_a_support_session(
