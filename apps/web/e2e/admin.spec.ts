@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { seriousA11yIssues } from "./a11y";
-import { sql } from "./stack";
+import { sql, totp } from "./stack";
 
 const signup = async (request: import("@playwright/test").APIRequestContext, prefix: string, account: string) => {
   const email = `${prefix}-${Date.now()}@example.com`;
@@ -25,7 +25,34 @@ test("staff: find an account, adjust credits, support session with banner, reply
   await request.post("/api/support/chat", { headers: { Authorization: `Bearer ${owner.token}` }, data: { body: `My calls are not starting (${owner.email}).` } });
   const staff = await signup(request, "f12s", "ALTERX");
   sql(`UPDATE users SET is_platform_admin = true WHERE email = '${staff.email}' RETURNING id`);
-  await page.addInitScript((t) => localStorage.getItem("axon.token") ?? localStorage.setItem("axon.token", t), staff.token);
+
+  // The first staff sign-in sets up the second factor; the next one asks for a code.
+  const signInAsStaff = async () => {
+    await page.goto("/sign-in");
+    await page.getByLabel("Email").fill(staff.email);
+    await page.getByLabel("Password").fill("correct horse battery");
+    await page.getByRole("button", { name: "Sign in" }).click();
+  };
+  await signInAsStaff();
+  await expect(page.getByRole("heading", { name: "Protect your staff account." })).toBeVisible();
+  const key = (await page.getByLabel("Setup key").textContent())!;
+  await page.getByLabel("Code from the app").fill(totp(key));
+  await page.getByRole("button", { name: "Turn on and sign in" }).click();
+  const recovery = page.getByRole("list", { name: "Recovery codes" }).getByRole("listitem");
+  await expect(recovery).toHaveCount(10);
+  const spare = (await recovery.first().textContent())!;
+  expect(await seriousA11yIssues(page)).toEqual([]);
+  await page.getByRole("button", { name: "I've saved them. Continue" }).click();
+  await expect(page.getByRole("link", { name: "Staff console" })).toBeVisible();
+  await page.evaluate(() => localStorage.removeItem("axon.token"));
+  await signInAsStaff();
+  await expect(page.getByRole("heading", { name: "One more step." })).toBeVisible();
+  await page.getByLabel("Code").fill("000000");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("alert")).toContainText("That code isn't right");
+  await page.getByLabel("Code").fill(spare); // the app's code from set-up is spent; a recovery code works once
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("link", { name: "Staff console" })).toBeVisible();
 
   await page.goto("/");
   await page.getByRole("link", { name: "Staff console" }).click();
