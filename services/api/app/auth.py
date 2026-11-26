@@ -25,6 +25,8 @@ IMPERSONATION_TTL = timedelta(minutes=30)
 # A staff member's password opens only this: five minutes to give the second factor.
 CHALLENGE_TTL = timedelta(minutes=5)
 CHALLENGE_AUDIENCE = "axon:second-factor"
+# Marks a session. Sessions from before it was added are refused, so everyone signs in once more.
+SESSION_TYPE = "session"
 MIN_SECRET_LEN = 32
 # Hashing takes tens of milliseconds of CPU: callers run it in a thread (argon2 releases the GIL)
 # so one sign-in never stalls every other request on the worker.
@@ -60,6 +62,7 @@ def issue_token(
     # `iat` keeps its fraction of a second, so a password change revokes every older session.
     claims: dict[str, object] = {
         "sub": str(user.id),
+        "typ": SESSION_TYPE,
         "iat": now.timestamp(),
         "exp": now + TOKEN_TTL,
     }
@@ -143,7 +146,8 @@ async def user_from_token(session: AsyncSession, token: str) -> User:
 async def _session_of(session: AsyncSession, token: str) -> tuple[User, uuid.UUID | None, bool]:
     """The user a token speaks for, the staff member impersonating them (if any), and whether it
     was signed in with a second factor. Refused when the token was issued before the user's last
-    password change, or when the impersonator is no longer platform staff."""
+    password change, or when the impersonator is no longer platform staff. Only a session counts:
+    the same secret signs other tokens, so the type is checked, not guessed from the claims."""
     try:
         claims = jwt.decode(
             token,
@@ -151,6 +155,8 @@ async def _session_of(session: AsyncSession, token: str) -> tuple[User, uuid.UUI
             algorithms=["HS256"],
             options={"require": ["sub", "exp", "iat"]},
         )
+        if claims.get("typ") != SESSION_TYPE:
+            raise jwt.InvalidTokenError("not a session")
         user_id = uuid.UUID(claims["sub"])
         impersonator_id = uuid.UUID(claims["imp"]) if "imp" in claims else None
     except (jwt.InvalidTokenError, ValueError) as exc:
