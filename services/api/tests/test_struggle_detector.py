@@ -246,3 +246,17 @@ def test_suggestions_are_the_accounts_own(
     assert client.post(f"{path}/{uuid.uuid4()}/dismiss", headers=owner).status_code == 404
     assert client.post(f"{path}/{gap['id']}/dismiss", headers=owner).status_code == 204
     assert client.post(f"{path}/{gap['id']}/dismiss", headers=owner).status_code == 409
+
+
+def test_open_suggestions_come_one_page_at_a_time(
+    api: tuple[TestClient, Gemini], migrated_url: str
+) -> None:
+    client, fake = api
+    employee, owner = setup(client, migrated_url)
+    analyse(migrated_url, fake, employee, [GAP, PUSHY])
+    path = f"/employees/{employee}/training/suggestions"
+    everything = [s["id"] for s in open_suggestions(client, owner, employee)]
+    first = client.get(f"{path}?limit=1", headers=owner).json()
+    second = client.get(f"{path}?limit=1&offset=1", headers=owner).json()
+    assert len(everything) == 2 and [first[0]["id"], second[0]["id"]] == everything
+    assert client.get(f"{path}?limit=0", headers=owner).status_code == 422

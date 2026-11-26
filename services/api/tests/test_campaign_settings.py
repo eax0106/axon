@@ -27,7 +27,7 @@ def test_the_defaults_are_the_nine_to_nine_window_two_lines_and_two_retries() ->
         7,
         "none",
     )
-    assert s.max_attempts == 3
+    assert s.max_attempts == 3 and s.retry_ladder == [60]
 
 
 @pytest.mark.parametrize(
@@ -47,6 +47,11 @@ def test_the_defaults_are_the_nine_to_nine_window_two_lines_and_two_retries() ->
         {"dedupe_days": 91},
         {"repeat": "monthly"},
         {"retry_mode": "whenever"},
+        {"retry_ladder": []},
+        {"retry_ladder": [10, 20, 30, 40, 50, 60]},  # 5 steps at most
+        {"retry_ladder": [0]},
+        {"retry_ladder": [1441]},
+        {"retry_ladder": ["tomorrow"]},
     ],
 )
 def test_settings_outside_the_limits_are_refused(bad: dict[str, object]) -> None:
@@ -97,15 +102,44 @@ def test_next_open_is_now_inside_the_window_and_the_next_opening_otherwise() -> 
 
 
 def test_a_retry_in_the_same_run_waits_the_gap_and_never_into_the_night() -> None:
-    s = CampaignSettings(retry_gap_min=60)
-    assert schedule.retry_time(ist(2, 11), s) == ist(2, 12)
-    assert schedule.retry_time(ist(2, 20, 30), s) == ist(3, 9)  # the gap ends after 9 PM
+    s = CampaignSettings(retry_ladder=[60])
+    assert schedule.retry_time(1, ist(2, 11), s) == ist(2, 12)
+    assert schedule.retry_time(1, ist(2, 20, 30), s) == ist(3, 9)  # the gap ends after 9 PM
 
 
 def test_a_retry_the_next_day_waits_for_the_window_of_a_later_day() -> None:
-    s = CampaignSettings(retry_mode="next_day", holidays=[date(2026, 11, 3)])
-    assert schedule.retry_time(ist(2, 11), s) == ist(4, 9)  # tomorrow is a holiday
-    assert schedule.retry_time(ist(2, 23, 0), CampaignSettings(retry_mode="next_day")) == ist(3, 9)
+    s = CampaignSettings(retry_ladder=["next_day"], holidays=[date(2026, 11, 3)])
+    assert schedule.retry_time(1, ist(2, 11), s) == ist(4, 9)  # tomorrow is a holiday
+    late = schedule.retry_time(1, ist(2, 23, 0), CampaignSettings(retry_ladder=["next_day"]))
+    assert late == ist(3, 9)
+
+
+def test_each_retry_waits_its_own_step_and_the_last_step_repeats() -> None:
+    s = CampaignSettings(retries=5, retry_ladder=[10, 120, "next_day"])
+    assert schedule.retry_time(1, ist(2, 11), s) == ist(2, 11, 10)
+    assert schedule.retry_time(2, ist(2, 11), s) == ist(2, 13)
+    assert schedule.retry_time(3, ist(2, 11), s) == ist(3, 9)
+    assert schedule.retry_time(4, ist(3, 11), s) == ist(4, 9)  # past the ladder: the last step
+
+
+@pytest.mark.parametrize(
+    ("saved", "ladder"),
+    [
+        ({"retry_mode": "same_run", "retry_gap_min": 45}, [45]),
+        ({"retry_mode": "next_day", "retry_gap_min": 45}, ["next_day"]),
+        ({"retry_gap_min": 30}, [30]),
+        ({"retry_mode": "next_day"}, ["next_day"]),
+    ],
+)
+def test_settings_saved_before_the_ladder_are_read_as_a_one_step_ladder(
+    saved: dict[str, object], ladder: list[object]
+) -> None:
+    before = {
+        k: v for k, v in CampaignSettings().model_dump(mode="json").items() if k != "retry_ladder"
+    }
+    s = schedule.of({**before, **saved})
+    assert s.retry_ladder == ladder
+    assert "retry_mode" not in s.model_dump() and "retry_gap_min" not in s.model_dump()
 
 
 def test_a_repeating_campaign_runs_again_at_the_same_time_a_day_or_week_on() -> None:

@@ -43,6 +43,24 @@ test("bulk: create, import with mapping, exclusions, consent, settings, constell
   await expect(page.getByText("+919876500099")).toBeVisible();
   expect(await seriousA11yIssues(page)).toEqual([]);
 
+  // Pick contacts and act on them together, then keep them as a saved list.
+  const table = page.getByRole("region", { name: "Contacts table" });
+  await expect(table.getByRole("checkbox")).toHaveCount(4); // three contacts and "select all"
+  await table.getByLabel("Select every contact shown").check();
+  const bar = page.getByRole("toolbar", { name: "Selected contacts" });
+  await expect(bar).toContainText("3 selected");
+  await bar.getByRole("button", { name: "Cancel calls" }).click();
+  await expect(page.getByText("Done for 3 contacts.")).toBeVisible();
+  await expect(table.getByRole("row").filter({ hasText: "Cancelled" })).toHaveCount(3);
+  await table.getByLabel("Select every contact shown").check();
+  await bar.getByRole("button", { name: "Retry" }).click();
+  await expect(table.getByRole("row").filter({ hasText: "Not called yet" })).toHaveCount(3);
+  await page.getByLabel("Who", { exact: true }).selectOption({ label: "Everyone in this campaign" });
+  await page.getByLabel("List name", { exact: true }).fill("Kokapet everyone");
+  await page.getByRole("button", { name: "Save list" }).click();
+  await expect(page.getByText("Saved 3 contacts to the list Kokapet everyone.")).toBeVisible();
+  expect(await seriousA11yIssues(page)).toEqual([]);
+
   // One dot per contact.
   await page.getByRole("tab", { name: "Live" }).click();
   await expect(page.locator("figure svg[role=img] circle")).toHaveCount(3);

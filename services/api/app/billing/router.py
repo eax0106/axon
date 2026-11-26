@@ -331,11 +331,19 @@ def _invoice(invoice: Invoice) -> dict[str, Any]:
 
 
 @router.get("/billing/invoices")
-async def list_invoices(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
+async def list_invoices(
+    user: CurrentUser,
+    session: Session,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[dict[str, Any]]:
+    """Newest first, one page at a time (`limit`, `offset`)."""
     rows = await session.scalars(
         select(Invoice)
         .where(Invoice.account_id == user.account_id)
-        .order_by(Invoice.issued_at.desc())
+        .order_by(Invoice.issued_at.desc(), Invoice.id)
+        .limit(limit)
+        .offset(offset)
     )
     return [_invoice(i) for i in rows]
 

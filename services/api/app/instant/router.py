@@ -20,6 +20,7 @@ from app.instant.public import SECRET_HEADER
 from app.instant.rules import DialerSettings
 from app.models import (
     Call,
+    CallEvent,
     CallStatus,
     Channel,
     DncEntry,
@@ -219,6 +220,7 @@ class QueueItem(BaseModel):
     state: str  # waiting, held, ringing, in_progress, or the final status
     scheduled_for: datetime | None
     ended_at: datetime | None
+    reason: str | None = None  # why a cancelled call was not dialled (do-not-call, lead gone...)
 
 
 def _state(call: Call) -> str:
@@ -248,6 +250,15 @@ async def queue(
         if limit is not None:
             query = query.limit(limit)
         rows = (await session.execute(query)).all()
+        cancelled = [c.id for c, _ in rows if c.status is CallStatus.CANCELED]
+        reasons: dict[uuid.UUID, str] = {}
+        if cancelled:  # one query for the whole page; the latest reason wins
+            found = await session.execute(
+                select(CallEvent.call_id, CallEvent.data["reason"].astext)
+                .where(CallEvent.call_id.in_(cancelled), CallEvent.type == "cancelled")
+                .order_by(CallEvent.id)
+            )
+            reasons = {call_id: why for call_id, why in found if why}
         return [
             QueueItem(
                 call_id=c.id,
@@ -258,6 +269,7 @@ async def queue(
                 state=_state(c),
                 scheduled_for=c.scheduled_for,
                 ended_at=c.ended_at,
+                reason=reasons.get(c.id),
             )
             for c, lead in rows
         ]

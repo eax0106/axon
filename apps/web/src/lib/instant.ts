@@ -20,6 +20,7 @@ export type QueueItem = {
   state: "waiting" | "held" | "ringing" | "in_progress" | string;
   scheduled_for: string | null;
   ended_at: string | null;
+  reason?: string | null;
 };
 export type IntakeEntry = {
   id: number;

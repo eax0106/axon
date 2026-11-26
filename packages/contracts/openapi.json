@@ -334,6 +334,35 @@
         "title": "Brief",
         "type": "object"
       },
+      "BulkBody": {
+        "properties": {
+          "action": {
+            "enum": [
+              "call-now",
+              "cancel",
+              "retry"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "contact_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Contact Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "contact_ids",
+          "action"
+        ],
+        "title": "BulkBody",
+        "type": "object"
+      },
       "CalendarBooking": {
         "description": "Offer free times and book one on the owner's Google Calendar, in Indian time.",
         "properties": {
@@ -1153,21 +1182,24 @@
             "title": "Retries",
             "type": "integer"
           },
-          "retry_gap_min": {
-            "default": 60,
-            "maximum": 1440.0,
-            "minimum": 1.0,
-            "title": "Retry Gap Min",
-            "type": "integer"
-          },
-          "retry_mode": {
-            "default": "same_run",
-            "enum": [
-              "same_run",
-              "next_day"
-            ],
-            "title": "Retry Mode",
-            "type": "string"
+          "retry_ladder": {
+            "items": {
+              "anyOf": [
+                {
+                  "maximum": 1440.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "const": "next_day",
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Retry Ladder",
+            "type": "array"
           },
           "skip_dnc": {
             "default": true,
@@ -3882,6 +3914,17 @@
             ],
             "title": "Phone"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
           "scheduled_for": {
             "anyOf": [
               {
@@ -4153,6 +4196,59 @@
           "items"
         ],
         "title": "Save",
+        "type": "object"
+      },
+      "SaveAsList": {
+        "properties": {
+          "contact_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 2000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Ids"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContactStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SaveAsList",
         "type": "object"
       },
       "ScriptBundle": {
@@ -8139,7 +8235,33 @@
     },
     "/billing/invoices": {
       "get": {
+        "description": "Newest first, one page at a time (`limit`, `offset`).",
         "operationId": "list_invoices_billing_invoices_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -8155,6 +8277,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -9982,6 +10114,64 @@
         "summary": "Add Manual"
       }
     },
+    "/campaigns/{campaign_id}/contacts/bulk": {
+      "post": {
+        "description": "Call now, cancel or retry the selected contacts, with the same rules as one at a time. A\ncontact the action does not fit is left as it is and listed with the reason.",
+        "operationId": "bulk_campaigns__campaign_id__contacts_bulk_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Bulk Campaigns  Campaign Id  Contacts Bulk Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bulk"
+      }
+    },
     "/campaigns/{campaign_id}/contacts/from-list": {
       "post": {
         "description": "Start from a saved list. Only the variables the script declares are carried over.",
@@ -10155,9 +10345,66 @@
         "summary": "Preview"
       }
     },
+    "/campaigns/{campaign_id}/contacts/save-as-list": {
+      "post": {
+        "description": "Keep some of this campaign's contacts as a saved list (for example everyone who asked to be\ncalled back), with their details, to start another campaign from. A list of that name is added\nto. The do-not-call list is checked again when the list is used.",
+        "operationId": "save_as_list_campaigns__campaign_id__contacts_save_as_list_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAsList"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Save As List Campaigns  Campaign Id  Contacts Save As List Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save As List"
+      }
+    },
     "/campaigns/{campaign_id}/contacts/{contact_id}/call-now": {
       "post": {
-        "description": "Put this contact first in line. The calling hours, the do-not-call list and the other\nchecks still apply, so out of hours it is called when the window opens.",
         "operationId": "call_now_campaigns__campaign_id__contacts__contact_id__call_now_post",
         "parameters": [
           {
@@ -10272,7 +10519,6 @@
     },
     "/campaigns/{campaign_id}/contacts/{contact_id}/retry": {
       "post": {
-        "description": "Another go from the first attempt, for a contact that is done, gave up or was cancelled.\nA skipped one stays skipped: a rule excluded it.",
         "operationId": "retry_contact_campaigns__campaign_id__contacts__contact_id__retry_post",
         "parameters": [
           {
@@ -14720,6 +14966,7 @@
     },
     "/employees/{employee_id}/training/suggestions": {
       "get": {
+        "description": "Open suggestions, newest first, one page at a time (`limit`, `offset`).",
         "operationId": "suggestions_employees__employee_id__training_suggestions_get",
         "parameters": [
           {
@@ -14730,6 +14977,29 @@
               "format": "uuid",
               "title": "Employee Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           }
         ],

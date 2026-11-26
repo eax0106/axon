@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { api, unwrap } from "../../lib/api";
-import { type Entry, KIND, useInvoices, useStatement, useTransactions, useUsage } from "../../lib/billing";
+import { type Entry, type Invoice, KIND, useInvoices, useStatement, useTransactions, useUsage } from "../../lib/billing";
 import { credits } from "../../lib/format";
 import { btn } from "../../ui/buttons";
 import { ErrorState, Skeleton } from "../../ui/states";
@@ -150,8 +150,18 @@ function Transactions() {
   );
 }
 
+const INVOICE_PAGE = 100; // the API's default page
+
 function Invoices() {
   const list = useInvoices();
+  const [older, setOlder] = useState<Invoice[]>([]);
+  const [end, setEnd] = useState(false);
+  const rows = [...(list.data ?? []), ...older];
+  async function more() {
+    const page = await unwrap<Invoice[]>(api.GET("/billing/invoices", { params: { query: { limit: INVOICE_PAGE, offset: rows.length } } }));
+    setOlder((o) => [...o, ...page]);
+    setEnd(page.length < INVOICE_PAGE);
+  }
   if (list.error) return <ErrorState error={list.error} retry={() => void list.refetch()} />;
   return (
     <section aria-labelledby="invoices">
@@ -159,7 +169,7 @@ function Invoices() {
       <p className="mt-1 text-sm text-ink-muted">One per top-up, with GST split out. Prices include GST.</p>
       {list.data?.length === 0 && <p className="mt-4 text-sm text-ink-muted">Your first top-up creates your first invoice.</p>}
       <ul className="mt-4 divide-y divide-line rounded-card border border-line">
-        {list.data?.map((i) => (
+        {rows.map((i) => (
           <li key={i.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
             <span className="num text-ink-strong">{i.number}</span>
             <span className="text-ink-muted">{date(i.issued_at)}</span>
@@ -170,6 +180,11 @@ function Invoices() {
           </li>
         ))}
       </ul>
+      {rows.length >= INVOICE_PAGE && !end && (
+        <button type="button" className={`${btn.quiet} mt-3`} onClick={() => void more()}>
+          Show older
+        </button>
+      )}
     </section>
   );
 }

@@ -112,5 +112,37 @@ export function tally(contacts: Pick<Contact, "status">[]): Record<Contact["stat
   return out;
 }
 
+export type BulkAction = "call-now" | "cancel" | "retry";
+export type BulkResult = { done: number; refused: { contact_id: string; reason: string }[]; campaign_status: Campaign["status"] };
+
+/** What a bulk action did, in one line: how many it was done for, and why the rest were left. */
+export function bulkSummary(r: BulkResult): string {
+  const done = `Done for ${r.done} ${r.done === 1 ? "contact" : "contacts"}.`;
+  if (r.refused.length === 0) return done;
+  const why = [...new Set(r.refused.map((x) => x.reason))].join("; ");
+  return `${done} ${r.refused.length} left as they were (${why}).`;
+}
+
+/** Who can be saved as a list without picking them one by one. */
+export const SAVE_GROUPS = [
+  { key: "callback", label: "Asked for a call-back", body: { outcome: "callback_requested" } },
+  { key: "interested", label: "Interested", body: { outcome: "interested" } },
+  { key: "not_interested", label: "Not interested", body: { outcome: "not_interested" } },
+  { key: "exhausted", label: "Never answered", body: { state: "exhausted" } },
+  { key: "done", label: "Answered", body: { state: "done" } },
+  { key: "all", label: "Everyone in this campaign", body: {} },
+] as const;
+
+export type RetryStep = CampaignSettings["retry_ladder"][number];
+export const MAX_LADDER_STEPS = 5;
+
+/** The wait before each of `retries` retries: step n of the ladder, and the last step once it runs out. */
+export function retryWaits(retries: number, ladder: RetryStep[]): RetryStep[] {
+  return Array.from({ length: ladder.length ? retries : 0 }, (_, i) => ladder[Math.min(i, ladder.length - 1)] as RetryStep);
+}
+
+/** A ladder step in words. */
+export const stepLabel = (step: RetryStep) => (step === "next_day" ? "the next open day" : step % 60 === 0 ? `${step / 60} h` : `${step} min`);
+
 /** Columns for a grid of `n` dots that stays roughly 2.5 times wider than tall. */
 export const gridColumns = (n: number) => Math.max(1, Math.ceil(Math.sqrt(n * 2.5)));
