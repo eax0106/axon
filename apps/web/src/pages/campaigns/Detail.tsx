@@ -169,6 +169,12 @@ function Start({ campaign: c, label = "Start" }: { campaign: Campaign; label?: s
               <div className="flex justify-between py-2"><dt className="text-ink-muted">Calls at once</dt><dd className="num">{k.parallel_calls} <span className="text-ink-muted">({k.number_channels} line{k.number_channels === 1 ? "" : "s"} on the number)</span></dd></div>
               <div className="flex justify-between py-2"><dt className="text-ink-muted">Working days needed</dt><dd className="num">{k.working_days_needed ?? "–"}</dd></div>
               <div className="flex justify-between py-2"><dt className="text-ink-muted">Cost if everyone answers</dt><dd className={`num ${k.enough_credits ? "" : "text-warn"}`}>{credits(k.estimated_cost)} of {credits(k.credit_balance)}</dd></div>
+              {k.parallel_calls < k.concurrency && (k.working_days_needed ?? 0) > 1 && (
+                <p className="py-2 text-xs text-ink-muted">
+                  The number has {k.number_channels} line{k.number_channels === 1 ? "" : "s"}, fewer than the {k.concurrency} calls at once you chose.{" "}
+                  <Link to="/numbers" className="text-accent">Add lines</Link> to finish sooner.
+                </p>
+              )}
               {k.queue_ahead > 0 && <p className="py-2 text-xs text-ink-muted">{k.queue_ahead} older campaign{k.queue_ahead === 1 ? "" : "s"} on this number go first.</p>}
             </dl>
           )}
