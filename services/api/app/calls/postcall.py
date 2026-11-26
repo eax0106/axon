@@ -175,7 +175,7 @@ async def _apply(
     call.summary, call.sentiment, call.outcome = result.summary, result.sentiment, result.outcome
     call.custom_outcome = result.custom_outcome
     call.captured = {k: v for k, v in result.captured.items() if v is not None}
-    call.voicemail = result.voicemail
+    call.voicemail = call.voicemail or result.voicemail  # the engine may have caught it live
     call.analysis_status, call.analysis_error = "done", None
     # The work is done, so the fee is taken even if it leaves the account at zero. Once per call:
     # only a skipped or failed analysis can be run again, and that never reached this line.

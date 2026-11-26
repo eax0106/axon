@@ -209,7 +209,7 @@ async def settle(
         return
     settings = campaign_settings.of(campaign.settings)
     contact.reason = None
-    if status is CallStatus.COMPLETED:
+    if status is CallStatus.COMPLETED and not call.voicemail:  # a machine is not an answer
         contact.status = ContactStatus.DONE
     elif hold_next:
         contact.status, contact.reason = ContactStatus.EXHAUSTED, UNKNOWN_OUTCOME

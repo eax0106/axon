@@ -78,8 +78,9 @@ async def settle(
     *,
     hold_next: bool = False,
 ) -> Call | None:
-    """Record how an attempt ended and, if it was not answered and the ladder allows, queue the
-    next attempt. Returns the next attempt, if any. Does not commit.
+    """Record how an attempt ended and, if it was not answered (or a machine answered: the engine
+    marks `voicemail` during the call) and the ladder allows, queue the next attempt. Returns the
+    next attempt, if any. Does not commit.
 
     `hold_next` is for an outcome nobody knows: the next attempt is queued but held (no time), so
     a person is never called again on a guess, and the lead is not lost either."""
@@ -98,7 +99,8 @@ async def settle(
     if call.campaign_id is not None:  # a campaign call: its contact has the retries, not the lead
         await campaign_contacts.settle(session, call, status, now, hold_next=hold_next)
         return None
-    if status is CallStatus.COMPLETED or call.lead_id is None or call.employee_id is None:
+    answered = status is CallStatus.COMPLETED and not call.voicemail  # a machine is not an answer
+    if answered or call.lead_id is None or call.employee_id is None:
         return None
     employee = await session.get(Employee, call.employee_id)
     if employee is None:

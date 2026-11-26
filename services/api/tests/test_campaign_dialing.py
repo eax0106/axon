@@ -154,6 +154,22 @@ def test_an_unanswered_contact_is_retried_after_the_gap_until_the_attempts_run_o
     assert tick(migrated_url, adapter, now + timedelta(days=1)) == []  # never a fourth
 
 
+def test_a_contact_whose_call_a_machine_answered_is_retried_like_no_answer(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    make_campaign(api, owner, employee, ["9876543210"], retries=1, retry_gap_min=30)
+    tick(migrated_url, adapter, NOW)
+    (call,) = open_calls(migrated_url)
+    # The engine heard an operator's announcement and marked the call during it.
+    sql(migrated_url, "UPDATE calls SET voicemail = true WHERE id = :c", {"c": call})
+    end_call(migrated_url, fake, adapter, call, NOW + timedelta(seconds=20), answered=True)
+    status, attempts, next_at, _ = contact_rows(migrated_url)[0][1:]
+    assert (status, attempts) == ("pending", 1)
+    assert next_at == NOW + timedelta(seconds=20, minutes=30)
+
+
 def test_a_retry_that_would_land_after_nine_in_the_evening_waits_for_the_morning(
     api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
 ) -> None:

@@ -32,6 +32,7 @@ class CallPlan:
     has_documents: bool = False  # the AI gets a tool to look things up in them
     max_call_s: int = 600  # the account's call-length cap
     extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
+    outbound: bool = False  # we placed the call: a machine may pick it up
 
 
 async def business_name(session: AsyncSession, employee: Employee) -> str:
