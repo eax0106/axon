@@ -141,3 +141,40 @@ def test_sarvam_llm_turns_reasoning_off() -> None:
     assert "reasoning_effort" in sent[0]
     assert sent[0]["reasoning_effort"] is None
     assert sent[0]["max_tokens"] == 1500
+
+
+def test_keyterms_reach_every_speech_to_text_vendor_that_takes_them() -> None:
+    terms = ("Skyline Habitats", "అనన్య", "Gachibowli")
+    hints = Delivery(keyterms=terms)
+    sarvam: Any = SERVICES[(ProviderKind.STT, "sarvam")]("te", hints)
+    soniox: Any = SERVICES[(ProviderKind.STT, "soniox")]("te", hints)
+    eleven: Any = SERVICES[(ProviderKind.STT, "elevenlabs")]("te", hints)
+
+    assert sarvam._keyterms == list(terms)
+    assert soniox._settings.context.terms == list(terms)
+    assert eleven._settings.keyterms == list(terms)
+    # No hints, nothing sent; and Saaras v3 takes none.
+    assert SERVICES[(ProviderKind.STT, "sarvam")]("te", Delivery())._keyterms is None  # type: ignore[attr-defined]
+    older: Any = SERVICES[(ProviderKind.STT, "sarvam")](
+        "te", Delivery(keyterms=terms, model="saaras:v3")
+    )
+    assert older._keyterms is None
+
+
+def test_a_calls_keyterms_go_to_every_stt_vendor_of_the_leg_and_no_other_leg() -> None:
+    from engine.legs import voice_legs
+
+    stt, llm, tts = voice_legs("te", keyterms=("Skyline Habitats",))
+    assert len(stt.services) > 1
+    for service in stt.services:
+        settings: Any = getattr(service, "_settings", None)
+        if isinstance(service, SmallestSTTService):
+            continue  # Smallest takes no hints
+        if isinstance(service, SonioxSTTService):
+            assert settings.context.terms == ["Skyline Habitats"]
+        elif isinstance(service, SarvamSTTService):
+            assert getattr(service, "_keyterms", None) == ["Skyline Habitats"]
+        else:
+            assert settings.keyterms == ["Skyline Habitats"]
+    for other in (*llm.services, *tts.services):
+        assert not getattr(other, "_keyterms", None)

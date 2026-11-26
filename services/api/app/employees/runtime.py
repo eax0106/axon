@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.schema import Action
-from app.employees import service
+from app.employees import keyterms, service
 from app.employees.compiler import CallContext, Knowledge, compile_prompt
 from app.employees.script import ScriptBundle
 from app.models import Account, Employee, EmployeeVersion, Voice
@@ -32,6 +32,7 @@ class CallPlan:
     has_documents: bool = False  # the AI gets a tool to look things up in them
     max_call_s: int = 600  # the account's call-length cap
     extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
+    keyterms: tuple[str, ...] = ()  # names the speech-to-text should hear right (keyterms.py)
 
 
 async def business_name(session: AsyncSession, employee: Employee) -> str:
@@ -94,6 +95,20 @@ async def plan_for(
     taught = await load_knowledge(session, employee.id)
     account = await session.get(Account, employee.account_id)
     assert account is not None  # FK guarantees it
+    values = variables or {}
+    hints = keyterms.build(
+        lead_name=values.get("name") or party_name,
+        business=account.business_name or account.name,
+        employee=employee.name,
+        # Only the lead details the script declares, as in the prompt: no other field leaves.
+        lead_values=[values[n] for n in bundle.pre_call_variables if n in values],
+        script=[
+            bundle.welcome_message,
+            bundle.agent_information,
+            *(text for section in bundle.sections for text in (section.title, section.body)),
+            *(text for item in bundle.faq for text in (item.question, item.answer)),
+        ],
+    )
     return CallPlan(
         employee_id=employee.id,
         account_id=employee.account_id,
@@ -114,4 +129,5 @@ async def plan_for(
         has_documents=taught.documents,
         max_call_s=account.max_call_s,
         extra_languages=tuple(employee.extra_languages),
+        keyterms=hints,
     )

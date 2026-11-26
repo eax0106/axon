@@ -116,7 +116,12 @@ async def _setup(
         down = await health.unhealthy(session, datetime.now(UTC))
         picked = await stack.load(session)
     legs = voice_legs(
-        plan.language, voice=plan.voice, speed=plan.tts_speed, down=down, stack=picked
+        plan.language,
+        voice=plan.voice,
+        speed=plan.tts_speed,
+        down=down,
+        stack=picked,
+        keyterms=plan.keyterms,
     )
     context = ActionContext(
         factory, plan.account_id, _call_id(call), plan.party_phone, plan.party_name
