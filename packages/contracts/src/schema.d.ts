@@ -3319,7 +3319,7 @@ export interface paths {
         };
         /**
          * Inventory
-         * @description Numbers on sale at our price (not the carrier's).
+         * @description Numbers on sale, each at its own price (the carrier's fee is never shown).
          */
         get: operations["inventory_numbers_inventory_get"];
         put?: never;
