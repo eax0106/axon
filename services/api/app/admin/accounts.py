@@ -143,7 +143,16 @@ async def account_detail(account_id: uuid.UUID, session: Session) -> dict[str, A
         "credit_balance": account.credit_balance,
         "max_call_s": account.max_call_s,
         "created_at": account.created_at,
-        "users": [{"id": u.id, "email": u.email, "role": u.role.value} for u in people],
+        "users": [
+            {
+                "id": u.id,
+                "email": u.email,
+                "role": u.role.value,
+                "staff": u.is_platform_admin,
+                "second_factor": u.totp_enabled_at is not None,
+            }
+            for u in people
+        ],
         "employees": await count(Employee.account_id == account_id),
         "numbers": await count(
             PhoneNumber.account_id == account_id, PhoneNumber.status != NumberStatus.RELEASED
@@ -208,3 +217,28 @@ async def adjust_credits(
     audit(session, staff, account_id, "credits_adjusted", amount=str(body.amount), note=body.note)
     await session.commit()
     return {"balance": posted.entry.balance_after}
+
+
+@router.post("/users/{user_id}/second-factor/reset", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_second_factor(user_id: uuid.UUID, staff: Staff, session: Session) -> None:
+    """For a staff member who lost both the authenticator app and the recovery codes: their next
+    sign-in sets up a new one, and every session they have is signed out. Never one's own (use a
+    recovery code), and logged under the staff member who did it."""
+    if user_id == staff.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "another staff member must reset yours")
+    user = await session.get(User, user_id, with_for_update=True)
+    if user is None or not user.is_platform_admin:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no staff member with that id")
+    user.totp_secret = user.totp_enabled_at = user.totp_last_step = None
+    user.recovery_code_hashes = []
+    user.tokens_valid_after = datetime.now(UTC)
+    session.add(
+        AuditEntry(
+            account_id=user.account_id,
+            actor_user_id=staff.id,
+            action="second_factor_reset",
+            target_type="user",
+            target_id=str(user.id),
+        )
+    )
+    await session.commit()

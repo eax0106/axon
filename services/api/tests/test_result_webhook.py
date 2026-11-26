@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.actions.schema import MASK
 from app.developer import events
+from app.secretbox import unseal
 
 from .conftest import sql
 from .developer_support import NOW, Receiver, announce, deliveries, tick, verify
@@ -180,7 +181,7 @@ def test_a_mask_cannot_be_used_for_another_host_or_when_nothing_is_stored(
     )
     assert moved.status_code == 422 and "another host" in moved.text
     stored = sql(migrated_url, "SELECT draft FROM employees WHERE id = :e", {"e": employee})
-    assert stored["result_webhook"]["secret"] == SECRET  # unchanged
+    assert unseal(stored["result_webhook"]["secret"]) == SECRET  # unchanged
 
     script = {
         "welcome_message": "hi",
@@ -204,7 +205,8 @@ def test_saving_the_script_without_the_field_leaves_the_hook_and_clear_removes_i
     saved = api.put(f"/employees/{employee}/script", json={"welcome_message": "new"}, headers=owner)
     assert saved.status_code == 200
     stored = sql(migrated_url, "SELECT draft FROM employees WHERE id = :e", {"e": employee})
-    assert stored["welcome_message"] == "new" and stored["result_webhook"]["secret"] == SECRET
+    assert stored["welcome_message"] == "new"
+    assert unseal(stored["result_webhook"]["secret"]) == SECRET
 
     cleared = api.put(f"/employees/{employee}/script", json={"result_webhook": None}, headers=owner)
     assert cleared.status_code == 200
@@ -235,7 +237,8 @@ def test_the_ai_edit_flow_does_not_see_the_secret_and_its_proposal_keeps_the_hoo
     # Saving the proposal as the editor does keeps the stored secret.
     assert api.put(f"/employees/{employee}/script", json=body, headers=owner).status_code == 200
     stored = sql(migrated_url, "SELECT draft FROM employees WHERE id = :e", {"e": employee})
-    assert stored["welcome_message"] == "edited" and stored["result_webhook"]["secret"] == SECRET
+    assert stored["welcome_message"] == "edited"
+    assert unseal(stored["result_webhook"]["secret"]) == SECRET
 
 
 def test_versions_carry_the_hook_and_a_restore_brings_it_back(
