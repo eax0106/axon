@@ -301,3 +301,16 @@ def test_a_stream_without_a_valid_start_is_closed(
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_text()
     assert closed.value.code == 1008
+
+
+def test_the_engine_refuses_to_start_without_the_secrets_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import secretbox
+
+    monkeypatch.setenv(secretbox.KEY_ENV, "")
+    with (
+        pytest.raises(secretbox.SecretsNotConfiguredError, match="AXON_SECRETS_KEY"),
+        TestClient(app),
+    ):
+        pass
