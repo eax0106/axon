@@ -231,6 +231,27 @@ class User(Base):
     created_at: Mapped[datetime] = _created()
 
 
+class EmailToken(Base):
+    """A one-time link sent by email: an invite to join an account as a member, or a password
+    reset. Only the SHA-256 of the random token is kept; it works once, until `expires_at`."""
+
+    __tablename__ = "email_tokens"
+    id: Mapped[uuid.UUID] = _pk()
+    account_id: Mapped[uuid.UUID] = _account_fk()
+    purpose: Mapped[str] = mapped_column(String(20))  # invite | password_reset
+    email: Mapped[str] = mapped_column(String(320))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # The user a reset is for; the one who sent an invite. Both gone when the user is.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    invited_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+
+
 class Voice(Base):
     __tablename__ = "voices"
     __table_args__ = (UniqueConstraint("provider", "provider_voice_id"),)

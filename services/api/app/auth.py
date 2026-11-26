@@ -209,6 +209,18 @@ async def not_impersonating(user: CurrentUser, request: Request) -> User:
 OwnUser = Annotated[User, Depends(not_impersonating)]
 
 
+def clean_email(value: str) -> str:
+    value = value.strip().lower()
+    local, _, domain = value.partition("@")
+    if not local or "." not in domain or " " in value:
+        raise ValueError("not an email address")
+    return value
+
+
+async def hash_password(password: str) -> str:
+    return await asyncio.to_thread(_hasher.hash, password)
+
+
 class Credentials(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(min_length=8, max_length=128)
@@ -216,11 +228,7 @@ class Credentials(BaseModel):
     @field_validator("email")
     @classmethod
     def _email(cls, value: str) -> str:
-        value = value.strip().lower()
-        local, _, domain = value.partition("@")
-        if not local or "." not in domain or " " in value:
-            raise ValueError("not an email address")
-        return value
+        return clean_email(value)
 
 
 class Signup(Credentials):

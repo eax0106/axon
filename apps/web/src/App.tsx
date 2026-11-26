@@ -9,6 +9,9 @@ import { btn } from "./ui/buttons";
 
 const SignIn = lazy(() => import("./pages/SignIn"));
 const SignUp = lazy(() => import("./pages/SignUp"));
+const Join = lazy(() => import("./pages/Join"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const Account = lazy(() => import("./pages/Account"));
 const Employees = lazy(() => import("./pages/employees/List"));
 const Hire = lazy(() => import("./pages/employees/Hire"));
@@ -79,6 +82,9 @@ export function App() {
           <Routes>
             <Route path="/sign-in" element={<SignIn />} />
             <Route path="/sign-up" element={<SignUp />} />
+            <Route path="/join" element={<Join />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route element={<Gate />}>
               <Route index element={<Overview />} />
               <Route path="account" element={<Account />} />
