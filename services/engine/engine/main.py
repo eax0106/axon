@@ -30,6 +30,7 @@ from app.providers.registry import require
 from app.secretbox import check as check_secrets_key
 from app.settings import engine_public_url, get_settings
 from app.training.tool import knowledge_tool
+from engine import vad
 from engine.call import CallSettings, run_call
 from engine.events import redis_sink
 from engine.legs import LLMLeg, ServiceLeg, voice_legs
@@ -54,6 +55,7 @@ SUPPORTED_LANGUAGES = {"te", "hi", "en"}
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     check_secrets_key()  # calls read employees' action keys: no key, no start (app/secretbox.py)
+    vad.params()  # a wrong voice-detector setting fails here, not on a caller
     settings = get_settings()
     app.state.redis = Redis.from_url(settings.redis_url)
     app.state.db = create_async_engine(settings.database_url, pool_pre_ping=True)

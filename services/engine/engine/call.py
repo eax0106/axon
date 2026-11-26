@@ -20,7 +20,6 @@ from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
 from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
-from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
     EndFrame,
     Frame,
@@ -59,6 +58,7 @@ from app.models import VoiceTier
 from app.providers.base import ObjectStorageProvider, ProviderKind, ProviderNotConfiguredError
 from app.providers.failover import billed_tier
 from app.providers.registry import require
+from engine import vad
 from engine.ambience import mixer_for
 from engine.events import CallObserver, EventSink, Usage
 from engine.goodbye import GoodbyeGate, PlayedStreamTap
@@ -310,7 +310,7 @@ async def run_call(
     aggregators = LLMContextAggregatorPair(
         LLMContext(messages=messages, tools=ToolsSchema(standard_tools=tools)),
         user_params=LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(),
+            vad_analyzer=vad.analyzer(),
             # The caller hears the whole opening (the recording notice) before being listened to.
             user_mute_strategies=(
                 [MuteUntilFirstBotCompleteUserMuteStrategy()] if settings.opening else []
