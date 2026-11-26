@@ -3882,6 +3882,17 @@
             ],
             "title": "Phone"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
           "scheduled_for": {
             "anyOf": [
               {

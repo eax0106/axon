@@ -86,7 +86,11 @@ function Card({ item: i, children }: { item: QueueItem; children: ReactNode }) {
         {i.state === "in_progress" && <span aria-hidden className="live-dot mt-1 size-2 rounded-full bg-accent" />}
       </div>
       <div className="mt-2 flex items-center justify-between">
-        <span className="text-xs text-ink-muted">{i.state === "waiting" || i.state === "held" || i.state === "ringing" || i.state === "in_progress" ? "" : i.status.replaceAll("_", " ")}</span>
+        <span className="text-xs text-ink-muted">
+          {i.state === "waiting" || i.state === "held" || i.state === "ringing" || i.state === "in_progress"
+            ? ""
+            : `${i.status.replaceAll("_", " ")}${i.reason ? `: ${i.reason}` : ""}`}
+        </span>
         {children}
       </div>
     </li>
