@@ -62,9 +62,10 @@ from engine.events import CallObserver, EventSink, Usage
 from engine.goodbye import GoodbyeGate, PlayedStreamTap
 from engine.legs import ServiceLeg
 from engine.pronounce import Pronouncer
-from engine.records import PROVIDER_FAILURE, CallRecorder
+from engine.records import PROVIDER_FAILURE, VOICEMAIL, CallRecorder
 from engine.turns import analyzer as turn_analyzer
 from engine.vobiz import checkpoint
+from engine.voicemail import CallVoicemail
 
 PIPELINE_RATE = 16000  # Smart Turn and Silero work at 16 kHz; the serializer converts to 8 kHz
 MIN_CALL_S, MAX_CALL_S = 10, 3600
@@ -105,6 +106,7 @@ class CallSettings:
     transfer_to: str | None = None  # a person the AI may hand the call to (an incoming call)
     tools: tuple[Tool, ...] = ()  # what the employee's actions let the AI do during the call
     extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
+    detect_voicemail: bool = False  # an outbound call: a machine pickup is hung up on
     pronunciations: tuple[tuple[str, str, str], ...] = ()  # (language, word, say like)
     is_test: bool = False  # tagged on the usage event so latency figures can leave it out
 
@@ -305,6 +307,16 @@ async def run_call(
             await task.queue_frame(EndFrame())
 
     gate = GoodbyeGate(end)
+    machine: list[CallVoicemail] = []
+    if settings.detect_voicemail:
+
+        async def voicemail_heard(words: str) -> None:
+            await live.emit({"type": VOICEMAIL, "quote": words})
+            if call_record is not None:
+                await call_record.voicemail()
+            await end(VOICEMAIL)
+
+        machine.append(CallVoicemail(settings.language, voicemail_heard))
     register_end_call(llm, gate)
     tools = [END_CALL]
     if transfer is not None:
@@ -337,10 +349,12 @@ async def run_call(
             transport.input(),
             PlayedStreamTap(gate),
             stt,
+            *(m.detector() for m in machine),  # what the callee says first: a person or a machine?
             CallerLanguage(settings.language, {settings.language, *settings.extra_languages, "en"}),
             aggregators.user(),
             llm,
             tts,
+            *(m.gate() for m in machine),  # the bot's first words wait for that answer
             UtteranceCheckpoints(gate),
             transport.output(),
             recorder,
