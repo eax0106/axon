@@ -6,6 +6,7 @@ there. The engine only writes what it saw: it never summarises or interprets.
 
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -49,6 +50,8 @@ class TranscriptBuilder:
     interrupted, or the caller speaks."""
 
     def __init__(self) -> None:
+        # Turns a voice's respellings back into the owner's words (engine.pronounce).
+        self.restore: Callable[[str], str] = lambda text: text
         self._turns: list[dict[str, Any]] = []
         self._bot: list[str] = []
         self._bot_at: str | None = None
@@ -70,7 +73,7 @@ class TranscriptBuilder:
 
     def _flush_bot(self) -> None:
         if self._bot:
-            text = " ".join(" ".join(self._bot).split())
+            text = self.restore(" ".join(" ".join(self._bot).split()))
             self._turns.append({"role": "assistant", "text": text, "at": self._bot_at})
         self._bot, self._bot_at = [], None
 

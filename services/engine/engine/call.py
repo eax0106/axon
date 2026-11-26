@@ -63,6 +63,7 @@ from engine.ambience import mixer_for
 from engine.events import CallObserver, EventSink, Usage
 from engine.goodbye import GoodbyeGate, PlayedStreamTap
 from engine.legs import ServiceLeg
+from engine.pronounce import Pronouncer
 from engine.records import PROVIDER_FAILURE, CallRecorder
 from engine.vobiz import checkpoint
 
@@ -108,6 +109,7 @@ class CallSettings:
     transfer_to: str | None = None  # a person the AI may hand the call to (an incoming call)
     tools: tuple[Tool, ...] = ()  # what the employee's actions let the AI do during the call
     extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
+    pronunciations: tuple[tuple[str, str, str], ...] = ()  # (language, word, say like)
 
     def __post_init__(self) -> None:
         if not MIN_CALL_S <= self.max_call_s <= MAX_CALL_S:
@@ -288,6 +290,12 @@ async def run_call(
         ),
     )
     stt, llm, tts = legs
+    pronouncer = Pronouncer(settings.pronunciations)
+    if pronouncer:
+        for voice in getattr(tts, "services", [tts]):  # every vendor: a failover keeps the list
+            voice.add_text_transformer(pronouncer.transform)
+        if call_record is not None:
+            call_record.transcript.restore = pronouncer.restore
     messages: list[Any] = (
         [{"role": "system", "content": settings.system_prompt}] if settings.system_prompt else []
     )

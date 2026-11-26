@@ -55,6 +55,20 @@ def test_the_agents_words_are_gathered_until_it_stops_speaking() -> None:
     assert all(t["at"] for t in turns)
 
 
+def test_the_transcript_keeps_the_owners_word_where_the_voice_said_a_respelling() -> None:
+    from engine.pronounce import Pronouncer
+
+    builder = TranscriptBuilder()
+    builder.restore = Pronouncer([("en", "Skyline", "Sky line")]).restore
+    for event in (
+        {"type": "bot_text", "text": "Welcome to Sky"},  # word by word, as Cartesia reports it
+        {"type": "bot_text", "text": "line Habitats."},
+        {"type": "bot_stopped_speaking"},
+    ):
+        builder.feed(event)
+    assert texts(builder.turns()) == [("assistant", "Welcome to Skyline Habitats.")]
+
+
 def test_an_interrupted_agent_turn_keeps_what_was_said_and_empty_events_are_ignored() -> None:
     turns = build(
         {"type": "bot_text", "text": "Let me explain our"},
