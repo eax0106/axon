@@ -82,7 +82,20 @@ def test_a_live_call_uses_the_published_script_not_the_draft(
     plan = run(migrated_url, lambda a: load_plan(a.state.db, employee["id"]))
     assert "Published hello" in plan.system_prompt and "Unpublished edit" not in plan.system_prompt
     assert plan.language == "te" and plan.voice is not None and plan.tts_speed == 1.0
+    assert plan.pronunciations == ()
     assert not plan.is_test  # a real call counts in the latency figures
+
+
+def test_the_plan_carries_the_pronunciation_list(api: TestClient, migrated_url: str) -> None:
+    owner = signup(api)
+    employee = hire(api, owner)
+    path = f"/employees/{employee['id']}"
+    entry = {"language": "te", "word": "Skyline", "say": "స్కై లైన్"}
+    api.put(path + "/settings", json={"pronunciations": [entry]}, headers=owner)
+    api.post(path + "/publish", headers=owner)
+
+    plan = run(migrated_url, lambda a: load_plan(a.state.db, employee["id"]))
+    assert plan.pronunciations == (("te", "Skyline", "స్కై లైన్"),)
 
 
 def test_nothing_published_means_no_plan_unless_it_is_a_test_call(

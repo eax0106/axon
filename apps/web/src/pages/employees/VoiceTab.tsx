@@ -5,6 +5,7 @@ import { LANGUAGES, type Language, type Settings, type Voice, useVoices, writes 
 import { btn } from "../../ui/buttons";
 import { ErrorState, Skeleton } from "../../ui/states";
 import { useDetail } from "./Detail";
+import { Pronunciations } from "./Pronunciations";
 
 const TIERS = { value: "Value", standard: "Standard", premium: "Premium" } as const;
 const AMBIENCE: Record<NonNullable<Settings["ambience"]>, string> = {
@@ -72,6 +73,9 @@ export default function VoiceTab() {
             )}
           </div>
         )}
+        <div className="mt-10">
+          <Pronunciations />
+        </div>
       </section>
 
       <aside className="space-y-8">

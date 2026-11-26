@@ -4760,6 +4760,8 @@ export interface components {
              * @default false
              */
             power_prompting: boolean;
+            /** Pronunciations */
+            pronunciations?: components["schemas"]["Pronunciation"][];
             /**
              * Style Pack
              * @default false
@@ -5328,6 +5330,22 @@ export interface components {
         PreviewBody: {
             /** Text */
             text: string;
+        };
+        /**
+         * Pronunciation
+         * @description Say `word` like `say` in this language's replies: a respelling, usually in the language's
+         *     own script. Only what the caller hears changes; transcripts keep `word`.
+         */
+        Pronunciation: {
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "te" | "hi" | "en";
+            /** Say */
+            say: string;
+            /** Word */
+            word: string;
         };
         /** Proposal */
         Proposal: {

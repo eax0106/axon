@@ -32,6 +32,8 @@ class CallPlan:
     has_documents: bool = False  # the AI gets a tool to look things up in them
     max_call_s: int = 600  # the account's call-length cap
     extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
+    # (language, word, say like): how the voice says a word; the transcript keeps the word.
+    pronunciations: tuple[tuple[str, str, str], ...] = ()
     keyterms: tuple[str, ...] = ()  # names the speech-to-text should hear right (keyterms.py)
     is_test: bool = False  # a test call (it runs the draft): left out of latency figures
 
@@ -130,6 +132,7 @@ async def plan_for(
         has_documents=taught.documents,
         max_call_s=account.max_call_s,
         extra_languages=tuple(employee.extra_languages),
+        pronunciations=tuple((p.language, p.word, p.say) for p in settings.pronunciations),
         keyterms=hints,
         is_test=use_draft,
     )
