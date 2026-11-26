@@ -2,7 +2,8 @@
 
 A lock is keyed on the email text, whether or not the account exists, so it tells an attacker
 nothing about who has an account. When Redis is down the attempt is answered anyway (the
-readiness probe already reports Redis); `AXON_AUTH_RATE_LIMIT=off` turns the limits off for a
+readiness probe already reports Redis), except where a guess is cheap to repeat and costly to
+lose: the staff second factor fails closed. `AXON_AUTH_RATE_LIMIT=off` turns the limits off for a
 load test.
 """
 
@@ -42,9 +43,17 @@ def _too_many(retry_after: int) -> HTTPException:
     )
 
 
-async def hit(request: HTTPConnection, key: str, limit: int, window_s: int = WINDOW_S) -> None:
+async def hit(
+    request: HTTPConnection,
+    key: str,
+    limit: int,
+    window_s: int = WINDOW_S,
+    *,
+    fail_closed: bool = False,
+) -> None:
     """Count one attempt on `key` and refuse with 429 once it is past `limit` in its window (which
-    starts at the first attempt). Counting before the check keeps parallel guesses inside it."""
+    starts at the first attempt). Counting before the check keeps parallel guesses inside it. With
+    `fail_closed`, an attempt Redis cannot count is refused (503) rather than let through."""
     if not _enabled():
         return
     try:
@@ -53,7 +62,12 @@ async def hit(request: HTTPConnection, key: str, limit: int, window_s: int = WIN
             pipe.incr(f"rl:{key}")
             pipe.ttl(f"rl:{key}")
             _, count, ttl = await pipe.execute()
-    except (RedisError, OSError):
+    except (RedisError, OSError) as exc:
+        if fail_closed:
+            log.warning("attempt refused: redis unavailable to count it")
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "try again in a moment"
+            ) from exc
         log.warning("rate limit skipped: redis unavailable")
         return
     if count > limit:
