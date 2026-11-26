@@ -18,8 +18,6 @@ from typing import Any
 from loguru import logger
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
-from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
-from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
     EndFrame,
@@ -64,13 +62,11 @@ from engine.events import CallObserver, EventSink, Usage
 from engine.goodbye import GoodbyeGate, PlayedStreamTap
 from engine.legs import ServiceLeg
 from engine.records import PROVIDER_FAILURE, CallRecorder
+from engine.turns import analyzer as turn_analyzer
 from engine.vobiz import checkpoint
 
 PIPELINE_RATE = 16000  # Smart Turn and Silero work at 16 kHz; the serializer converts to 8 kHz
 MIN_CALL_S, MAX_CALL_S = 10, 3600
-# When Smart Turn wrongly hears a finished question as unfinished, only this much silence ends
-# the turn. Pipecat's 3 s held such callers 3.7 s in local tests; 2 s still allows a long pause.
-TURN_SILENCE_S = 2.0
 # A caller silent for the whole idle timeout is asked once if they are still there, then given
 # this long to answer before a goodbye and the hang-up. Our own words; the Telugu and Hindi wait
 # for the native-speaker check (WIRING_CHECKLIST).
@@ -317,11 +313,7 @@ async def run_call(
             ),
             user_turn_strategies=UserTurnStrategies(
                 stop=[
-                    TurnAnalyzerUserTurnStopStrategy(
-                        turn_analyzer=LocalSmartTurnAnalyzerV3(
-                            params=SmartTurnParams(stop_secs=TURN_SILENCE_S)
-                        )
-                    )
+                    TurnAnalyzerUserTurnStopStrategy(turn_analyzer=turn_analyzer(settings.language))
                 ]
             ),
             user_idle_timeout=settings.silence_timeout_s,
