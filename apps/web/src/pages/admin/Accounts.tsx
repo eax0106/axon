@@ -6,13 +6,14 @@ import { api, supportSession, unwrap } from "../../lib/api";
 import { credits } from "../../lib/format";
 import { queryClient } from "../../lib/queries";
 import { btn } from "../../ui/buttons";
+import { Confirm } from "../../ui/Confirm";
 import { ErrorState, Skeleton } from "../../ui/states";
 import { Section, input, useWrite, when } from "./parts";
 
 type Row = { id: string; name: string; business_name: string | null; owner_email: string | null; credit_balance: string; created_at: string };
 type Detail = Omit<Row, "owner_email"> & {
   max_call_s: number;
-  users: { id: string; email: string; role: string }[];
+  users: { id: string; email: string; role: string; staff: boolean; second_factor: boolean }[];
   employees: number;
   numbers: number;
   calls_30d: number;
@@ -68,6 +69,7 @@ export function AccountDetail() {
   const detail = useQuery({ queryKey: ["admin", "account", id], queryFn: () => unwrap<Detail>(api.GET("/admin/accounts/{account_id}", path)) });
   const adjust = useWrite();
   const act = useWrite();
+  const reset = useWrite();
   if (detail.error) return <ErrorState error={detail.error} retry={() => void detail.refetch()} />;
   const a = detail.data;
   if (!a) return <Skeleton className="h-64 rounded-card" />;
@@ -92,6 +94,13 @@ export function AccountDetail() {
       supportSession.start(r.access_token);
       navigate("/");
       return "";
+    });
+  }
+  function resetSecondFactor(user: { id: string; email: string }) {
+    reset.write(async () => {
+      await unwrap(api.POST("/admin/users/{user_id}/second-factor/reset", { params: { path: { user_id: user.id } } }));
+      await queryClient.invalidateQueries({ queryKey: ["admin", "account", id] });
+      return `Reset. ${user.email} is signed out everywhere and sets up a new authenticator app at the next sign-in.`;
     });
   }
   return (
@@ -126,7 +135,25 @@ export function AccountDetail() {
       </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_2fr]">
         <Section id="people" title="People">
-          <ul className="space-y-2 text-sm">{a.users.map((u) => <li key={u.id} className="flex justify-between gap-3"><span className="truncate text-ink">{u.email}</span><span className="text-ink-muted">{u.role}</span></li>)}</ul>
+          <ul className="space-y-2 text-sm">
+            {a.users.map((u) => (
+              <li key={u.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <span className="truncate text-ink">{u.email}</span>
+                <span className="text-ink-muted">{u.role}{u.staff && ` · staff · second factor ${u.second_factor ? "on" : "not set up"}`}</span>
+                {u.staff && u.second_factor && (
+                  <Confirm
+                    trigger={<button type="button" className={btn.quiet} disabled={reset.busy}>Reset second factor</button>}
+                    title={`Reset ${u.email}'s second factor?`}
+                    body="Only for a staff member who lost both their authenticator app and their recovery codes, and whom you have confirmed is really them. They are signed out everywhere and set up a new app at their next sign-in. This is logged under your name."
+                    action="Reset"
+                    danger
+                    onConfirm={() => resetSecondFactor(u)}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+          {reset.outcome}
         </Section>
         <Section id="ledger" title="Ledger, latest 20">
           <ul className="divide-y divide-line text-sm">

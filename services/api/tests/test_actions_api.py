@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.actions.schema import MASK
 from app.providers.google import calendar as g_calendar
+from app.secretbox import unseal
 
 from .actions_support import (
     ALL_SCOPES,
@@ -87,9 +88,9 @@ def test_a_secret_never_leaves_the_server_and_a_masked_edit_keeps_it(
     shown = api.get(f"/employees/{employee}", headers=owner).json()["script"]
     assert api.put(f"/employees/{employee}/script", json=shown, headers=owner).status_code == 200
     stored = "SELECT draft->'actions'->0->'auth'->>'secret' FROM employees WHERE id = :e"
-    assert sql(migrated_url, stored, {"e": employee}) == SECRET
+    assert unseal(sql(migrated_url, stored, {"e": employee})) == SECRET
     assert put_actions(api, owner, employee, secret_http(description="Changed.")).status_code == 200
-    assert sql(migrated_url, stored, {"e": employee}) == SECRET
+    assert unseal(sql(migrated_url, stored, {"e": employee})) == SECRET
     # A masked secret for an action that never had one is refused, not saved as a password.
     unseen = http_action(name="other", auth={"kind": "bearer", "secret": MASK})
     refused = put_actions(api, owner, employee, unseen)
@@ -97,7 +98,7 @@ def test_a_secret_never_leaves_the_server_and_a_masked_edit_keeps_it(
     changed = secret_http()
     changed["auth"]["secret"] = "brand-new"  # noqa: S105
     put_actions(api, owner, employee, changed)
-    assert sql(migrated_url, stored, {"e": employee}) == "brand-new"
+    assert unseal(sql(migrated_url, stored, {"e": employee})) == "brand-new"
 
 
 def test_a_script_sent_without_actions_leaves_them_and_an_empty_list_clears_them(

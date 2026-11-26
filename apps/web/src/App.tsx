@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-route
 import { session } from "./lib/api";
 import { queryClient, useMe } from "./lib/queries";
 import { Shell } from "./shell/Shell";
+import { btn } from "./ui/buttons";
 
 const SignIn = lazy(() => import("./pages/SignIn"));
 const SignUp = lazy(() => import("./pages/SignUp"));
@@ -49,11 +50,25 @@ function Gate() {
   return <Shell />;
 }
 
-/** Only platform staff ever load the admin chunk; everyone else is sent home. */
+/** Only platform staff ever load the admin chunk; everyone else is sent home. A staff session from
+ *  before the second factor (or from before they were made staff) is asked to sign in again. */
 function StaffOnly() {
   const me = useMe();
   if (!me.data) return null;
-  return me.data.user.staff && !me.data.user.support_session ? <Admin /> : <Navigate to="/" replace />;
+  const { staff, support_session, second_factor } = me.data.user;
+  if (!staff || support_session) return <Navigate to="/" replace />;
+  if (!second_factor) {
+    return (
+      <div role="status" className="mx-auto max-w-md rounded-card border border-line p-6 text-sm">
+        <p className="text-ink-strong">Sign in again to use the staff console.</p>
+        <p className="mt-1 text-ink-muted">It needs a session signed in with your second factor.</p>
+        <button type="button" className={`${btn.primary} mt-4`} onClick={() => session.set(null)}>
+          Sign out and sign in again
+        </button>
+      </div>
+    );
+  }
+  return <Admin />;
 }
 
 export function App() {
