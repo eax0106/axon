@@ -19,10 +19,12 @@ from pydantic import BaseModel, StringConstraints
 from sqlalchemy import delete, select
 
 from app.auth import CurrentUser, jwt_secret, not_impersonating
+from app.billing import ledger
+from app.billing.config import free_signup_credits
 from app.db import Session
 from app.employees.limits import take
 from app.employees.router import OwnerUser
-from app.models import Account, DncEntry, NumberStatus, PhoneNumber, PhoneOtp
+from app.models import Account, DncEntry, LedgerKind, NumberStatus, PhoneNumber, PhoneOtp
 from app.numbers import channels
 from app.providers.base import ProviderKind, TelephonyProvider
 from app.providers.registry import require
@@ -126,6 +128,12 @@ async def verify_code(body: CodeBody, user: CurrentUser, session: Session) -> di
     account = await session.get(Account, user.account_id)
     assert account is not None  # FK guarantees it
     account.owner_phone, account.owner_phone_verified_at = otp.phone, datetime.now(UTC)
+    # The free credits wait for a phone proven real, so made-up sign-ups cannot farm them. The
+    # reference is the one sign-up used to post under, so an account gets them once, ever.
+    await ledger.post(
+        session, account.id, LedgerKind.BONUS, free_signup_credits(),
+        ref_type="signup", ref_id=str(account.id), note="free credits",
+    )  # fmt: skip
     await session.execute(delete(PhoneOtp).where(PhoneOtp.account_id == user.account_id))
     await session.commit()
     return {"owner_phone": account.owner_phone}

@@ -16,10 +16,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import ratelimit
-from app.billing import ledger
-from app.billing.config import free_signup_credits
 from app.db import Session
-from app.models import Account, AuditEntry, LedgerKind, Role, User
+from app.models import Account, AuditEntry, Role, User
 from app.settings import get_settings
 
 TOKEN_TTL = timedelta(hours=12)
@@ -247,11 +245,7 @@ async def signup(body: Signup, session: Session, request: Request) -> Token:
     await ratelimit.hit(request, key, ratelimit.SIGNUPS_PER_HOUR, window_s=3600)
     account = Account(name=body.account_name)
     session.add(account)
-    await session.flush()
-    await ledger.post(
-        session, account.id, LedgerKind.BONUS, free_signup_credits(),
-        ref_type="signup", ref_id=str(account.id), note="free credits",
-    )  # fmt: skip
+    await session.flush()  # free credits come with the owner's verified phone (phone_verify.py)
     user = User(
         account_id=account.id,
         email=body.email,
