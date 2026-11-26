@@ -10,7 +10,7 @@ from app.instant import policy
 from app.models import Employee, NumberType, PhoneNumber, Purpose
 
 from .conftest import sql
-from .helpers import run_db, seed, signup
+from .helpers import run_db, seed, signup, staff_session
 
 PURPOSES = ("promotional", "service", "transactional")
 TYPES = ("regular", "140", "1600")
@@ -51,9 +51,8 @@ def verdict(url: str, purpose: str, number_type: str, context: str) -> policy.Ve
 
 
 def admin(url: str, api: TestClient) -> dict[str, str]:
-    headers = signup(api, "admin@example.com", "Platform")
-    sql(url, "UPDATE users SET is_platform_admin = true WHERE email = 'admin@example.com'")
-    return headers
+    signup(api, "admin@example.com", "Platform")
+    return staff_session(url, "admin@example.com")
 
 
 def test_every_default_pairing_is_decided_as_the_table_says(

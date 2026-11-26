@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.employees import tickets
 from app.providers.google import calendar as g_calendar
 from app.providers.google import sheets as g_sheets
+from app.secretbox import unseal
 
 from .actions_support import REDIRECT, Google, connect_google
 from .conftest import sql
@@ -56,7 +57,7 @@ def test_connecting_stores_the_grant_and_shows_what_google_really_allowed(
     google.granted = g_calendar.SCOPES[0]  # the owner unticked Sheets and free/busy
     assert connect_google(client, owner) == {"connected": True, "calendar": True, "sheets": False}
     assert client.get("/integrations/google", headers=owner).json()["sheets"] is False
-    assert sql(migrated_url, "SELECT refresh_token FROM google_connections") == "rt-1"
+    assert unseal(sql(migrated_url, "SELECT refresh_token FROM google_connections")) == "rt-1"
     google.granted = "https://www.googleapis.com/auth/userinfo.email"
     again = client.get(
         "/integrations/google/consent-url",

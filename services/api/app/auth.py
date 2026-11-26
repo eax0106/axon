@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 import jwt
 from argon2 import PasswordHasher
@@ -24,6 +24,9 @@ from app.settings import get_settings
 
 TOKEN_TTL = timedelta(hours=12)
 IMPERSONATION_TTL = timedelta(minutes=30)
+# A staff member's password opens only this: five minutes to give the second factor.
+CHALLENGE_TTL = timedelta(minutes=5)
+CHALLENGE_AUDIENCE = "axon:second-factor"
 MIN_SECRET_LEN = 32
 # Hashing takes tens of milliseconds of CPU: callers run it in a thread (argon2 releases the GIL)
 # so one sign-in never stalls every other request on the worker.
@@ -46,9 +49,15 @@ def jwt_secret() -> str:
     return secret
 
 
-def issue_token(user: User, now: datetime | None = None, impersonator: User | None = None) -> str:
+def issue_token(
+    user: User,
+    now: datetime | None = None,
+    impersonator: User | None = None,
+    second_factor: bool = False,
+) -> str:
     """A session for `user`. With `impersonator` (platform staff) it is a short support session:
-    every change made with it is logged under the staff member's id."""
+    every change made with it is logged under the staff member's id. `second_factor` marks a
+    session signed in with a staff second factor; only such a session opens the admin console."""
     now = now or datetime.now(UTC)
     # `iat` keeps its fraction of a second, so a password change revokes every older session.
     claims: dict[str, object] = {
@@ -58,7 +67,42 @@ def issue_token(user: User, now: datetime | None = None, impersonator: User | No
     }
     if impersonator is not None:
         claims["imp"], claims["exp"] = str(impersonator.id), now + IMPERSONATION_TTL
+    if second_factor:
+        claims["mfa"] = True
     return jwt.encode(claims, jwt_secret(), algorithm="HS256")
+
+
+def issue_challenge(user: User, now: datetime | None = None) -> str:
+    """Proof that `user` gave the right password, good only for the second-factor routes (its
+    audience makes every other route refuse it)."""
+    now = now or datetime.now(UTC)
+    claims = {
+        "sub": str(user.id),
+        "aud": CHALLENGE_AUDIENCE,
+        "iat": now.timestamp(),
+        "exp": now + CHALLENGE_TTL,
+    }
+    return jwt.encode(claims, jwt_secret(), algorithm="HS256")
+
+
+async def user_of_challenge(session: AsyncSession, challenge: str) -> User:
+    """The staff member a challenge was issued to. Refused once it expires, after a password
+    change or a second-factor reset, or when the user is no longer staff."""
+    try:
+        claims = jwt.decode(
+            challenge,
+            jwt_secret(),
+            algorithms=["HS256"],
+            audience=CHALLENGE_AUDIENCE,
+            options={"require": ["sub", "exp", "iat", "aud"]},
+        )
+        user_id = uuid.UUID(claims["sub"])
+    except (jwt.InvalidTokenError, ValueError) as exc:
+        raise _unauthorized("sign in again") from exc
+    user = await session.get(User, user_id)
+    if user is None or not user.is_platform_admin or _revoked(user, claims["iat"]):
+        raise _unauthorized("sign in again")
+    return user
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -74,8 +118,9 @@ async def current_user(
 ) -> User:
     if credentials is None:
         raise _unauthorized("not authenticated")
-    user, impersonator = await _session_of(session, credentials.credentials)
+    user, impersonator, second_factor = await _session_of(session, credentials.credentials)
     request.state.impersonator = impersonator
+    request.state.second_factor = second_factor
     if impersonator is not None and request.method not in ("GET", "HEAD", "OPTIONS"):
         # Written before the change, in its own transaction: the attempt is logged even if the
         # change itself fails.
@@ -97,10 +142,10 @@ async def user_from_token(session: AsyncSession, token: str) -> User:
     return (await _session_of(session, token))[0]
 
 
-async def _session_of(session: AsyncSession, token: str) -> tuple[User, uuid.UUID | None]:
-    """The user a token speaks for, and the staff member impersonating them (if any). Refused when
-    the token was issued before the user's last password change, or when the impersonator is no
-    longer platform staff."""
+async def _session_of(session: AsyncSession, token: str) -> tuple[User, uuid.UUID | None, bool]:
+    """The user a token speaks for, the staff member impersonating them (if any), and whether it
+    was signed in with a second factor. Refused when the token was issued before the user's last
+    password change, or when the impersonator is no longer platform staff."""
     try:
         claims = jwt.decode(
             token,
@@ -119,7 +164,7 @@ async def _session_of(session: AsyncSession, token: str) -> tuple[User, uuid.UUI
         staff = await session.get(User, impersonator_id)
         if staff is None or not staff.is_platform_admin:
             raise _unauthorized("invalid or expired token")
-    return user, impersonator_id
+    return user, impersonator_id, claims.get("mfa") is True
 
 
 def _revoked(user: User, issued_at: float) -> bool:
@@ -131,9 +176,15 @@ CurrentUser = Annotated[User, Depends(current_user)]
 
 
 async def require_admin(user: CurrentUser, request: Request) -> User:
-    """Platform staff only; account roles never grant this, and neither does a support session."""
+    """Platform staff only; account roles never grant this, and neither does a support session.
+    The session must have been signed in with the staff second factor: one from before it was
+    required, or from before the user became staff, is sent back to sign in."""
     if not user.is_platform_admin or request.state.impersonator is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "platform admins only")
+    if not request.state.second_factor:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "sign in again with your second factor to use the console"
+        )
     return user
 
 
@@ -179,6 +230,16 @@ class Token(BaseModel):
     token_type: str = "bearer"  # noqa: S105 - OAuth2 token type, not a secret
 
 
+class SignIn(BaseModel):
+    """A session, or for staff a challenge: send it with a code to /auth/second-factor/verify, or
+    (`enrol`, the first sign-in after the second factor became required) set one up first."""
+
+    access_token: str | None = None
+    token_type: str = "bearer"  # noqa: S105 - OAuth2 token type, not a secret
+    second_factor: Literal["verify", "enrol"] | None = None
+    challenge: str | None = None
+
+
 @router.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 async def signup(body: Signup, session: Session, request: Request) -> Token:
     jwt_secret()  # fail with 503 before creating anything if tokens can't be issued
@@ -206,7 +267,7 @@ async def signup(body: Signup, session: Session, request: Request) -> Token:
 
 
 @router.post("/auth/login")
-async def login(body: Credentials, session: Session, request: Request) -> Token:
+async def login(body: Credentials, session: Session, request: Request) -> SignIn:
     jwt_secret()
     by_address = f"login:address:{ratelimit.client_address(request)}"
     by_email = f"login:email:{body.email}"
@@ -225,7 +286,12 @@ async def login(body: Credentials, session: Session, request: Request) -> Token:
     if _hasher.check_needs_rehash(user.password_hash):
         user.password_hash = await asyncio.to_thread(_hasher.hash, body.password)
         await session.commit()
-    return Token(access_token=issue_token(user))
+    if user.is_platform_admin:
+        enrolled = user.totp_enabled_at is not None
+        return SignIn(
+            second_factor="verify" if enrolled else "enrol", challenge=issue_challenge(user)
+        )
+    return SignIn(access_token=issue_token(user))
 
 
 class PasswordChange(BaseModel):
@@ -251,7 +317,8 @@ async def change_password(
     user.tokens_valid_after = now
     session.add(AuditEntry(account_id=user.account_id, actor_user_id=user.id, action="password"))
     await session.commit()
-    return Token(access_token=issue_token(user, now))
+    second_factor = request.state.second_factor
+    return Token(access_token=issue_token(user, now, second_factor=second_factor))
 
 
 @router.get("/accounts/me")
@@ -267,6 +334,8 @@ async def me(
             "role": user.role.value,
             # Staff see the admin console; a support session (staff acting as this user) never does.
             "staff": user.is_platform_admin,
+            # Whether this session was signed in with the staff second factor (opens the console).
+            "second_factor": bool(request.state.second_factor),
             "support_session": request.state.impersonator is not None,
         },
         # The verified owner phone ("" until verified): free test calls ring only this number.
