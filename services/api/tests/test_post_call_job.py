@@ -155,6 +155,17 @@ def test_a_pending_call_gets_its_summary_outcome_and_captured_fields(
     assert process(migrated_url) == 0  # a done call is never analysed twice
 
 
+def test_a_voicemail_the_engine_caught_live_stays_marked_after_the_analysis(
+    api: tuple[TestClient, Gemini], migrated_url: str
+) -> None:
+    client, _ = api
+    employee, _ = setup(client, migrated_url)
+    call = make_call(migrated_url, employee)
+    sql(migrated_url, "UPDATE calls SET voicemail = true WHERE id = :c", {"c": call})
+    assert process(migrated_url) == 1  # the model's answer says nothing of a voicemail
+    assert row(migrated_url, call, "voicemail") is True
+
+
 def test_an_unsupported_value_never_reaches_the_database(
     api: tuple[TestClient, Gemini], migrated_url: str
 ) -> None:
