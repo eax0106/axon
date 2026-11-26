@@ -16,13 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import CurrentUser
 from app.billing.config import rate_per_minute
 from app.billing.ledger import credits
-from app.calls.analysis import OUTCOMES
 from app.calls.csvsafe import to_csv
 from app.campaigns import contacts, importer
 from app.campaigns import settings as schedule
 from app.campaigns.lists import save_list
 from app.campaigns.router import counts, load_campaign
 from app.db import Session
+from app.employees.script import OUTCOMES
 from app.instant import rules
 from app.models import (
     Account,
