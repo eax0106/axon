@@ -42,6 +42,27 @@ def test_it_places_calls_up_to_the_campaigns_concurrency(
     assert states(migrated_url)[A] == "done" and states(migrated_url)[C] == "calling"
 
 
+def test_an_edit_to_a_running_campaign_applies_from_the_next_dial(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, LOCAL, concurrency=1)
+    assert len(tick(migrated_url, adapter, NOW)) == 1
+    settings = api.get(f"/campaigns/{campaign}", headers=owner).json()["settings"]
+    wider = api.patch(
+        f"/campaigns/{campaign}", json={"settings": {**settings, "concurrency": 3}}, headers=owner
+    )
+    assert wider.status_code == 200
+    assert len(tick(migrated_url, adapter, NOW + timedelta(seconds=5))) == 2  # 3 lines now
+    shut = {**settings, "concurrency": 3, "days": [1, 2, 3, 4]}  # NOW is a Monday
+    assert api.patch(f"/campaigns/{campaign}", json={"settings": shut}, headers=owner).is_success
+    for call in open_calls(migrated_url):
+        end_call(migrated_url, fake, adapter, call, NOW + timedelta(seconds=40), answered=True)
+    assert tick(migrated_url, adapter, NOW + timedelta(seconds=50)) == []  # Monday is shut now
+    assert len(fake.placed) == 3
+
+
 def test_the_call_is_a_bulk_call_of_the_campaign_with_its_lead_and_number(
     api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
 ) -> None:
@@ -156,6 +177,42 @@ def test_the_next_day_retry_mode_waits_for_a_later_day(
     assert contact_rows(migrated_url)[0][3] == datetime(2026, 11, 3, 3, 30, tzinfo=UTC)
     assert tick(migrated_url, adapter, NOW + timedelta(hours=6)) == []
     assert len(tick(migrated_url, adapter, datetime(2026, 11, 3, 3, 30, tzinfo=UTC))) == 1
+
+
+def test_each_retry_waits_its_step_of_the_ladder(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    make_campaign(api, owner, employee, ["9876543210"], retries=2, retry_ladder=[30, "next_day"])
+    tick(migrated_url, adapter, NOW)
+    end_call(migrated_url, fake, adapter, open_calls(migrated_url)[0], NOW + timedelta(seconds=20))
+    second = contact_rows(migrated_url)[0][3]
+    assert second == NOW + timedelta(seconds=20, minutes=30)  # step 1: half an hour
+    tick(migrated_url, adapter, second)
+    end_call(
+        migrated_url, fake, adapter, open_calls(migrated_url)[0], second + timedelta(minutes=1)
+    )
+    assert contact_rows(migrated_url)[0][3] == datetime(2026, 11, 3, 3, 30, tzinfo=UTC)  # step 2
+
+
+def test_a_campaign_saved_before_the_ladder_keeps_its_retry_mode(
+    api: TestClient, migrated_url: str, carrier: tuple[Carrier, VobizTelephony]
+) -> None:
+    fake, adapter = carrier
+    employee, owner = setup_bulk(api, migrated_url)
+    campaign = make_campaign(api, owner, employee, ["9876543210"], retries=1)
+    sql(
+        migrated_url,
+        "UPDATE campaigns SET settings = (settings - 'retry_ladder')"
+        ' || \'{"retry_mode": "next_day", "retry_gap_min": 60}\'::jsonb WHERE id = :id',
+        {"id": campaign},
+    )
+    read = api.get(f"/campaigns/{campaign}", headers=owner).json()["settings"]
+    assert read["retry_ladder"] == ["next_day"] and "retry_mode" not in read
+    tick(migrated_url, adapter, NOW)
+    end_call(migrated_url, fake, adapter, open_calls(migrated_url)[0], NOW + timedelta(seconds=30))
+    assert contact_rows(migrated_url)[0][3] == datetime(2026, 11, 3, 3, 30, tzinfo=UTC)
 
 
 def test_an_answered_call_finishes_the_contact_and_the_last_one_completes_the_campaign(

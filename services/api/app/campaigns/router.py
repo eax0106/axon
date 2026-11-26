@@ -46,6 +46,20 @@ CONSENT_STATEMENT = (
     "may lawfully call them, and that I will honour the do-not-call list."
 )
 EDITABLE = (CampaignStatus.DRAFT, CampaignStatus.SCHEDULED, CampaignStatus.PAUSED)
+# Settings a running campaign may change. The scheduler reads them every round and a retry is timed
+# when its call ends, so a change applies from the next dial. The do-not-call rules, the purpose
+# and the list stay as they were when the owner started it: change those after pausing.
+LIVE_SETTINGS = frozenset(
+    {
+        "window_start_min",
+        "window_end_min",
+        "days",
+        "holidays",
+        "concurrency",
+        "retries",
+        "retry_ladder",
+    }
+)
 CLOSED = (CampaignStatus.COMPLETED, CampaignStatus.CANCELED)
 
 
@@ -223,11 +237,15 @@ async def update(
     campaign_id: uuid.UUID, body: CampaignUpdate, user: CurrentUser, session: Session
 ) -> CampaignOut:
     campaign = await load_campaign(session, user, campaign_id, lock=True)
-    if campaign.status not in EDITABLE:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "pause the campaign before changing it; a finished one is fixed",
-        )
+    if campaign.status is CampaignStatus.RUNNING:
+        if locked := locked_while_running(campaign, body):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"pause the campaign to change {', '.join(locked)}; while it runs only the "
+                "calling hours, days, holidays, retries and calls at once can change",
+            )
+    elif campaign.status not in EDITABLE:
+        raise HTTPException(status.HTTP_409_CONFLICT, "a finished campaign is fixed")
     if body.name is not None:
         campaign.name = body.name
     if "purpose" in body.model_fields_set:
@@ -236,6 +254,18 @@ async def update(
         campaign.settings = body.settings.model_dump(mode="json")
     await session.commit()
     return await out(session, campaign)
+
+
+def locked_while_running(campaign: Campaign, body: CampaignUpdate) -> list[str]:
+    """The fields this edit would change that a running campaign keeps fixed."""
+    locked = []
+    if "purpose" in body.model_fields_set and body.purpose != campaign.purpose:
+        locked.append("purpose")
+    if body.settings is not None:
+        now = schedule.of(campaign.settings).model_dump(mode="json")
+        new = body.settings.model_dump(mode="json")
+        locked += sorted(k for k in new if new[k] != now.get(k) and k not in LIVE_SETTINGS)
+    return locked
 
 
 class Consent(BaseModel):

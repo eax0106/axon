@@ -62,7 +62,7 @@ export default function CampaignDetail() {
             <ContactTable campaignId={c.id} live={c.status === "running"} />
           </div>
         )}
-        {tab === "Settings" && <CampaignSettingsForm campaign={c} editable={editable} />}
+        {tab === "Settings" && <CampaignSettingsForm campaign={c} editable={editable} running={c.status === "running"} />}
         {tab === "Analytics" && <Analytics campaignId={c.id} />}
       </div>
     </div>

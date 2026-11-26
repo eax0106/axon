@@ -5,9 +5,10 @@ import math
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Response, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Date, cast, func, select, tuple_
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,10 +17,12 @@ from app.auth import CurrentUser
 from app.billing.config import rate_per_minute
 from app.billing.ledger import credits
 from app.calls.csvsafe import to_csv
-from app.campaigns import contacts
+from app.campaigns import contacts, importer
 from app.campaigns import settings as schedule
+from app.campaigns.lists import save_list
 from app.campaigns.router import counts, load_campaign
 from app.db import Session
+from app.employees.script import OUTCOMES
 from app.instant import rules
 from app.models import (
     Account,
@@ -31,6 +34,7 @@ from app.models import (
     ContactStatus,
     Employee,
     PhoneNumber,
+    User,
     Voice,
     VoiceTier,
 )
@@ -40,6 +44,8 @@ DEFAULT_CALL_SECONDS = (
     90  # a guess for the preview until the employee has answered calls of its own
 )
 CALL_GAP_SECONDS = 15  # dialing and ringing between two calls on one channel
+MAX_SELECTED = 500  # contacts one bulk action takes
+MAX_SAVED = 2000  # contacts picked by hand for one saved list (the screen shows up to 2,000)
 
 
 def reopen(campaign: Campaign, moved: int) -> None:
@@ -151,26 +157,67 @@ def _back_to_start(contact: CampaignContact) -> None:
     contact.next_attempt_at = None
 
 
+ContactAction = Literal["call-now", "cancel", "retry"]
+
+
+def _act(contact: CampaignContact, action: ContactAction) -> str | None:
+    """Do `action` to one contact, or say why it cannot be done to it. The same rules serve one
+    contact and a selection of them."""
+    state = contact.status
+    if action == "call-now":
+        # First in line. The calling hours, the do-not-call list and the other checks still apply,
+        # so out of hours it is called when the window opens.
+        if state in (ContactStatus.EXHAUSTED, ContactStatus.CANCELED):
+            _back_to_start(contact)
+        elif state not in (ContactStatus.PENDING, ContactStatus.CALLBACK):
+            return f"a {state.value} contact cannot be called now"
+        contact.priority, contact.next_attempt_at = True, None
+    elif action == "cancel":
+        if state not in (ContactStatus.PENDING, ContactStatus.CALLBACK, ContactStatus.EXHAUSTED):
+            return f"a {state.value} contact cannot be cancelled"
+        contact.status, contact.reason, contact.next_attempt_at = (
+            ContactStatus.CANCELED,
+            "cancelled by a person",
+            None,
+        )
+    else:
+        # Another go from the first attempt. A skipped contact stays skipped: a rule excluded it.
+        if state not in (ContactStatus.DONE, ContactStatus.EXHAUSTED, ContactStatus.CANCELED):
+            return f"a {state.value} contact cannot be retried"
+        _back_to_start(contact)
+    return None
+
+
+def _must_run(campaign: Campaign, action: ContactAction) -> None:
+    if action == "call-now" and campaign.status is not CampaignStatus.RUNNING:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "the campaign is not running: resume it first"
+        )
+
+
+async def _one(
+    session: AsyncSession,
+    user: User,
+    campaign_id: uuid.UUID,
+    contact_id: uuid.UUID,
+    action: ContactAction,
+) -> tuple[Campaign, CampaignContact]:
+    campaign = await load_campaign(session, user, campaign_id, lock=True)
+    contact = await _contact(session, campaign, contact_id)
+    _must_run(campaign, action)
+    if refused := _act(contact, action):
+        raise HTTPException(status.HTTP_409_CONFLICT, refused)
+    if action == "retry":
+        reopen(campaign, 1)
+    await session.commit()
+    return campaign, contact
+
+
 @router.post("/{campaign_id}/contacts/{contact_id}/call-now")
 async def call_now(
     campaign_id: uuid.UUID, contact_id: uuid.UUID, user: CurrentUser, session: Session
 ) -> dict[str, Any]:
-    """Put this contact first in line. The calling hours, the do-not-call list and the other
-    checks still apply, so out of hours it is called when the window opens."""
-    campaign = await load_campaign(session, user, campaign_id, lock=True)
-    contact = await _contact(session, campaign, contact_id)
-    if campaign.status is not CampaignStatus.RUNNING:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "the campaign is not running: resume it first"
-        )
-    if contact.status in (ContactStatus.EXHAUSTED, ContactStatus.CANCELED):
-        _back_to_start(contact)
-    elif contact.status not in (ContactStatus.PENDING, ContactStatus.CALLBACK):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, f"a {contact.status.value} contact cannot be called now"
-        )
-    contact.priority, contact.next_attempt_at = True, None
-    await session.commit()
+    campaign, _ = await _one(session, user, campaign_id, contact_id, "call-now")
     now = datetime.now(UTC)
     return {"dials_at": schedule.next_open(now, schedule.of(campaign.settings))}
 
@@ -179,22 +226,7 @@ async def call_now(
 async def cancel_contact(
     campaign_id: uuid.UUID, contact_id: uuid.UUID, user: CurrentUser, session: Session
 ) -> dict[str, Any]:
-    campaign = await load_campaign(session, user, campaign_id, lock=True)
-    contact = await _contact(session, campaign, contact_id)
-    if contact.status not in (
-        ContactStatus.PENDING,
-        ContactStatus.CALLBACK,
-        ContactStatus.EXHAUSTED,
-    ):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, f"a {contact.status.value} contact cannot be cancelled"
-        )
-    contact.status, contact.reason, contact.next_attempt_at = (
-        ContactStatus.CANCELED,
-        "cancelled by a person",
-        None,
-    )
-    await session.commit()
+    _, contact = await _one(session, user, campaign_id, contact_id, "cancel")
     return {"status": contact.status}
 
 
@@ -202,22 +234,96 @@ async def cancel_contact(
 async def retry_contact(
     campaign_id: uuid.UUID, contact_id: uuid.UUID, user: CurrentUser, session: Session
 ) -> dict[str, Any]:
-    """Another go from the first attempt, for a contact that is done, gave up or was cancelled.
-    A skipped one stays skipped: a rule excluded it."""
-    campaign = await load_campaign(session, user, campaign_id, lock=True)
-    contact = await _contact(session, campaign, contact_id)
-    if contact.status not in (
-        ContactStatus.DONE,
-        ContactStatus.EXHAUSTED,
-        ContactStatus.CANCELED,
-    ):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, f"a {contact.status.value} contact cannot be retried"
-        )
-    _back_to_start(contact)
-    reopen(campaign, 1)
-    await session.commit()
+    campaign, contact = await _one(session, user, campaign_id, contact_id, "retry")
     return {"status": contact.status, "campaign_status": campaign.status}
+
+
+class BulkBody(BaseModel):
+    contact_ids: list[uuid.UUID] = Field(min_length=1, max_length=MAX_SELECTED)
+    action: ContactAction
+
+
+@router.post("/{campaign_id}/contacts/bulk")
+async def bulk(
+    campaign_id: uuid.UUID, body: BulkBody, user: CurrentUser, session: Session
+) -> dict[str, Any]:
+    """Call now, cancel or retry the selected contacts, with the same rules as one at a time. A
+    contact the action does not fit is left as it is and listed with the reason."""
+    campaign = await load_campaign(session, user, campaign_id, lock=True)
+    _must_run(campaign, body.action)
+    wanted = list(dict.fromkeys(body.contact_ids))
+    found = {
+        c.id: c
+        for c in await session.scalars(
+            select(CampaignContact)
+            .where(CampaignContact.campaign_id == campaign.id, CampaignContact.id.in_(wanted))
+            .order_by(CampaignContact.id)
+            .with_for_update()
+        )
+    }
+    done, refused = 0, []
+    for contact_id in wanted:
+        contact = found.get(contact_id)
+        reason = "contact not found" if contact is None else _act(contact, body.action)
+        if reason is None:
+            done += 1
+        else:
+            refused.append({"contact_id": contact_id, "reason": reason})
+    if body.action == "retry":
+        reopen(campaign, done)
+    await session.commit()
+    return {"done": done, "refused": refused, "campaign_status": campaign.status}
+
+
+class SaveAsList(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    # Which contacts: the ones selected, and/or every one in a state or whose last call ended
+    # with an outcome. Nothing given saves the whole campaign.
+    contact_ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=MAX_SAVED)
+    state: ContactStatus | None = None
+    outcome: str | None = None
+
+    @field_validator("outcome")
+    @classmethod
+    def _outcome(cls, outcome: str | None) -> str | None:
+        if outcome is not None and outcome not in OUTCOMES:
+            raise ValueError(f"outcome is one of {', '.join(OUTCOMES)}")
+        return outcome
+
+
+@router.post("/{campaign_id}/contacts/save-as-list", status_code=status.HTTP_201_CREATED)
+async def save_as_list(
+    campaign_id: uuid.UUID, body: SaveAsList, user: CurrentUser, session: Session
+) -> dict[str, Any]:
+    """Keep some of this campaign's contacts as a saved list (for example everyone who asked to be
+    called back), with their details, to start another campaign from. A list of that name is added
+    to. The do-not-call list is checked again when the list is used."""
+    campaign = await load_campaign(session, user, campaign_id)
+    query = select(CampaignContact).where(CampaignContact.campaign_id == campaign.id)
+    if body.contact_ids is not None:
+        query = query.where(CampaignContact.id.in_(body.contact_ids))
+    if body.state is not None:
+        query = query.where(CampaignContact.status == body.state)
+    if body.outcome is not None:
+        last = (
+            select(Call.contact_id, Call.outcome)
+            .where(Call.campaign_id == campaign.id, Call.contact_id.is_not(None))
+            .ext(distinct_on(Call.contact_id))
+            .order_by(Call.contact_id, Call.created_at.desc())
+            .subquery()
+        )
+        query = query.join(last, last.c.contact_id == CampaignContact.id).where(
+            last.c.outcome == body.outcome
+        )
+    rows = [
+        importer.Row(c.phone, c.name, dict(c.variables))
+        for c in await session.scalars(query.order_by(CampaignContact.created_at))
+    ]
+    if not rows:
+        raise HTTPException(status.HTTP_409_CONFLICT, "no contacts match: nothing was saved")
+    saved = await save_list(session, user, body.name, rows)
+    await session.commit()
+    return {"list_id": saved.id, "name": saved.name, "contacts": len(rows)}
 
 
 # --- Export ------------------------------------------------------------------------------------

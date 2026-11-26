@@ -1259,6 +1259,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/campaigns/{campaign_id}/contacts/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk
+         * @description Call now, cancel or retry the selected contacts, with the same rules as one at a time. A
+         *     contact the action does not fit is left as it is and listed with the reason.
+         */
+        post: operations["bulk_campaigns__campaign_id__contacts_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/campaigns/{campaign_id}/contacts/from-list": {
         parameters: {
             query?: never;
@@ -1317,7 +1338,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/campaigns/{campaign_id}/contacts/{contact_id}/call-now": {
+    "/campaigns/{campaign_id}/contacts/save-as-list": {
         parameters: {
             query?: never;
             header?: never;
@@ -1327,10 +1348,28 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Call Now
-         * @description Put this contact first in line. The calling hours, the do-not-call list and the other
-         *     checks still apply, so out of hours it is called when the window opens.
+         * Save As List
+         * @description Keep some of this campaign's contacts as a saved list (for example everyone who asked to be
+         *     called back), with their details, to start another campaign from. A list of that name is added
+         *     to. The do-not-call list is checked again when the list is used.
          */
+        post: operations["save_as_list_campaigns__campaign_id__contacts_save_as_list_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/campaigns/{campaign_id}/contacts/{contact_id}/call-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Call Now */
         post: operations["call_now_campaigns__campaign_id__contacts__contact_id__call_now_post"];
         delete?: never;
         options?: never;
@@ -1364,11 +1403,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Retry Contact
-         * @description Another go from the first attempt, for a contact that is done, gave up or was cancelled.
-         *     A skipped one stays skipped: a rule excluded it.
-         */
+        /** Retry Contact */
         post: operations["retry_contact_campaigns__campaign_id__contacts__contact_id__retry_post"];
         delete?: never;
         options?: never;
@@ -4005,6 +4040,16 @@ export interface components {
              */
             language: "te" | "hi" | "en";
         };
+        /** BulkBody */
+        BulkBody: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "call-now" | "cancel" | "retry";
+            /** Contact Ids */
+            contact_ids: string[];
+        };
         /**
          * CalendarBooking
          * @description Offer free times and book one on the owner's Google Calendar, in Indian time.
@@ -4275,17 +4320,8 @@ export interface components {
              * @default 2
              */
             retries: number;
-            /**
-             * Retry Gap Min
-             * @default 60
-             */
-            retry_gap_min: number;
-            /**
-             * Retry Mode
-             * @default same_run
-             * @enum {string}
-             */
-            retry_mode: "same_run" | "next_day";
+            /** Retry Ladder */
+            retry_ladder?: (number | "next_day")[];
             /**
              * Skip Dnc
              * @default true
@@ -5439,6 +5475,16 @@ export interface components {
         Save: {
             /** Items */
             items: components["schemas"]["NewItem"][];
+        };
+        /** SaveAsList */
+        SaveAsList: {
+            /** Contact Ids */
+            contact_ids?: string[] | null;
+            /** Name */
+            name: string;
+            /** Outcome */
+            outcome?: string | null;
+            state?: components["schemas"]["ContactStatus"] | null;
         };
         /**
          * ScriptBundle
@@ -8567,6 +8613,43 @@ export interface operations {
             };
         };
     };
+    bulk_campaigns__campaign_id__contacts_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     add_from_list_campaigns__campaign_id__contacts_from_list_post: {
         parameters: {
             query?: never;
@@ -8658,6 +8741,43 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_as_list_campaigns__campaign_id__contacts_save_as_list_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveAsList"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
