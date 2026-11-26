@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { seriousA11yIssues } from "./a11y";
-import { sql, totp } from "./stack";
+import { freeCredits, sql, totp } from "./stack";
 
 const signup = async (request: import("@playwright/test").APIRequestContext, prefix: string, account: string) => {
   const email = `${prefix}-${Date.now()}@example.com`;
@@ -22,6 +22,7 @@ test("a non-staff user never sees or loads the staff console", async ({ page, re
 
 test("staff: find an account, adjust credits, support session with banner, reply, rules, system", async ({ page, request }) => {
   const owner = await signup(request, "f12c", "Madhapur Motors");
+  freeCredits(owner.token);
   await request.post("/api/support/chat", { headers: { Authorization: `Bearer ${owner.token}` }, data: { body: `My calls are not starting (${owner.email}).` } });
   const staff = await signup(request, "f12s", "ALTERX");
   sql(`UPDATE users SET is_platform_admin = true WHERE email = '${staff.email}' RETURNING id`);

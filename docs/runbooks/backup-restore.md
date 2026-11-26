@@ -4,6 +4,26 @@
 
 **A dump holds every customer secret** (webhook signing secrets, lead-intake secrets, Google and Meta tokens, tool keys, staff second-factor seeds) encrypted under `AXON_SECRETS_KEY` (see `docs/phases/b14-security-review.md`, F5), so a dump alone does not reveal them; it still holds every account's data. Keep the key apart from the dumps (never in the same storage), and keep dumps in encrypted storage with the access of the person who can already read the database. A restore needs the key that was in use when the dump was taken (or a key list that still contains it). `backups/` and `*.dump` are in `.gitignore`.
 
+## Production backups on the VM (encrypted)
+
+The `backup` service in `deploy/docker-compose.prod.yml` pipes `pg_dump` straight into `gpg`, encrypted to a public key you hold, and keeps a dump only when both finished (`deploy/backups/axon-<time>.dump.gpg`, mode 600). The VM has only the public key, so neither it nor anyone who takes its disk can read the backups. Without a usable key no dump is written and the service logs `backup FAILED`.
+
+Make the key pair once, on your own computer (not the VM), with GnuPG:
+
+```bash
+gpg --quick-gen-key "Axon backups <you@example.in>" default default never   # set a passphrase
+gpg --armor --export you@example.in > backup-public-key.asc                  # the public half
+gpg --armor --export-secret-keys you@example.in > axon-backup-private.asc    # keep offline, twice
+```
+
+Copy `backup-public-key.asc` into the `deploy` folder on the VM (the service reads it from there; changing the key is replacing that file and running `docker compose ... up -d backup`). Keep the private key and its passphrase off the VM and apart from the backups (a password manager and one offline copy): without it no backup can be restored. Dumps written before this change are plain `*.dump` files: delete them once an encrypted one exists.
+
+To restore one, decrypt it on a machine that has the private key, then restore the plain dump as below and delete it afterwards:
+
+```bash
+gpg --decrypt axon-20261126T020000Z.dump.gpg > axon.dump
+```
+
 ## Take a backup
 
 Needs the PostgreSQL 16+ client tools (`pg_dump`, `pg_restore`, `psql`) on PATH.
