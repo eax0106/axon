@@ -108,6 +108,7 @@ class CallSettings:
     transfer_to: str | None = None  # a person the AI may hand the call to (an incoming call)
     tools: tuple[Tool, ...] = ()  # what the employee's actions let the AI do during the call
     extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
+    is_test: bool = False  # tagged on the usage event so latency figures can leave it out
 
     def __post_init__(self) -> None:
         if not MIN_CALL_S <= self.max_call_s <= MAX_CALL_S:
@@ -355,6 +356,7 @@ async def run_call(
         transport.input(),
         vendor_of=names.get,
         listening=lambda: stt.vendor if isinstance(stt, ServiceLeg) else None,
+        test=settings.is_test,
     )
     # ponytail: PipelineTask/PipelineRunner are deprecated in Pipecat 1.3 (removed in 2.0); the
     # PipelineWorker/WorkerRunner pair never returned after EndFrame here. Migrate with 2.0.

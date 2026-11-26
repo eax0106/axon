@@ -135,6 +135,7 @@ async def _setup(
         tools=tuple(tools),
         max_call_s=plan.max_call_s,
         extra_languages=plan.extra_languages,
+        is_test=plan.is_test,
     )
 
 
