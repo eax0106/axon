@@ -5,9 +5,11 @@ import asyncio
 import pytest
 
 from app.providers.speech.cartesia import CartesiaTTS
+from app.providers.speech.elevenlabs import ElevenLabsSTT
 from app.providers.speech.gemini import EMBEDDING_DIMENSIONS, GeminiEmbedding, GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
 from app.providers.speech.smallest import SmallestSTT, SmallestTTS
+from app.providers.speech.soniox import SonioxSTT
 
 
 @pytest.mark.requires_keys("SARVAM_API_KEY")
@@ -20,6 +22,25 @@ def test_sarvam_accepts_our_key(adapter: type[SarvamSTT | SarvamTTS | SarvamLLM]
 @pytest.mark.parametrize("adapter", [SmallestSTT, SmallestTTS])
 def test_smallest_accepts_our_key(adapter: type[SmallestSTT | SmallestTTS]) -> None:
     asyncio.run(adapter().health())
+
+
+@pytest.mark.requires_keys("SONIOX_API_KEY")
+def test_soniox_accepts_our_key_and_offers_our_models() -> None:
+    import httpx
+
+    from app.providers.speech import soniox
+
+    asyncio.run(SonioxSTT().health())
+    reply = httpx.get(soniox.BASE + "/models", headers=SonioxSTT().headers(), timeout=10)
+    models = {m["id"]: m for m in reply.json()["models"]}
+    for model in (soniox.RT_MODEL, soniox.ASYNC_MODEL):
+        codes = {lang["code"] for lang in models[model]["languages"]}
+        assert {"te", "hi", "en"} <= codes, (model, codes)
+
+
+@pytest.mark.requires_keys("ELEVENLABS_API_KEY")
+def test_elevenlabs_accepts_our_key() -> None:
+    asyncio.run(ElevenLabsSTT().health())
 
 
 @pytest.mark.requires_keys("CARTESIA_API_KEY")

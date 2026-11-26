@@ -24,7 +24,8 @@ RECORDING_LINK_TTL_S = 900
 
 
 class CallFilters(BaseModel):
-    """Also what a user's remembered conversation filters are made of."""
+    """Also what a user's remembered conversation filters are made of. `outcome` matches a
+    built-in outcome (including the custom outcomes that count as it) or a custom outcome."""
 
     outcome: str | None = None
     sentiment: str | None = None
@@ -68,8 +69,9 @@ def apply(query: Select[Any], account_id: uuid.UUID, f: CallFilters) -> Select[A
     query = query.where(Call.account_id == account_id)
     if not f.include_test:
         query = query.where(Call.is_test.is_(False))
+    if f.outcome is not None:  # custom names never equal a built-in, so one value finds either
+        query = query.where(or_(Call.outcome == f.outcome, Call.custom_outcome == f.outcome))
     exact = {
-        Call.outcome: f.outcome,
         Call.sentiment: f.sentiment,
         Call.employee_id: f.employee_id,
         Call.channel: f.channel,
@@ -112,6 +114,7 @@ class CallRow(BaseModel):
     channel: str
     status: str
     outcome: str | None
+    custom_outcome: str | None  # the employee's own outcome; `outcome` is what it counts as
     sentiment: str | None
     duration_s: int | None
     credits_charged: float
@@ -149,6 +152,7 @@ def _row(
         channel=call.channel.value,
         status=call.status.value,
         outcome=call.outcome,
+        custom_outcome=call.custom_outcome,
         sentiment=call.sentiment,
         duration_s=call.duration_s,
         credits_charged=float(call.credits_charged),
@@ -191,6 +195,7 @@ EXPORT_COLUMNS = (
     "duration_s",
     "credits",
     "summary",
+    "custom_outcome",  # last, so existing spreadsheets keep their column positions
 )
 
 
@@ -216,6 +221,7 @@ async def export_calls(user: CurrentUser, session: Session, f: Filters) -> Respo
                 c.duration_s,
                 c.credits_charged,
                 c.summary,
+                c.custom_outcome,
             )
             for c, employee, phone, lead_name in rows
         ),
@@ -331,7 +337,7 @@ async def share_text(call_id: uuid.UUID, user: CurrentUser, session: Session) ->
         f"Call with {name or phone or 'a caller'}" + (f" ({phone})" if name and phone else ""),
         f"By {employee or 'an AI employee'} on "
         f"{call.created_at.astimezone(UTC):%d %b %Y, %H:%M} UTC",
-        f"Outcome: {call.outcome or 'not analysed yet'}"
+        f"Outcome: {call.custom_outcome or call.outcome or 'not analysed yet'}"
         + (f" | Sentiment: {call.sentiment}" if call.sentiment else ""),
     ]
     if call.summary:

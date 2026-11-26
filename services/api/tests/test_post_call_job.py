@@ -499,3 +499,18 @@ def test_a_batch_is_small_enough_for_the_workers_job_timeout() -> None:
     cron = next(job for job in worker.WorkerSettings.cron_jobs if job.name == "cron:post_call_tick")
     assert isinstance(cron.timeout_s, int | float)
     assert postcall.BATCH * 60 < cron.timeout_s  # three LLM calls at their 60 s limit fit
+
+
+def test_an_employees_own_outcome_is_stored_beside_the_built_in_it_counts_as(
+    api: tuple[TestClient, Gemini], migrated_url: str
+) -> None:
+    client, fake = api
+    employee, owner = setup(client, migrated_url)
+    own = {"name": "site_visit_booked", "description": "Agreed a date for a site visit"}
+    client.put(f"/employees/{employee}/settings", json={"outcomes": [own]}, headers=owner)
+    fake.text = model_reply(outcome="site_visit_booked")
+    call = make_call(migrated_url, employee)
+    process(migrated_url)
+    assert row(migrated_url, call, "outcome") == "interested"
+    assert row(migrated_url, call, "custom_outcome") == "site_visit_booked"
+    assert "- site_visit_booked: Agreed a date for a site visit" in fake.prompt()

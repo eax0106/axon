@@ -9,12 +9,14 @@ import openai
 import pytest
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.elevenlabs.stt import ElevenLabsRealtimeSTTService
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.sarvam.llm import SarvamLLMService
 from pipecat.services.sarvam.stt import SarvamSTTService
 from pipecat.services.sarvam.tts import SarvamTTSService
 from pipecat.services.smallest.stt import SmallestSTTService
 from pipecat.services.smallest.tts import SmallestTTSService
+from pipecat.services.soniox.stt import SonioxSTTService
 
 from app.providers.base import ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import ADAPTERS, VENDOR_KEYS
@@ -24,6 +26,8 @@ LANGUAGES = ["te", "hi", "en"]
 EXPECTED = [
     (ProviderKind.STT, "sarvam", SarvamSTTService),
     (ProviderKind.STT, "smallest", SmallestSTTService),
+    (ProviderKind.STT, "soniox", SonioxSTTService),
+    (ProviderKind.STT, "elevenlabs", ElevenLabsRealtimeSTTService),
     (ProviderKind.LLM, "gemini", GoogleLLMService),
     (ProviderKind.LLM, "sarvam", SarvamLLMService),
     (ProviderKind.TTS, "sarvam", SarvamTTSService),
@@ -58,7 +62,9 @@ def test_service_builds_for_each_language(
 ) -> None:
     built: Any = SERVICES[(kind, name)](language, Delivery())
     if kind is not ProviderKind.LLM:
-        assert str(built._settings.language).startswith(language)
+        settings = built._settings  # Soniox takes language hints, the first is the caller's
+        heard = settings.language_hints[0] if name == "soniox" else settings.language
+        assert str(heard).startswith(language)
     assert isinstance(built, service)
 
 
@@ -68,6 +74,8 @@ def test_models_and_voices_are_the_intended_ones() -> None:
         return built._settings
 
     assert settings(ProviderKind.STT, "sarvam").model == "saaras:v4"
+    assert settings(ProviderKind.STT, "soniox").model == "stt-rt-v6"
+    assert settings(ProviderKind.STT, "elevenlabs").model == "scribe_v2_realtime"
     tts = settings(ProviderKind.TTS, "sarvam")
     assert (tts.model, tts.voice) == ("bulbul:v3", "shubh")
     tts = settings(ProviderKind.TTS, "smallest")

@@ -107,9 +107,10 @@ def run_db(url: str, work: Any) -> Any:
 
 
 CALL_COLUMNS = {
-    "status", "direction", "channel", "outcome", "sentiment", "summary", "duration_s",
-    "credits_charged", "created_at", "started_at", "answered_at", "ended_at", "is_test",
-    "transcript", "captured", "recording_key", "analysis_status", "campaign_id", "attempt",
+    "status", "direction", "channel", "outcome", "custom_outcome", "sentiment", "summary",
+    "duration_s", "credits_charged", "created_at", "started_at", "answered_at", "ended_at",
+    "is_test", "transcript", "captured", "recording_key", "analysis_status", "campaign_id",
+    "attempt",
 }  # fmt: skip
 
 
