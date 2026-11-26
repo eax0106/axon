@@ -46,7 +46,7 @@ services/api/app/providers/
 | Database | PostgreSQL 16, with pgvector for knowledge search |
 | Queue and scheduling | Redis + Arq workers + a dialer/scheduler process |
 | Voice engine | Pipecat. Our own Vobiz serializer (start from Pipecat's Plivo one), Silero VAD + Smart Turn v3 |
-| Auth | Our own email/password with argon2 and JWT sessions; Google sign-in plug added later. Not tied to any vendor, so it works offline and on any host |
+| Auth | Our own email/password with argon2 and JWT sessions; staff add a TOTP second factor (standard library). Stored secrets encrypted with `cryptography` (Fernet). Google sign-in plug added later. Not tied to any vendor, so it works offline and on any host |
 | Frontend (Track 2) | React + Vite + TypeScript, Tailwind, Radix, Motion, GSAP, react-three-fiber |
 | Tooling | uv (Python), pnpm (Node 20 LTS), ruff, mypy, pytest, Playwright for UI later |
 
