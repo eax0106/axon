@@ -44,6 +44,12 @@ NON_PROVIDER_VARS = {
     "AXON_SELLER_ADDRESS",
     "AXON_SELLER_STATE_CODE",
     "AXON_INVOICE_PREFIX",
+    # Production on one VM (deploy/docker-compose.prod.yml)
+    "POSTGRES_PASSWORD",
+    "REDIS_PASSWORD",
+    "AXON_APP_DOMAIN",
+    "AXON_ENGINE_DOMAIN",
+    "AXON_ACME_EMAIL",
 }
 
 
