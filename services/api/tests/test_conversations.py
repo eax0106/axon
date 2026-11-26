@@ -259,3 +259,27 @@ def test_live_lists_only_calls_ringing_or_in_progress(api: TestClient, migrated_
     assert live.status_code == 200, live.text
     assert set(ids(live)) == {str(ringing), str(talking)} and live.json()["total"] == 2
     assert api.get("/calls", headers=owner).json()["total"] == 7  # the filter is off by default
+
+
+def test_a_custom_outcome_is_shown_filtered_and_exported(
+    api: TestClient, migrated_url: str
+) -> None:
+    owner, w = world(api, migrated_url)
+    visit = add_call(
+        migrated_url, w["account"], w["asha"], None, outcome="interested",
+        custom_outcome="site_visit_booked", created_at=T0 + timedelta(days=5),
+    )  # fmt: skip
+    rows = {i["id"]: i for i in api.get("/calls", headers=owner).json()["items"]}
+    assert rows[str(visit)]["custom_outcome"] == "site_visit_booked"
+    assert rows[w["calls"]["interested"]]["custom_outcome"] is None
+    assert ids(api.get("/calls?outcome=site_visit_booked", headers=owner)) == [str(visit)]
+    # The built-in filter still finds every call that counts as it.
+    assert sorted(ids(api.get("/calls?outcome=interested", headers=owner))) == sorted(
+        [str(visit), w["calls"]["interested"]]
+    )
+    export = api.get("/calls/export.csv?outcome=site_visit_booked", headers=owner).text
+    header, line = list(csv.reader(io.StringIO(export)))
+    assert line[header.index("outcome")] == "interested"
+    assert line[header.index("custom_outcome")] == "site_visit_booked"
+    share = api.get(f"/calls/{visit}/share-text", headers=owner).text
+    assert "Outcome: site_visit_booked" in share

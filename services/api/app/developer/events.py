@@ -85,21 +85,23 @@ def sample(type_: str) -> dict[str, Any]:
         "employee_id": ids["e"], "lead_id": ids["l"], "campaign_id": None,
         "phone": "+919876543210", "attempt": 1, "is_callback": False, "created_at": when,
         "started_at": when, "answered_at": when, "ended_at": "2026-01-15T10:32:10+00:00",
-        "duration_s": 130, "outcome": "interested", "sentiment": "positive",
+        "duration_s": 130, "outcome": "interested", "custom_outcome": "site_visit_booked",
+        "sentiment": "positive",
         "summary": "Asked about the 2BHK price and wants a site visit on Saturday.",
         "captured": {"budget": "80 lakh"}, "voicemail": False, "miss_reason": None,
     }  # fmt: skip
     if type_ == CALL_NOT_CONNECTED:
         call |= {
             "status": "no_answer", "answered_at": None, "duration_s": None, "outcome": None,
-            "sentiment": None, "summary": None, "captured": {},
+            "custom_outcome": None, "sentiment": None, "summary": None, "captured": {},
         }  # fmt: skip
     if type_ == INBOUND_ANSWERED:
         call |= {"direction": "inbound", "channel": "inbound"}
     if type_ == INBOUND_MISSED:
         call |= {
             "direction": "inbound", "channel": "inbound", "status": "no_answer",
-            "answered_at": None, "duration_s": None, "outcome": None, "sentiment": None,
+            "answered_at": None, "duration_s": None, "outcome": None, "custom_outcome": None,
+            "sentiment": None,
             "summary": None, "captured": {}, "miss_reason": "the business was closed",
         }  # fmt: skip
     if type_ in (CALL_COMPLETED, CALL_NOT_CONNECTED, INBOUND_ANSWERED, INBOUND_MISSED, TEST_PING):

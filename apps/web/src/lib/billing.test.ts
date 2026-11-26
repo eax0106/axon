@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type Entry, dailySpend, runwayDays } from "./billing";
+import { type Entry, dailySpend, runwayDays, runwayWords } from "./billing";
 
 const entry = (at: string, amount: string, kind = "call"): Entry => ({ id: 1, at, kind, amount, balance_after: "0", note: null });
 
@@ -27,5 +27,19 @@ describe("spend maths", () => {
   it("estimates runway from the average, and has none without spending", () => {
     expect(runwayDays(100, [10, 10, 10])).toBe(10);
     expect(runwayDays(100, [0, 0])).toBeNull();
+  });
+});
+
+describe("runwayWords", () => {
+  const now = Date.parse("2026-11-25T12:00:00+05:30");
+  const spent = (amount: string, daysAgo: number) => entry(new Date(now - daysAgo * 86_400_000).toISOString(), amount);
+  it("says how many days the balance lasts at the last 30 days' pace", () => {
+    // 30 credits over 30 days is 1 a day: 12 credits last 12 days.
+    expect(runwayWords(12, [spent("-15", 1), spent("-15", 20)], now)).toBe("about 12 days of calling left");
+    expect(runwayWords(1, [spent("-15", 1), spent("-15", 20)], now)).toBe("about 1 day of calling left");
+    expect(runwayWords(0.5, [spent("-30", 1)], now)).toBe("less than a day of calling left");
+  });
+  it("says nothing when nothing is being spent", () => {
+    expect(runwayWords(100, [], now)).toBeNull();
   });
 });

@@ -9,10 +9,13 @@ from typing import Any
 import httpx
 import pytest
 
+from app.providers.speech import soniox
 from app.providers.speech.cartesia import CartesiaTTS
+from app.providers.speech.elevenlabs import ElevenLabsSTT
 from app.providers.speech.gemini import GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
 from app.providers.speech.smallest import SmallestSTT, SmallestTTS
+from app.providers.speech.soniox import SonioxSTT
 from app.providers.telephony.vobiz import VobizTelephony
 
 WAV = b"RIFF\x24\x00\x00\x00WAVEfmt " + bytes(20)
@@ -36,6 +39,8 @@ def keys(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in (
         "SARVAM_API_KEY",
         "SMALLEST_API_KEY",
+        "SONIOX_API_KEY",
+        "ELEVENLABS_API_KEY",
         "CARTESIA_API_KEY",
         "GEMINI_API_KEY",
         "VOBIZ_AUTH_TOKEN",
@@ -232,3 +237,92 @@ def test_a_vendor_rejection_raises() -> None:
             "en",
             1.0,
         )
+
+
+@pytest.mark.parametrize("language", ["te", "hi", "en"])
+def test_elevenlabs_stt_posts_the_clip_as_a_form_and_reads_the_text(language: str) -> None:
+    reply = httpx.Response(200, json={"language_code": language, "text": "hello there"})
+    text, request = run(ElevenLabsSTT, reply, "transcribe", WAV, language)
+    assert text == "hello there"
+    assert str(request.url) == "https://api.elevenlabs.io/v1/speech-to-text"
+    assert request.headers["xi-api-key"] == "test-key"
+    body = request.content
+    assert b'name="model_id"\r\n\r\nscribe_v2\r\n' in body
+    assert f'name="language_code"\r\n\r\n{language}\r\n'.encode() in body
+    assert WAV in body
+
+
+def soniox_run(statuses: list[str], language: str = "te") -> tuple[Any, list[httpx.Request]]:
+    """Run SonioxSTT.transcribe against a fake Soniox that reports `statuses` while polled."""
+    seen: list[httpx.Request] = []
+    polls = iter(statuses)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        path, method = request.url.path, request.method
+        if method == "DELETE":
+            return httpx.Response(204)
+        if path == "/v1/files":
+            return httpx.Response(201, json={"id": "file-1"})
+        if path == "/v1/transcriptions":
+            return httpx.Response(201, json={"id": "job-1", "status": "queued"})
+        if path == "/v1/transcriptions/job-1":
+            status = next(polls)
+            return httpx.Response(
+                200, json={"id": "job-1", "status": status, "error_message": "bad audio"}
+            )
+        if path == "/v1/transcriptions/job-1/transcript":
+            return httpx.Response(200, json={"id": "job-1", "text": "మీ clinic timings ఏంటి?"})
+        raise AssertionError(f"unexpected {method} {path}")
+
+    adapter = SonioxSTT(transport=httpx.MockTransport(handler))
+    try:
+        result: Any = asyncio.run(adapter.transcribe(WAV, language))
+    except httpx.HTTPError as exc:
+        result = exc
+    return result, seen
+
+
+def test_soniox_stt_uploads_polls_reads_and_cleans_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(soniox, "POLL_S", 0.001)
+    text, seen = soniox_run(["processing", "completed"])
+    assert text == "మీ clinic timings ఏంటి?"
+    assert all(r.headers["authorization"] == "Bearer test-key" for r in seen)
+    create = next(r for r in seen if r.url.path == "/v1/transcriptions")
+    assert json.loads(create.content) == {
+        "model": "stt-async-v6",
+        "language_hints": ["te", "en"],
+        "file_id": "file-1",
+    }
+    deletes = [r.url.path for r in seen if r.method == "DELETE"]
+    assert deletes == ["/v1/transcriptions/job-1", "/v1/files/file-1"]
+
+
+def test_soniox_stt_failed_job_is_a_vendor_error_and_still_cleans_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(soniox, "POLL_S", 0.001)
+    error, seen = soniox_run(["error"])
+    assert isinstance(error, httpx.HTTPError)
+    assert "bad audio" in str(error)
+    assert [r.url.path for r in seen if r.method == "DELETE"] == [
+        "/v1/transcriptions/job-1",
+        "/v1/files/file-1",
+    ]
+
+
+def test_soniox_stt_gives_up_after_the_long_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(soniox, "POLL_S", 30.0)  # two polls fit in the 60 s budget
+
+    async def no_wait(_: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.providers.speech.soniox.asyncio.sleep", no_wait)
+    error, _ = soniox_run(["processing", "processing"])
+    assert isinstance(error, httpx.TimeoutException)
+
+
+def test_soniox_hints_always_include_english_for_indic_callers() -> None:
+    assert soniox.hints("te") == ["te", "en"]
+    assert soniox.hints("hi") == ["hi", "en"]
+    assert soniox.hints("en") == ["en"]

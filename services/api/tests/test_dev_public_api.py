@@ -106,6 +106,7 @@ def test_one_call_has_its_transcript_and_a_test_or_foreign_call_is_a_404(
     shown = api.get(f"/v1/calls/{call}", headers=key).json()
     assert shown["transcript"] == turns and shown["captured"] == {"budget": "80 lakh"}
     assert shown["phone"] == CALLER and shown["voicemail"] is False
+    assert shown["custom_outcome"] is None
     assert api.get(f"/v1/calls/{test_call}", headers=key).status_code == 404
     other = signup(api, email="b@example.com", account="Other")
     foreign = bearer(make_key(api, other))
@@ -193,3 +194,18 @@ def test_a_key_over_its_allowance_gets_429_and_another_key_does_not(
     over = api.get("/v1/account", headers=bearer(busy))
     assert 1 <= int(over.headers["retry-after"]) <= 60
     assert api.get("/v1/account", headers=bearer(calm)).status_code == 200
+
+
+def test_a_call_carries_the_employees_own_outcome_beside_the_built_in(
+    api: TestClient, migrated_url: str
+) -> None:
+    owner, key, employee = setup(api, migrated_url)
+    account = account_id(api, owner)
+    call = add_call(
+        migrated_url, account, employee, None, outcome="interested",
+        custom_outcome="site_visit_booked",
+    )  # fmt: skip
+    shown = api.get(f"/v1/calls/{call}", headers=key).json()
+    assert (shown["outcome"], shown["custom_outcome"]) == ("interested", "site_visit_booked")
+    listed = api.get("/v1/calls", headers=key).json()["data"]
+    assert listed[0]["custom_outcome"] == "site_visit_booked"

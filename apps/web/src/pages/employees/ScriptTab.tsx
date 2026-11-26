@@ -7,6 +7,7 @@ import { identifier, move, removeAt, replaceAt } from "../../lib/list";
 import { btn } from "../../ui/buttons";
 import { ErrorState } from "../../ui/states";
 import { useDetail } from "./Detail";
+import { Outcomes } from "./Outcomes";
 
 /** The parts of the script this editor owns. Actions and the result webhook are left out, so the
  *  API keeps them as they are (they have their own tabs, F10). */
@@ -140,6 +141,7 @@ function Editor() {
           onChange={(v) => set({ pre_call_variables: v })}
         />
         <Capture />
+        <Outcomes />
         <AiEdit onProposal={(next) => set(editable(next))} />
       </aside>
     </div>

@@ -177,3 +177,37 @@ def test_leads_are_scoped_to_the_account(api: TestClient, migrated_url: str) -> 
         assert (
             api.request(method, f"/leads/{lead}{path}", headers=other, json=body).status_code == 404
         ), path
+
+
+def test_a_custom_outcome_gets_its_own_board_column_filter_and_export(
+    api: TestClient, migrated_url: str
+) -> None:
+    owner, w = world(api, migrated_url)
+    sita = w["leads"]["b"]
+    add_call(
+        migrated_url, w["account"], w["asha"], sita, outcome="interested",
+        custom_outcome="site_visit_booked", created_at=T0 + timedelta(days=3),
+    )  # fmt: skip
+    board = api.get("/leads/board", headers=owner).json()
+    assert board["counts"] == {"interested": 1, "site_visit_booked": 1, "no_outcome": 1}
+    assert [c["phone"] for c in board["columns"]["site_visit_booked"]] == ["+919876543211"]
+    listed = {i["phone"]: i for i in api.get("/leads", headers=owner).json()["items"]}
+    sita_row = listed["+919876543211"]
+    assert (sita_row["last_outcome"], sita_row["last_custom_outcome"]) == (
+        "interested",
+        "site_visit_booked",
+    )
+    found = api.get("/leads?outcome=site_visit_booked", headers=owner).json()["items"]
+    assert [i["phone"] for i in found] == ["+919876543211"]
+    both = api.get("/leads?outcome=interested", headers=owner).json()["items"]
+    assert sorted(i["phone"] for i in both) == ["+919876543210", "+919876543211"]
+    export = api.get(
+        "/leads/export.csv?fields=phone,last_outcome,last_custom_outcome&outcome=site_visit_booked",
+        headers=owner,
+    ).text
+    assert list(csv.reader(io.StringIO(export))) == [
+        ["phone", "last_outcome", "last_custom_outcome"],
+        ["'+919876543211", "interested", "site_visit_booked"],  # + is escaped for spreadsheets
+    ]
+    detail = api.get(f"/leads/{sita}", headers=owner).json()
+    assert detail["calls"][0]["custom_outcome"] == "site_visit_booked"

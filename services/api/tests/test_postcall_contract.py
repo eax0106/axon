@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from app.calls import analysis
-from app.employees.script import CaptureField
+from app.employees.script import OUTCOMES, CaptureField
 from app.providers.speech.gemini import GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM
 from app.providers.storage.r2 import R2Storage
@@ -31,7 +31,7 @@ TURNS = [
 
 def check(result: analysis.Analysis) -> None:
     assert result.captured == {"city": "Hyderabad", "budget": None}  # the budget was never said
-    assert result.summary and result.outcome in analysis.OUTCOMES
+    assert result.summary and result.outcome in OUTCOMES
     assert result.callback_at is not None and result.callback_at > NOW
 
 

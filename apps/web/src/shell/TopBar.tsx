@@ -1,6 +1,7 @@
 import * as Popover from "@radix-ui/react-popover";
 import { Link } from "react-router";
 
+import { runwayWords, useTransactions } from "../lib/billing";
 import { ago, credits } from "../lib/format";
 import { type Notification, useLiveCalls, useMarkRead, useNotifications, useWallet } from "../lib/queries";
 import { Skeleton } from "../ui/states";
@@ -8,12 +9,15 @@ import { Skeleton } from "../ui/states";
 
 export function CreditChip() {
   const wallet = useWallet();
+  const low = wallet.data?.low ?? false;
+  const spend = useTransactions(200, low); // only fetched when the balance is low
   if (!wallet.data) return <Skeleton className="h-8 w-24 rounded-ctl" />;
-  const { balance, low } = wallet.data;
+  const { balance } = wallet.data;
+  const left = low && spend.data ? runwayWords(Number(balance), spend.data.items) : null;
   return (
     <Link
       to="/billing"
-      title={low ? "Credits are running low" : "Credit balance (1 credit = ₹1)"}
+      title={low ? `Credits are running low${left ? `: ${left}` : ""}` : "Credit balance (1 credit = ₹1)"}
       className={`inline-flex h-8 items-center gap-2 rounded-ctl border px-3 text-sm transition-colors duration-150 hover:border-line-accent ${
         low ? "border-warn/40 text-warn" : "border-line text-ink"
       }`}
@@ -21,7 +25,7 @@ export function CreditChip() {
       {low && <span aria-hidden className="size-1.5 rounded-full bg-warn" />}
       <span className="num">{credits(balance)}</span>
       <span className="text-ink-muted">credits</span>
-      {low && <span className="sr-only">, running low</span>}
+      {low && <span className="sr-only">, running low{left ? `, ${left}` : ""}</span>}
     </Link>
   );
 }

@@ -8,13 +8,17 @@ from app.models import VoiceTier
 from app.providers.base import Provider, ProviderKind, ProviderNotConfiguredError
 from app.providers.registry import ADAPTERS, TIER_TTS, VENDOR_KEYS, require, tts_for_tier
 from app.providers.speech.cartesia import CartesiaTTS
+from app.providers.speech.elevenlabs import ElevenLabsSTT
 from app.providers.speech.gemini import GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
 from app.providers.speech.smallest import SmallestSTT, SmallestTTS
+from app.providers.speech.soniox import SonioxSTT
 
 SPEECH = [
     (ProviderKind.STT, "sarvam", SarvamSTT),
     (ProviderKind.STT, "smallest", SmallestSTT),
+    (ProviderKind.STT, "soniox", SonioxSTT),
+    (ProviderKind.STT, "elevenlabs", ElevenLabsSTT),
     (ProviderKind.LLM, "gemini", GeminiLLM),
     (ProviderKind.LLM, "sarvam", SarvamLLM),
     (ProviderKind.TTS, "sarvam", SarvamTTS),

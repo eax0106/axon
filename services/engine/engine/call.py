@@ -31,6 +31,7 @@ from pipecat.frames.frames import (
     TTSSpeakFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
+    UserIdleTimeoutUpdateFrame,
 )
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -70,6 +71,20 @@ MIN_CALL_S, MAX_CALL_S = 10, 3600
 # When Smart Turn wrongly hears a finished question as unfinished, only this much silence ends
 # the turn. Pipecat's 3 s held such callers 3.7 s in local tests; 2 s still allows a long pause.
 TURN_SILENCE_S = 2.0
+# A caller silent for the whole idle timeout is asked once if they are still there, then given
+# this long to answer before a goodbye and the hang-up. Our own words; the Telugu and Hindi wait
+# for the native-speaker check (WIRING_CHECKLIST).
+STILL_THERE_S = 8.0
+STILL_THERE = {
+    "en": "Hello, are you still there?",
+    "hi": "हैलो, क्या आप अभी लाइन पर हैं?",
+    "te": "హలో, మీరు ఇంకా లైన్‌లో ఉన్నారా?",
+}
+SILENT_GOODBYE = {
+    "en": "I can't hear you, so I'll end the call now. Thank you, goodbye.",
+    "hi": "आपकी आवाज़ नहीं आ रही, इसलिए यह कॉल यहीं खत्म की जा रही है। धन्यवाद।",
+    "te": "మీ మాట వినిపించడం లేదు, అందుకే కాల్ ముగిస్తున్నాను. ధన్యవాదాలు.",
+}
 NO_REPLY = FunctionCallResultProperties(run_llm=False)
 # Spoken when a leg of the call has no vendor left, before the call is hung up. Our own words;
 # the Telugu and Hindi wait for the native-speaker check (WIRING_CHECKLIST).
@@ -442,9 +457,29 @@ async def run_call(
 
             register("transfer_to_human", transfer_to_human)
 
+    asked: list[bool] = []  # asked "are you still there?" since the caller last spoke
+
+    def say(lines: dict[str, str], interruptible: bool = True) -> TTSSpeakFrame:
+        frame = TTSSpeakFrame(lines.get(settings.language, lines["en"]))
+        frame.interruptible = interruptible
+        return frame
+
     @aggregators.user().event_handler("on_user_turn_idle")
     async def _silence(_: Any) -> None:
-        await end("silence")
+        if not asked:
+            asked.append(True)
+            await task.queue_frames(
+                [UserIdleTimeoutUpdateFrame(timeout=STILL_THERE_S), say(STILL_THERE)]
+            )
+            return
+        await task.queue_frame(say(SILENT_GOODBYE, interruptible=False))
+        await gate.request_end(lambda: end("silence"))
+
+    @aggregators.user().event_handler("on_user_turn_started")
+    async def _caller_spoke(*_: Any) -> None:
+        if asked:
+            asked.clear()
+            await task.queue_frame(UserIdleTimeoutUpdateFrame(timeout=settings.silence_timeout_s))
 
     @transport.event_handler("on_client_disconnected")
     async def _caller_gone(*_: Any) -> None:

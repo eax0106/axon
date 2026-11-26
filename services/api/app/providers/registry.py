@@ -21,9 +21,11 @@ from app.providers.kyc.vobiz import VobizKyc
 from app.providers.leads.meta_lead_ads import MetaLeadAds
 from app.providers.payments.razorpay import RazorpayPayments
 from app.providers.speech.cartesia import CartesiaTTS
+from app.providers.speech.elevenlabs import ElevenLabsSTT
 from app.providers.speech.gemini import GeminiEmbedding, GeminiLLM
 from app.providers.speech.sarvam import SarvamLLM, SarvamSTT, SarvamTTS
 from app.providers.speech.smallest import SmallestSTT, SmallestTTS
+from app.providers.speech.soniox import SonioxSTT
 from app.providers.storage.r2 import R2Storage
 from app.providers.telephony.vobiz import VobizTelephony
 from app.providers.whatsapp.aisensy import AiSensyWhatsApp
@@ -35,7 +37,12 @@ _GOOGLE = ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET")
 # kind -> vendor -> env keys the vendor needs. First vendor is the default.
 VENDOR_KEYS: dict[ProviderKind, dict[str, tuple[str, ...]]] = {
     ProviderKind.TELEPHONY: {"vobiz": _VOBIZ},
-    ProviderKind.STT: {"sarvam": ("SARVAM_API_KEY",), "smallest": ("SMALLEST_API_KEY",)},
+    ProviderKind.STT: {
+        "sarvam": ("SARVAM_API_KEY",),
+        "smallest": ("SMALLEST_API_KEY",),
+        "soniox": ("SONIOX_API_KEY",),
+        "elevenlabs": ("ELEVENLABS_API_KEY",),
+    },
     ProviderKind.LLM: {"gemini": ("GEMINI_API_KEY",), "sarvam": ("SARVAM_API_KEY",)},
     ProviderKind.EMBEDDING: {"gemini": ("GEMINI_API_KEY",)},
     ProviderKind.TTS: {
@@ -71,6 +78,8 @@ ADAPTERS: dict[tuple[ProviderKind, str], type[Provider]] = {
     (ProviderKind.NUMBER_KYC, "vobiz"): VobizKyc,
     (ProviderKind.STT, "sarvam"): SarvamSTT,
     (ProviderKind.STT, "smallest"): SmallestSTT,
+    (ProviderKind.STT, "soniox"): SonioxSTT,
+    (ProviderKind.STT, "elevenlabs"): ElevenLabsSTT,
     (ProviderKind.LLM, "gemini"): GeminiLLM,
     (ProviderKind.EMBEDDING, "gemini"): GeminiEmbedding,
     (ProviderKind.LLM, "sarvam"): SarvamLLM,
