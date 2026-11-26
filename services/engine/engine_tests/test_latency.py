@@ -10,10 +10,11 @@ from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
     Frame,
     MetricsFrame,
+    UserStoppedSpeakingFrame,
     VADUserStartedSpeakingFrame,
     VADUserStoppedSpeakingFrame,
 )
-from pipecat.metrics.metrics import TTFBMetricsData
+from pipecat.metrics.metrics import TTFBMetricsData, TurnMetricsData
 from pipecat.observers.base_observer import FramePushed
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
@@ -78,3 +79,65 @@ def test_first_byte_times_are_kept_per_leg() -> None:
     )
 
     assert observer.usage.as_event()["ttfb_ms"] == {"llm": [410], "tts": [120]}
+
+
+def _verdict(complete: bool) -> MetricsFrame:
+    return MetricsFrame(
+        data=[
+            TurnMetricsData(
+                processor="BaseSmartTurn",
+                is_complete=complete,
+                probability=0.9 if complete else 0.2,
+                e2e_processing_time_ms=12,
+            )
+        ]
+    )
+
+
+def test_each_turn_records_the_turn_detectors_wait_and_whether_the_fallback_ended_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [100.0]
+    clock = SimpleNamespace(monotonic=lambda: now[0], time=time.time)
+    monkeypatch.setattr(engine.events, "time", clock)
+    observer = CallObserver(_nothing, FrameProcessor())
+
+    # Smart Turn hears a finished turn: it ends almost at once.
+    _push(observer, VADUserStartedSpeakingFrame())
+    now[0] = 101.0
+    _push(observer, VADUserStoppedSpeakingFrame(stop_secs=0.2))  # quiet since 100.8
+    _push(observer, _verdict(True))
+    now[0] = 101.1
+    _push(observer, UserStoppedSpeakingFrame())
+    # Smart Turn calls a paused question unfinished: only the 2 s silence fallback ends it.
+    _push(observer, VADUserStartedSpeakingFrame())
+    now[0] = 105.0
+    _push(observer, VADUserStoppedSpeakingFrame(stop_secs=0.2))  # quiet since 104.8
+    _push(observer, _verdict(False))
+    now[0] = 106.85
+    _push(observer, UserStoppedSpeakingFrame())
+    _push(observer, UserStoppedSpeakingFrame())  # a turn end with no caller speech: not timed
+
+    assert observer.usage.as_event()["turn_ends"] == [
+        {"wait_ms": 300, "fallback": False},
+        {"wait_ms": 2050, "fallback": True},
+    ]
+
+
+def test_a_pause_the_caller_talks_through_drops_the_earlier_verdict() -> None:
+    observer = CallObserver(_nothing, FrameProcessor())
+
+    _push(observer, VADUserStartedSpeakingFrame())
+    _push(observer, VADUserStoppedSpeakingFrame(stop_secs=0.2))
+    _push(observer, _verdict(False))  # "unfinished", and the caller does go on
+    _push(observer, VADUserStartedSpeakingFrame())
+    _push(observer, VADUserStoppedSpeakingFrame(stop_secs=0.2))
+    _push(observer, _verdict(True))
+    _push(observer, UserStoppedSpeakingFrame())
+
+    assert [turn["fallback"] for turn in observer.usage.turn_ends] == [False]
+
+
+def test_a_test_call_is_tagged_on_its_usage_event() -> None:
+    assert CallObserver(_nothing, FrameProcessor(), test=True).usage.as_event()["test"] is True
+    assert CallObserver(_nothing, FrameProcessor()).usage.as_event()["test"] is False

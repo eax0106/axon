@@ -33,6 +33,7 @@ class CallPlan:
     max_call_s: int = 600  # the account's call-length cap
     extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
     keyterms: tuple[str, ...] = ()  # names the speech-to-text should hear right (keyterms.py)
+    is_test: bool = False  # a test call (it runs the draft): left out of latency figures
 
 
 async def business_name(session: AsyncSession, employee: Employee) -> str:
@@ -130,4 +131,5 @@ async def plan_for(
         max_call_s=account.max_call_s,
         extra_languages=tuple(employee.extra_languages),
         keyterms=hints,
+        is_test=use_draft,
     )

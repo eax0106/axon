@@ -10,6 +10,17 @@ const exec = (service: string, args: string[]) =>
 /** One SQL statement as the database owner; returns the first column of the first row. */
 export const sql = (query: string) => exec("postgres", ["psql", "-U", "axon", "-d", "axon", "-Atc", query]).split("\n")[0] ?? "";
 
+/** Post the free credits as verifying the owner's phone does (phone_verify.py), for the account
+ * whose session `token` is: e2e accounts cannot verify a phone (no carrier). */
+export function freeCredits(token: string): void {
+  const user = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()).sub as string;
+  if (!/^[0-9a-f-]{36}$/.test(user)) throw new Error("not a session token");
+  sql(
+    `WITH a AS (UPDATE accounts SET credit_balance = credit_balance + 50 WHERE id = (SELECT account_id FROM users WHERE id = '${user}') RETURNING id, credit_balance) ` +
+      `INSERT INTO wallet_ledger (account_id, kind, amount, balance_after, ref_type, ref_id, note) SELECT id, 'bonus', 50, credit_balance, 'signup', id::text, 'free credits' FROM a RETURNING id`,
+  );
+}
+
 /** Publish on a call's live channel exactly as the engine does (engine/events.py redis_sink). */
 export const publish = (callId: string, event: Record<string, unknown>) =>
   exec("redis", ["redis-cli", "PUBLISH", `call:${callId}:events`, JSON.stringify({ at: Date.now() / 1000, ...event })]);

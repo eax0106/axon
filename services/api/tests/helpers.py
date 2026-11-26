@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -33,12 +34,37 @@ def seed(url: str) -> None:
 
 
 def signup(
-    client: TestClient, email: str = "owner@example.com", account: str = "Acme"
+    client: TestClient,
+    email: str = "owner@example.com",
+    account: str = "Acme",
+    *,
+    free_credits: bool = True,
 ) -> dict[str, str]:
+    """A new owner. With `free_credits` the account starts where one with a verified phone does
+    (phone_verify.py posts them), so tests about something else need not verify a phone."""
     body = {"email": email, "password": PASSWORD, "account_name": account}
     response = client.post("/auth/signup", json=body)
     assert response.status_code == 201, response.text
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    if free_credits:
+        _free_credits(os.environ["DATABASE_URL"], account_id(client, headers))
+    return headers
+
+
+def _free_credits(url: str, account: str) -> None:
+    from app.billing import ledger
+    from app.billing.config import free_signup_credits
+    from app.models import LedgerKind
+
+    async def work(factory: Any) -> None:
+        async with factory() as session:
+            await ledger.post(
+                session, uuid.UUID(account), LedgerKind.BONUS, free_signup_credits(),
+                ref_type="signup", ref_id=account, note="free credits",
+            )  # fmt: skip
+            await session.commit()
+
+    run_db(url, work)
 
 
 def account_id(client: TestClient, headers: dict[str, str]) -> str:
