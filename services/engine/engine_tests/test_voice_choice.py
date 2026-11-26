@@ -82,6 +82,7 @@ def test_a_live_call_uses_the_published_script_not_the_draft(
     plan = run(migrated_url, lambda a: load_plan(a.state.db, employee["id"]))
     assert "Published hello" in plan.system_prompt and "Unpublished edit" not in plan.system_prompt
     assert plan.language == "te" and plan.voice is not None and plan.tts_speed == 1.0
+    assert not plan.is_test  # a real call counts in the latency figures
 
 
 def test_nothing_published_means_no_plan_unless_it_is_a_test_call(
@@ -101,6 +102,7 @@ def test_nothing_published_means_no_plan_unless_it_is_a_test_call(
     web = api.post(f"/employees/{employee['id']}/web-test-call", headers=owner).json()
     plan = run(migrated_url, lambda a: load_plan(a.state.db, employee["id"], web["call_id"]))
     assert plan is not None and "Draft hello" in plan.system_prompt
+    assert plan.is_test  # tagged so the latency figures can leave the test call out
     # The draft is reachable only through a test-call row of the same employee.
     other = hire(api, owner, name="Other")
     assert run(migrated_url, lambda a: load_plan(a.state.db, other["id"], web["call_id"])) is None
