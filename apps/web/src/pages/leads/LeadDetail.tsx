@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { Link, useParams } from "react-router";
 
 import { api, unwrap } from "../../lib/api";
-import { type Note, OUTCOME, useLead } from "../../lib/data";
+import { type Note, outcomeLabel, useLead } from "../../lib/data";
 import { useAction } from "../../lib/useAction";
 import { btn } from "../../ui/buttons";
 import { Confirm } from "../../ui/Confirm";
@@ -67,7 +67,7 @@ export default function LeadDetail() {
               <li key={c.id}>
                 <Link to={`/calls/${c.id}`} className="block px-4 py-3 transition-colors duration-150 hover:bg-accent-soft">
                   <span className="flex justify-between text-sm">
-                    <span className="text-ink-strong">{c.outcome ? OUTCOME[c.outcome] ?? c.outcome : "No outcome"}</span>
+                    <span className="text-ink-strong">{outcomeLabel(c.outcome, c.custom_outcome, "No outcome")}</span>
                     <span className="text-ink-muted">{when(c.created_at)}</span>
                   </span>
                   {c.summary && <span className="mt-1 block truncate text-sm text-ink-muted">{c.summary}</span>}

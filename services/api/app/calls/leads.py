@@ -28,6 +28,7 @@ BASE_FIELDS = (
     "calls",
     "last_call_at",
     "last_outcome",
+    "last_custom_outcome",
     "summary",
     "memory",
 )
@@ -36,7 +37,7 @@ BASE_FIELDS = (
 def _latest_call() -> Any:
     """Each lead's most recent real call."""
     return (
-        select(Call.lead_id, Call.outcome, Call.created_at, Call.summary)
+        select(Call.lead_id, Call.outcome, Call.created_at, Call.summary, Call.custom_outcome)
         .where(Call.is_test.is_(False), Call.lead_id.is_not(None))
         .ext(distinct_on(Call.lead_id))
         .order_by(Call.lead_id, Call.created_at.desc())
@@ -59,7 +60,12 @@ def _base(
     last, counts = _latest_call(), _call_counts()
     query: Any = (
         select(
-            Lead, last.c.outcome, last.c.created_at, last.c.summary, func.coalesce(counts.c.n, 0)
+            Lead,
+            last.c.outcome,
+            last.c.created_at,
+            last.c.summary,
+            func.coalesce(counts.c.n, 0),
+            last.c.custom_outcome,
         )
         .join(last, last.c.lead_id == Lead.id, isouter=True)
         .join(counts, counts.c.lead_id == Lead.id, isouter=True)
@@ -70,8 +76,8 @@ def _base(
         query = query.where(or_(Lead.phone.ilike(like), Lead.name.ilike(like)))
     if outcome == NO_OUTCOME:
         query = query.where(last.c.outcome.is_(None))
-    elif outcome:
-        query = query.where(last.c.outcome == outcome)
+    elif outcome:  # a built-in (with the custom outcomes that count as it) or a custom outcome
+        query = query.where(or_(last.c.outcome == outcome, last.c.custom_outcome == outcome))
     if employee_id:
         query = query.where(
             Lead.id.in_(
@@ -87,13 +93,19 @@ class LeadRow(BaseModel):
     name: str | None
     created_at: datetime
     last_outcome: str | None
+    last_custom_outcome: str | None  # the employee's own outcome; last_outcome is what it counts as
     last_call_at: datetime | None
     calls: int
     fields: dict[str, Any]
 
 
 def _row(
-    lead: Lead, outcome: str | None, last_at: datetime | None, _summary: str | None, calls: int
+    lead: Lead,
+    outcome: str | None,
+    last_at: datetime | None,
+    _summary: str | None,
+    calls: int,
+    custom: str | None,
 ) -> LeadRow:
     return LeadRow(
         id=lead.id,
@@ -101,6 +113,7 @@ def _row(
         name=lead.name,
         created_at=lead.created_at,
         last_outcome=outcome,
+        last_custom_outcome=custom,
         last_call_at=last_at,
         calls=int(calls),
         fields=lead.fields,
@@ -137,13 +150,14 @@ async def board(
     q: Annotated[str | None, Query(max_length=100)] = None,
     employee_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
-    """Leads grouped by the outcome of their latest call (a kanban: one column per outcome)."""
+    """Leads grouped by the outcome of their latest call (a kanban: one column per outcome). A
+    custom outcome gets its own column rather than joining the built-in it counts as."""
     query, last, _ = _base(user.account_id, q, None, employee_id)
     rows = (await session.execute(query.order_by(last.c.created_at.desc().nulls_last()))).all()
     columns: dict[str, list[LeadRow]] = {}
     counts: dict[str, int] = {}
     for r in rows:
-        key = r[1] or NO_OUTCOME
+        key = r[5] or r[1] or NO_OUTCOME
         counts[key] = counts.get(key, 0) + 1
         if len(columns.setdefault(key, [])) < BOARD_PER_COLUMN:
             columns[key].append(_row(*r))
@@ -168,6 +182,7 @@ async def export_leads(
     query, _, _ = _base(user.account_id, q, outcome, None)
     rows = (await session.execute(query.order_by(Lead.created_at.desc()).limit(EXPORT_LIMIT))).all()
     last_summary = {r[0].id: r[3] for r in rows}
+    last_custom = {r[0].id: r[5] for r in rows}
 
     def value(
         lead: Lead, column: str, outcome_: str | None, last_at: datetime | None, calls: int
@@ -181,6 +196,7 @@ async def export_leads(
             "calls": calls,
             "last_call_at": last_at.isoformat() if last_at else None,
             "last_outcome": outcome_,
+            "last_custom_outcome": last_custom[lead.id],
             "summary": last_summary[lead.id],
             "memory": lead.memory,
         }[column]
@@ -228,6 +244,7 @@ async def lead_detail(lead_id: uuid.UUID, user: CurrentUser, session: Session) -
                 "channel": c.channel.value,
                 "status": c.status.value,
                 "outcome": c.outcome,
+                "custom_outcome": c.custom_outcome,
                 "sentiment": c.sentiment,
                 "summary": c.summary,
                 "attempt": c.attempt,
