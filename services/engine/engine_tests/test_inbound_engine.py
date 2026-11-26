@@ -32,6 +32,7 @@ from .test_call import (  # noqa: F401 - fixtures
     _Passthrough,
     events,
     providers,
+    signed,
 )
 from .test_vobiz import START
 
@@ -55,7 +56,7 @@ def test_a_call_that_can_be_taken_gets_the_stream_for_the_right_employee(
 ) -> None:
     employee, _owner = inbound_employee(api, migrated_url)
     with TestClient(app) as client:
-        response = client.post("/vobiz/inbound", data=form())
+        response = client.post("/vobiz/inbound", headers=signed(), data=form())
     assert response.status_code == 200 and response.headers["content-type"].startswith(
         "application/xml"
     )
@@ -73,7 +74,7 @@ def test_a_call_that_cannot_be_taken_is_rejected_and_recorded(
 ) -> None:
     inbound_employee(api, migrated_url, live=False)
     with TestClient(app) as client:
-        response = client.post("/vobiz/inbound", data=form())
+        response = client.post("/vobiz/inbound", headers=signed(), data=form())
     assert response.status_code == 200 and '<Hangup reason="rejected"/>' in response.text
     (call,) = calls(migrated_url)
     assert call["status"] == "no_answer" and "paused" in call["miss_reason"]
@@ -87,7 +88,7 @@ def test_a_call_the_carrier_does_not_have_is_rejected_and_leaves_nothing(
     inbound_employee(api, migrated_url)
     _Carrier.live = False
     with TestClient(app) as client:
-        response = client.post("/vobiz/inbound", data=form())
+        response = client.post("/vobiz/inbound", headers=signed(), data=form())
     assert '<Hangup reason="rejected"/>' in response.text
     assert calls(migrated_url) == []
 
@@ -98,20 +99,22 @@ def test_who_called_and_which_number_come_from_the_carrier_not_the_request(
     providers: None,  # noqa: F811
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Found by the SEC test: the answer URL is unsigned, so a request naming a live call id must
-    not choose the caller or the number dialled."""
+    """Found by the SEC test: Vobiz signs only the URL and a nonce, not the form, so a request
+    naming a live call id must not choose the caller or the number dialled."""
     employee, _owner = inbound_employee(api, migrated_url)
     monkeypatch.setattr(_Carrier, "parties", ("+919811112222", "+919100000001"))
     forged = form(From="+910000000000", To="+919100000099")
     with TestClient(app) as client:
-        response = client.post("/vobiz/inbound", data=forged)
+        response = client.post("/vobiz/inbound", headers=signed(), data=forged)
     _path, query = stream_of(response.text)
     (call,) = calls(migrated_url)
     assert query["employee"] == [employee] and call["caller_phone"] == "+919811112222"
 
     monkeypatch.setattr(_Carrier, "parties", ("+919811112222", "+919100000099"))  # not ours
     with TestClient(app) as client:
-        response = client.post("/vobiz/inbound", data=form(CallUUID="other-live-call"))
+        response = client.post(
+            "/vobiz/inbound", headers=signed(), data=form(CallUUID="other-live-call")
+        )
     assert '<Hangup reason="rejected"/>' in response.text and len(calls(migrated_url)) == 1
 
 
@@ -124,7 +127,7 @@ def test_the_answer_needs_the_carrier_and_the_public_address(
     inbound_employee(api, migrated_url)
     monkeypatch.delenv("AXON_ENGINE_PUBLIC_URL")
     with TestClient(app) as client:
-        response = client.post("/vobiz/inbound", data=form())
+        response = client.post("/vobiz/inbound", headers=signed(), data=form())
     assert response.status_code == 503 and response.json()["missing_keys"] == [
         "AXON_ENGINE_PUBLIC_URL"
     ]
@@ -162,7 +165,7 @@ def test_the_opening_is_spoken_before_the_caller_says_a_word(
     inbound_employee(api, migrated_url, settings={"greeting_new": "Welcome to {{business_name}}."})
     _voices_on_the_test_leg(migrated_url)
     with TestClient(app) as client:
-        answered = client.post("/vobiz/inbound", data=form())
+        answered = client.post("/vobiz/inbound", headers=signed(), data=form())
         _, query = stream_of(answered.text)
         link = f"/vobiz/stream?lang=en&call={query['call'][0]}&employee={query['employee'][0]}"
         with client.websocket_connect(link) as ws:
@@ -223,7 +226,7 @@ def test_a_stream_for_a_call_the_carrier_does_not_have_is_refused_for_inbound_to
     inbound_employee(api, migrated_url)
     _voices_on_the_test_leg(migrated_url)
     with TestClient(app) as client:
-        answered = client.post("/vobiz/inbound", data=form())
+        answered = client.post("/vobiz/inbound", headers=signed(), data=form())
         _, query = stream_of(answered.text)
         _Carrier.live = False
         link = f"/vobiz/stream?lang=en&call={query['call'][0]}&employee={query['employee'][0]}"
