@@ -18,6 +18,7 @@ One Linux VM runs the whole stack with `deploy/docker-compose.prod.yml` on top o
 3. **Docker.** Install Docker Engine and the Compose plugin from docker.com's apt repository.
 4. **Code and settings.** Clone the repository, copy `.env.example` to `.env`, and set:
    - `AXON_JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD` (long random strings; the Postgres password only takes effect when the database is first created);
+   - `AXON_SECRETS_KEY` (made as in step 3 above; keep a copy off the VM);
    - `AXON_APP_DOMAIN`, `AXON_ENGINE_DOMAIN`, `AXON_ACME_EMAIL`;
    - `AXON_API_PUBLIC_URL=https://<app domain>/api` and `AXON_ENGINE_PUBLIC_URL=https://<engine domain>`;
    - every vendor key you have ([WIRING_CHECKLIST.md](../WIRING_CHECKLIST.md)).
