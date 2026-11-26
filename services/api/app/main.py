@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.account.settings import router as account_router
+from app.account.team import router as team_router
 from app.actions.router import router as actions_router
 from app.admin.accounts import router as admin_accounts_router
 from app.admin.ops import router as admin_ops_router
@@ -109,6 +110,7 @@ app.include_router(result_webhook_router)
 app.include_router(public_api_router)
 app.include_router(public_docs_router)
 app.include_router(account_router)
+app.include_router(team_router)
 app.include_router(dnc_router)
 app.include_router(admin_accounts_router)
 app.include_router(admin_ops_router)

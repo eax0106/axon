@@ -7,6 +7,7 @@ import { Field, SubmitButton } from "../ui/Field";
 import { ErrorState, Skeleton } from "../ui/states";
 import { Dnc } from "./account/Dnc";
 import { Business, Password, TwoFactor } from "./account/Settings";
+import { Team } from "./account/Team";
 
 export default function Account() {
   const me = useMe();
@@ -53,6 +54,7 @@ export default function Account() {
         <Business />
         <Password />
         <TwoFactor />
+        <Team />
       </div>
       <div className="mt-6 max-w-4xl">
         <Dnc />

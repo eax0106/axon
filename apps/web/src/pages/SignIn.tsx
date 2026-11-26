@@ -20,7 +20,7 @@ export default function SignIn() {
   const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Staff only: the password was right; the second factor comes next.
+  // The password was right; the second factor comes next (staff, and anyone who turned it on).
   const [step, setStep] = useState<{ kind: "verify" | "enrol"; challenge: string } | null>(null);
 
   function enter(token: string) {
@@ -78,6 +78,11 @@ export default function SignIn() {
         </SubmitButton>
       </form>
       <p className="mt-6 text-sm text-ink-muted">
+        <Link to="/forgot-password" className="text-accent underline underline-offset-4">
+          Forgot your password?
+        </Link>
+      </p>
+      <p className="mt-2 text-sm text-ink-muted">
         New to Axon?{" "}
         <Link to="/sign-up" className="text-accent underline underline-offset-4">
           Create an account

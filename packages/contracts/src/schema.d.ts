@@ -727,6 +727,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/invites/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Invite
+         * @description Join the account as a member with a new password; answers a session.
+         */
+        post: operations["accept_invite_auth_invites_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/invites/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Invite
+         * @description Who an invite link is for, to show before the password is chosen. Uses nothing up.
+         */
+        post: operations["check_invite_auth_invites_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -759,6 +799,48 @@ export interface paths {
          *     answer is a fresh session for this one.
          */
         post: operations["change_password_auth_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Reset
+         * @description Email a reset link if `email` has a sign-in. The answer is the same either way, so it does
+         *     not tell who has one.
+         */
+        post: operations["request_reset_auth_password_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Reset
+         * @description Set the new password. Every session is signed out and every other reset link stops
+         *     working; sign in again (with the second factor, if it is on).
+         */
+        post: operations["confirm_reset_auth_password_reset_confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3671,6 +3753,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Team */
+        get: operations["team_team_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invite
+         * @description Email a link that lets `email` join this account as a member. Asking again for the same
+         *     email cancels the earlier link. Refused for an email that already has an Axon sign-in.
+         */
+        post: operations["invite_team_invites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/invites/{invite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke */
+        delete: operations["revoke_team_invites__invite_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove
+         * @description Remove a member. Their sign-in is deleted, so every session of theirs stops at once; what
+         *     they wrote (notes, audit entries) stays, without their name.
+         */
+        delete: operations["remove_team_members__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/account": {
         parameters: {
             query?: never;
@@ -4012,11 +4170,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** Accept */
-        Accept: {
-            /** Text */
-            text?: string | null;
-        };
         /** AccountOut */
         AccountOut: {
             /** Credit Balance */
@@ -5073,6 +5226,18 @@ export interface components {
          * @enum {string}
          */
         IntakeStatus: "accepted" | "deduplicated" | "rejected";
+        /** InviteIn */
+        InviteIn: {
+            /** Email */
+            email: string;
+        };
+        /** InviteInfo */
+        InviteInfo: {
+            /** Account Name */
+            account_name: string;
+            /** Email */
+            email: string;
+        };
         /** ItemOut */
         ItemOut: {
             /**
@@ -5202,6 +5367,11 @@ export interface components {
             /** Provider Voice Id */
             provider_voice_id: string;
         };
+        /** LinkIn */
+        LinkIn: {
+            /** Token */
+            token: string;
+        };
         /** ListBody */
         ListBody: {
             mapping: components["schemas"]["Mapping"];
@@ -5220,6 +5390,24 @@ export interface components {
             variables?: {
                 [key: string]: string | null;
             };
+        };
+        /** Member */
+        Member: {
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            role: components["schemas"]["Role"];
+            /** Two Factor */
+            two_factor: boolean;
         };
         /** MemorySetting */
         MemorySetting: {
@@ -5378,6 +5566,26 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /** PendingInvite */
+        PendingInvite: {
+            /** Email */
+            email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Sent At
+             * Format: date-time
+             */
+            sent_at: string;
+        };
         /** PhoneBody */
         PhoneBody: {
             /** Phone */
@@ -5533,6 +5741,18 @@ export interface components {
             /** Status Code */
             status_code: number;
         };
+        /** ResetConfirm */
+        ResetConfirm: {
+            /** Password */
+            password: string;
+            /** Token */
+            token: string;
+        };
+        /** ResetRequest */
+        ResetRequest: {
+            /** Email */
+            email: string;
+        };
         /** ResultWebhook */
         ResultWebhook: {
             /**
@@ -5549,6 +5769,12 @@ export interface components {
             /** Url */
             url: string;
         };
+        /**
+         * Role
+         * @description A user's role inside their own account. Platform staff is a separate flag on User.
+         * @enum {string}
+         */
+        Role: "owner" | "member";
         /** RuleBody */
         RuleBody: {
             /** Allowed */
@@ -5848,6 +6074,13 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** Team */
+        Team: {
+            /** Invites */
+            invites: components["schemas"]["PendingInvite"][];
+            /** Members */
+            members: components["schemas"]["Member"][];
+        };
         /** Terms */
         Terms: {
             /** Accepted At */
@@ -6071,6 +6304,13 @@ export interface components {
             /** Template */
             template: string;
         };
+        /** Accept */
+        app__account__team__Accept: {
+            /** Password */
+            password: string;
+            /** Token */
+            token: string;
+        };
         /** TestBody */
         app__actions__router__TestBody: {
             /** Args */
@@ -6252,6 +6492,11 @@ export interface components {
             /** Source */
             source: string;
             status: components["schemas"]["IntakeStatus"];
+        };
+        /** Accept */
+        app__training__router__Accept: {
+            /** Text */
+            text?: string | null;
         };
     };
     responses: never;
@@ -7567,6 +7812,72 @@ export interface operations {
             };
         };
     };
+    accept_invite_auth_invites_accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__account__team__Accept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Token"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_invite_auth_invites_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_auth_login_post: {
         parameters: {
             query?: never;
@@ -7621,6 +7932,72 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Token"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_reset_auth_password_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: "sent";
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_reset_auth_password_reset_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11894,7 +12271,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Accept"];
+                "application/json": components["schemas"]["app__training__router__Accept"];
             };
         };
         responses: {
@@ -13560,6 +13937,117 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MessageOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    team_team_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Team"];
+                };
+            };
+        };
+    };
+    invite_team_invites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingInvite"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_team_invites__invite_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_team_members__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
