@@ -15,4 +15,5 @@ FROM nginx:1.27-alpine
 # A template so the image's entrypoint fills in the DNS resolver the api upstream is looked up with.
 ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 COPY deploy/nginx.conf /etc/nginx/templates/default.conf.template
+COPY deploy/nginx-security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
