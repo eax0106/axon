@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { seriousA11yIssues } from "./a11y";
+import { freeCredits } from "./stack";
 
 test("billing shows the real ledger, saves limits, and the store and top-up say what to connect", async ({ page, request }) => {
   const signup = await request.post("/api/auth/signup", {
     data: { email: `f5-${Date.now()}@example.com`, password: "correct horse battery", account_name: "Kokapet Homes" },
   });
   const { access_token } = await signup.json();
+  freeCredits(access_token);
   await page.addInitScript((t) => localStorage.setItem("axon.token", t), access_token);
 
   // First run: nothing done yet.
