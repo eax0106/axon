@@ -25,7 +25,14 @@ from engine.goodbye import GoodbyeGate
 from engine.main import RESULT_TICKET_TTL, TRANSFER_TICKET_TTL, app
 from engine.services import SERVICES
 
-from .test_call import SILENCE_ULAW, _Carrier, _Passthrough, events, providers  # noqa: F401
+from .test_call import (  # noqa: F401
+    SILENCE_ULAW,
+    _Carrier,
+    _Passthrough,
+    events,
+    providers,
+    signed,
+)
 from .test_inbound_engine import form, stream_of
 from .test_vobiz import START
 
@@ -136,7 +143,7 @@ def _stream(
     inbound_employee(api, url, settings=SETTINGS)
     sql(url, "UPDATE voices SET provider = 'testleg'")
     with TestClient(app) as client:
-        answered = client.post("/vobiz/inbound", data=form())
+        answered = client.post("/vobiz/inbound", headers=signed(), data=form())
         _, query = stream_of(answered.text)
         link = f"/vobiz/stream?lang=en&call={query['call'][0]}&employee={query['employee'][0]}"
         with client.websocket_connect(link) as ws:
@@ -184,7 +191,11 @@ def test_the_call_stays_up_through_the_hand_over_and_the_carrier_then_rings_the_
     assert call["transcript"] is not None and call["analysis_status"] == "pending"
     assert "transferred" in [t for t, _ in stored_events(migrated_url, call["id"])]
     with TestClient(app) as client:
-        other = client.post("/vobiz/inbound", data=form(CallUUID="leg-other", From="+919000000009"))
+        other = client.post(
+            "/vobiz/inbound",
+            headers=signed(),
+            data=form(CallUUID="leg-other", From="+919000000009"),
+        )
         assert "<Hangup" in other.text  # a one-channel number: the second caller finds it busy
         # What the carrier fetches next, after the stream is gone, must still ring the person.
         instructions = client.get(f"{parsed.path}?{parsed.query}")
@@ -237,7 +248,7 @@ def test_without_a_transfer_number_the_ai_has_no_such_tool(
     inbound_employee(api, migrated_url, settings={})
     sql(migrated_url, "UPDATE voices SET provider = 'testleg'")
     with TestClient(app) as client:
-        answered = client.post("/vobiz/inbound", data=form())
+        answered = client.post("/vobiz/inbound", headers=signed(), data=form())
         _, query = stream_of(answered.text)
         link = f"/vobiz/stream?lang=en&call={query['call'][0]}&employee={query['employee'][0]}"
         with client.websocket_connect(link) as ws:
@@ -253,7 +264,7 @@ def test_without_a_transfer_number_the_ai_has_no_such_tool(
 def _live_inbound_call(api: TestClient, url: str) -> str:
     inbound_employee(api, url, settings=SETTINGS)
     with TestClient(app) as client:
-        client.post("/vobiz/inbound", data=form())
+        client.post("/vobiz/inbound", headers=signed(), data=form())
     sql(url, "UPDATE calls SET status = 'in_progress'")
     (call,) = calls(url)
     return str(call["id"])

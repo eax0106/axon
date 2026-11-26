@@ -71,8 +71,10 @@ services:
       web: { condition: service_healthy }
       engine: { condition: service_healthy }
 
-  # One dump a day, kept for 14 days in deploy/backups. Copy that folder off the machine as well
-  # (docs/runbooks/backup-restore.md): a backup on the same disk does not survive losing the VM.
+  # One dump a day, kept for 14 days in deploy/backups, encrypted to the owner's gpg public key
+  # before it touches the disk (gpg is already in this image), so the VM cannot read its own
+  # backups. Copy the folder off the machine as well (docs/runbooks/backup-restore.md): a backup
+  # on the same disk does not survive losing the VM.
   backup:
     <<: *prod
     image: pgvector/pgvector:pg16
@@ -82,8 +84,10 @@ services:
       PGDATABASE: axon
       PGPASSWORD: ${POSTGRES_PASSWORD}
       KEEP_DAYS: "14"
-    volumes: ["./backups:/backups"]
-    entrypoint: ["sh", "/backup.sh"]
+    volumes:
+      - ./backups:/backups
+      - ./backup-public-key.asc:/backup-key.asc:ro # the owner's; its private half stays off the VM
+    entrypoint: ["bash", "/backup.sh"]
     configs: [{ source: backup_script, target: /backup.sh }]
     depends_on:
       postgres: { condition: service_healthy }
@@ -91,9 +95,19 @@ services:
 configs:
   backup_script:
     content: |
+      set -uo pipefail
+      umask 077
+      export GNUPGHOME="$$(mktemp -d)"
       while true; do
-        pg_dump -Fc -f "/backups/axon-$$(date -u +%Y%m%dT%H%M%SZ).dump" && echo "backup written"
-        find /backups -name 'axon-*.dump' -mtime +$$KEEP_DAYS -exec rm -f {} +
+        name="/backups/axon-$$(date -u +%Y%m%dT%H%M%SZ).dump.gpg"
+        if pg_dump -Fc | gpg --batch --yes --trust-model always \
+            --recipient-file /backup-key.asc --encrypt --output "$$name.part"; then
+          mv "$$name.part" "$$name" && echo "backup written: $$name"
+        else
+          rm -f "$$name.part"
+          echo "backup FAILED, nothing kept: is deploy/backup-public-key.asc a gpg public key?" >&2
+        fi
+        find /backups -name 'axon-*.dump*' -mtime +$$KEEP_DAYS -exec rm -f {} +
         sleep 86400
       done
 

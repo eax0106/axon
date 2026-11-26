@@ -140,6 +140,31 @@ def test_voice_and_capture_settings_apply_without_a_publish(api: TestClient) -> 
     assert "- budget: Monthly budget" in live
 
 
+def test_the_pronunciation_list_is_a_setting_with_one_entry_per_word_and_language(
+    api: TestClient,
+) -> None:
+    owner = signup(api)
+    path = f"/employees/{hire(api, owner)['id']}"
+    entries = [
+        {"language": "te", "word": "Skyline", "say": "స్కై లైన్"},
+        {"language": "en", "word": "Skyline", "say": "Sky line"},
+        {"language": "hi", "word": "  CIBIL ", "say": "सिबिल"},
+    ]
+    saved = api.put(path + "/settings", json={"pronunciations": entries}, headers=owner)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["settings"]["pronunciations"][2]["word"] == "CIBIL"
+    # Never part of the prompt: only the voice reads it.
+    assert "Sky line" not in api.get(path + "/prompt", headers=owner).json()["prompt"]
+    for bad in (
+        [*entries, {"language": "te", "word": "skyline", "say": "x"}],  # the same word twice
+        [{"language": "ta", "word": "a", "say": "b"}],
+        [{"language": "en", "word": "   ", "say": "b"}],
+        [{"language": "en", "word": "a", "say": "b" * 121}],
+    ):
+        response = api.put(path + "/settings", json={"pronunciations": bad}, headers=owner)
+        assert response.status_code == 422, bad
+
+
 def test_script_validation_and_the_permanent_faq(api: TestClient) -> None:
     owner = signup(api)
     path = f"/employees/{hire(api, owner)['id']}"

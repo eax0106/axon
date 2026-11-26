@@ -13,6 +13,7 @@ LANGUAGES = ("te", "hi", "en")
 # The bundle is also stored as JSON in employee_versions, so keep it small and bounded.
 MAX_SECTIONS, MAX_FAQ, MAX_VARIABLES, MAX_CAPTURE = 20, 50, 30, 20
 MAX_OUTCOMES = 8
+MAX_PRONUNCIATIONS = 100
 # What the post-call analysis may say happened on any call. They never change, so the dashboard's
 # figures stay comparable across employees; an employee's own outcomes each count as one of them.
 OUTCOMES = (
@@ -108,6 +109,23 @@ class CustomOutcome(BaseModel):
         return _identifier(value)
 
 
+class Pronunciation(BaseModel):
+    """Say `word` like `say` in this language's replies: a respelling, usually in the language's
+    own script. Only what the caller hears changes; transcripts keep `word`."""
+
+    language: Literal["te", "hi", "en"]
+    word: str = Field(min_length=1, max_length=64)
+    say: str = Field(min_length=1, max_length=120)
+
+    @field_validator("word", "say")
+    @classmethod
+    def _trimmed(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+
 class EmployeeSettings(BaseModel):
     """Delivery and bookkeeping: applied to live calls at once, never part of the content."""
 
@@ -121,6 +139,7 @@ class EmployeeSettings(BaseModel):
     ai_acknowledgement: bool = False
     capture: list[CaptureField] = Field(default_factory=list, max_length=MAX_CAPTURE)
     outcomes: list[CustomOutcome] = Field(default_factory=list, max_length=MAX_OUTCOMES)
+    pronunciations: list[Pronunciation] = Field(default_factory=list, max_length=MAX_PRONUNCIATIONS)
 
     @field_validator("capture")
     @classmethod
@@ -135,3 +154,10 @@ class EmployeeSettings(BaseModel):
         if len({o.name for o in outcomes}) != len(outcomes):
             raise ValueError("duplicate outcome name")
         return outcomes
+
+    @field_validator("pronunciations")
+    @classmethod
+    def _one_per_word(cls, entries: list[Pronunciation]) -> list[Pronunciation]:
+        if len({(e.language, e.word.casefold()) for e in entries}) != len(entries):
+            raise ValueError("a word is listed twice for the same language")
+        return entries

@@ -18,9 +18,6 @@ from typing import Any
 from loguru import logger
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
-from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
-from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
-from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
     EndFrame,
     Frame,
@@ -59,18 +56,19 @@ from app.models import VoiceTier
 from app.providers.base import ObjectStorageProvider, ProviderKind, ProviderNotConfiguredError
 from app.providers.failover import billed_tier
 from app.providers.registry import require
+from engine import vad
 from engine.ambience import mixer_for
 from engine.events import CallObserver, EventSink, Usage
 from engine.goodbye import GoodbyeGate, PlayedStreamTap
 from engine.legs import ServiceLeg
-from engine.records import PROVIDER_FAILURE, CallRecorder
+from engine.pronounce import Pronouncer
+from engine.records import PROVIDER_FAILURE, VOICEMAIL, CallRecorder
+from engine.turns import analyzer as turn_analyzer
 from engine.vobiz import checkpoint
+from engine.voicemail import CallVoicemail
 
 PIPELINE_RATE = 16000  # Smart Turn and Silero work at 16 kHz; the serializer converts to 8 kHz
 MIN_CALL_S, MAX_CALL_S = 10, 3600
-# When Smart Turn wrongly hears a finished question as unfinished, only this much silence ends
-# the turn. Pipecat's 3 s held such callers 3.7 s in local tests; 2 s still allows a long pause.
-TURN_SILENCE_S = 2.0
 # A caller silent for the whole idle timeout is asked once if they are still there, then given
 # this long to answer before a goodbye and the hang-up. Our own words; the Telugu and Hindi wait
 # for the native-speaker check (WIRING_CHECKLIST).
@@ -108,6 +106,9 @@ class CallSettings:
     transfer_to: str | None = None  # a person the AI may hand the call to (an incoming call)
     tools: tuple[Tool, ...] = ()  # what the employee's actions let the AI do during the call
     extra_languages: tuple[str, ...] = ()  # the caller may switch to these (English always)
+    detect_voicemail: bool = False  # an outbound call: a machine pickup is hung up on
+    pronunciations: tuple[tuple[str, str, str], ...] = ()  # (language, word, say like)
+    is_test: bool = False  # tagged on the usage event so latency figures can leave it out
 
     def __post_init__(self) -> None:
         if not MIN_CALL_S <= self.max_call_s <= MAX_CALL_S:
@@ -288,6 +289,12 @@ async def run_call(
         ),
     )
     stt, llm, tts = legs
+    pronouncer = Pronouncer(settings.pronunciations)
+    if pronouncer:
+        for voice in getattr(tts, "services", [tts]):  # every vendor: a failover keeps the list
+            voice.add_text_transformer(pronouncer.transform)
+        if call_record is not None:
+            call_record.transcript.restore = pronouncer.restore
     messages: list[Any] = (
         [{"role": "system", "content": settings.system_prompt}] if settings.system_prompt else []
     )
@@ -300,6 +307,16 @@ async def run_call(
             await task.queue_frame(EndFrame())
 
     gate = GoodbyeGate(end)
+    machine: list[CallVoicemail] = []
+    if settings.detect_voicemail:
+
+        async def voicemail_heard(words: str) -> None:
+            await live.emit({"type": VOICEMAIL, "quote": words})
+            if call_record is not None:
+                await call_record.voicemail()
+            await end(VOICEMAIL)
+
+        machine.append(CallVoicemail(settings.language, voicemail_heard))
     register_end_call(llm, gate)
     tools = [END_CALL]
     if transfer is not None:
@@ -310,18 +327,14 @@ async def run_call(
     aggregators = LLMContextAggregatorPair(
         LLMContext(messages=messages, tools=ToolsSchema(standard_tools=tools)),
         user_params=LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(),
+            vad_analyzer=vad.analyzer(),
             # The caller hears the whole opening (the recording notice) before being listened to.
             user_mute_strategies=(
                 [MuteUntilFirstBotCompleteUserMuteStrategy()] if settings.opening else []
             ),
             user_turn_strategies=UserTurnStrategies(
                 stop=[
-                    TurnAnalyzerUserTurnStopStrategy(
-                        turn_analyzer=LocalSmartTurnAnalyzerV3(
-                            params=SmartTurnParams(stop_secs=TURN_SILENCE_S)
-                        )
-                    )
+                    TurnAnalyzerUserTurnStopStrategy(turn_analyzer=turn_analyzer(settings.language))
                 ]
             ),
             user_idle_timeout=settings.silence_timeout_s,
@@ -336,10 +349,12 @@ async def run_call(
             transport.input(),
             PlayedStreamTap(gate),
             stt,
+            *(m.detector() for m in machine),  # what the callee says first: a person or a machine?
             CallerLanguage(settings.language, {settings.language, *settings.extra_languages, "en"}),
             aggregators.user(),
             llm,
             tts,
+            *(m.gate() for m in machine),  # the bot's first words wait for that answer
             UtteranceCheckpoints(gate),
             transport.output(),
             recorder,
@@ -355,6 +370,7 @@ async def run_call(
         transport.input(),
         vendor_of=names.get,
         listening=lambda: stt.vendor if isinstance(stt, ServiceLeg) else None,
+        test=settings.is_test,
     )
     # ponytail: PipelineTask/PipelineRunner are deprecated in Pipecat 1.3 (removed in 2.0); the
     # PipelineWorker/WorkerRunner pair never returned after EndFrame here. Migrate with 2.0.

@@ -6,12 +6,25 @@
 }
 
 # The dashboard, with the API under /api (the web server proxies it).
+# The same headers as deploy/nginx-security-headers.conf, plus HSTS, with WebSockets only to this
+# origin and the engine. `defer` makes these win over what the web server sent.
 {$AXON_APP_DOMAIN} {
 	encode zstd gzip
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-E5+0y76WvthX/sSQDLNCy4EcueuQ6IcbP6zCIDq6Vwg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: https:; font-src 'self' data:; connect-src 'self' wss://{$AXON_APP_DOMAIN} wss://{$AXON_ENGINE_DOMAIN}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	}
 	reverse_proxy web:80
 }
 
 # The voice engine: Vobiz's media WebSocket and the browser test calls.
 {$AXON_ENGINE_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+	}
 	reverse_proxy engine:8001
 }
