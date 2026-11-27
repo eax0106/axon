@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.auth import CurrentUser, not_impersonating
 from app.billing import ledger
-from app.billing.config import number_monthly_fee, number_setup_fee
+from app.billing.config import number_rent, number_setup_fee
 from app.db import Session
 from app.employees.router import OwnerUser, load
 from app.models import (
@@ -57,11 +57,23 @@ def _kyc() -> NumberKycProvider:
     return provider
 
 
+# What each number type may be used for (TRAI's designated series; the carrier's own rules for
+# 10-digit landlines). Shown beside every number so an owner picks the right one.
+ALLOWED_USE = {
+    NumberType.REGULAR: "Incoming calls and service calls; no promotional calls",
+    NumberType.SERIES_140: "Promotional calls only; cannot take incoming calls",
+    NumberType.SERIES_1600: (
+        "Service and transactional calls by regulated businesses and government"
+    ),
+}
+
+
 def _number_out(number: PhoneNumber, employee_id: uuid.UUID | None = None) -> dict[str, Any]:
     return {
         "id": number.id,
         "e164": number.e164,
         "number_type": number.number_type,
+        "allowed_use": ALLOWED_USE[number.number_type],
         "status": number.status,
         "channels": number.channels,
         "monthly_fee": str(ledger.credits(number.monthly_fee)),
@@ -88,11 +100,13 @@ async def list_numbers(user: CurrentUser, session: Session) -> list[dict[str, An
 
 
 def _offer(item: InventoryNumber) -> dict[str, Any]:
+    """A number on sale at its own price: from the carrier's fee, never below it."""
     return {
         "e164": item.e164,
         "number_type": item.number_type,
+        "allowed_use": ALLOWED_USE[NumberType(item.number_type)],
         "setup_fee": str(number_setup_fee()),
-        "monthly_fee": str(number_monthly_fee()),
+        "monthly_fee": str(number_rent(item.monthly_fee)),
     }
 
 
@@ -103,7 +117,7 @@ async def inventory(
     page: Annotated[int, Query(ge=1)] = 1,
     per_page: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
-    """Numbers on sale at our price (not the carrier's)."""
+    """Numbers on sale, each at its own price (the carrier's fee is never shown)."""
     return [_offer(item) for item in await _store().search_numbers(search, page, per_page)]
 
 
@@ -132,7 +146,7 @@ async def quote(
     e164: Annotated[str, Query(pattern=r"^\+\d{8,15}$")],
 ) -> dict[str, Any]:
     item = await _find(e164)
-    first_charge = ledger.credits(number_setup_fee() + number_monthly_fee())
+    first_charge = ledger.credits(number_setup_fee() + number_rent(item.monthly_fee))
     return {
         **_offer(item),
         "first_charge": str(first_charge),
@@ -185,7 +199,8 @@ async def purchase(
     item = await _find(body.e164)
     number_id = uuid.uuid4()
     reference = number_id.hex  # the number's own id: whoever settles a `reconcile` finds the charge
-    charge = ledger.credits(number_setup_fee() + number_monthly_fee())
+    rent = number_rent(item.monthly_fee)  # kept on the number: every renewal charges it
+    charge = ledger.credits(number_setup_fee() + rent)
     await ledger.post(
         session, user.account_id, LedgerKind.NUMBER, -charge,
         ref_type="number_purchase", ref_id=reference, note=f"new number {item.e164}",
@@ -199,7 +214,7 @@ async def purchase(
         channels=1,
         status=NumberStatus.RECONCILE,
         holder_id=holder.id,
-        monthly_fee=number_monthly_fee(),
+        monthly_fee=rent,
     )
     session.add(number)
     try:

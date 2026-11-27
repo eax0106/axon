@@ -20,6 +20,7 @@ export type PhoneNumber = {
   id: string;
   e164: string;
   number_type: "regular" | "140" | "1600";
+  allowed_use: string; // what this type of number may be used for
   status: "active" | "grace" | "released" | "reconcile";
   channels: number;
   monthly_fee: string;
@@ -27,7 +28,8 @@ export type PhoneNumber = {
   grace_until: string | null;
   employee_id: string | null;
 };
-export type Offer = { e164: string; number_type: PhoneNumber["number_type"]; setup_fee: string; monthly_fee: string };
+// Each number has its own price: from the carrier's fee, never below it.
+export type Offer = { e164: string; number_type: PhoneNumber["number_type"]; allowed_use: string; setup_fee: string; monthly_fee: string };
 export type Quote = Offer & { first_charge: string; balance: string; kyc_required: boolean };
 export type Holder = { id: string; name: string; pan_last4: string; status: "pan_verified" | "verified" | string };
 

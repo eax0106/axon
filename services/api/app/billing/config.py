@@ -7,7 +7,7 @@ be billed exactly.
 """
 
 import os
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 
 from app.models import VoiceTier
 
@@ -35,11 +35,25 @@ def free_signup_credits() -> Decimal:
 
 
 def number_monthly_fee() -> Decimal:
+    """The lowest monthly rent of any number (the floor of `number_rent`)."""
     return _money("AXON_NUMBER_MONTHLY_FEE", "649")
 
 
 def number_setup_fee() -> Decimal:
     return _money("AXON_NUMBER_SETUP_FEE", "0")
+
+
+def number_markup_percent() -> Decimal:
+    """Percent added to the carrier's own monthly fee for a number."""
+    return _money("AXON_NUMBER_MARKUP_PERCENT", "0")
+
+
+def number_rent(carrier_monthly_fee: Decimal) -> Decimal:
+    """What a number rents for a month: the carrier's own fee plus the markup, but never less than
+    the floor (AXON_NUMBER_MONTHLY_FEE) and never less than the carrier's fee."""
+    marked_up = carrier_monthly_fee * (1 + number_markup_percent() / 100)
+    paise = marked_up.quantize(Decimal("0.01"), rounding=ROUND_CEILING)  # rounded up, never down
+    return max(number_monthly_fee(), carrier_monthly_fee, paise)
 
 
 def extra_channel_monthly_fee() -> Decimal:

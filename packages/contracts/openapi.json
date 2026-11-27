@@ -17402,7 +17402,7 @@
     },
     "/numbers/inventory": {
       "get": {
-        "description": "Numbers on sale at our price (not the carrier's).",
+        "description": "Numbers on sale, each at its own price (the carrier's fee is never shown).",
         "operationId": "inventory_numbers_inventory_get",
         "parameters": [
           {

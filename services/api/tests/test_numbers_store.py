@@ -1,4 +1,5 @@
-"""The number store: search, quote, buy, give back; always at our price, scoped to the account."""
+"""The number store: search, quote, buy, give back; each number at its own price (from the
+carrier's fee, never below it), scoped to the account."""
 
 import json
 from datetime import UTC, datetime
@@ -48,7 +49,14 @@ def test_inventory_is_searched_at_the_carrier_and_priced_by_us(
         (SERIES_140, "140"),
         (SERIES_1600, "1600"),
     ]
-    assert {(n["monthly_fee"], n["setup_fee"]) for n in got} == {("649", "0")}  # not the carrier's
+    # The carrier asks 300 or 500 a month: today's floor of 649 still applies, by default.
+    assert {(n["monthly_fee"], n["setup_fee"]) for n in got} == {("649", "0")}
+    assert [n["allowed_use"].split(";")[0] for n in got] == [
+        "Incoming calls and service calls",
+        "Incoming calls and service calls",
+        "Promotional calls only",
+        "Service and transactional calls by regulated businesses and government",
+    ]
     request = vobiz.requests[0]
     assert request.method == "GET"
     assert str(request.url) == (
@@ -69,6 +77,7 @@ def test_a_quote_says_what_the_first_charge_is_and_whether_kyc_is_needed(
     assert quote == {
         "e164": SERIES_140,
         "number_type": "140",
+        "allowed_use": "Promotional calls only; cannot take incoming calls",
         "setup_fee": "0",
         "monthly_fee": "649",
         "first_charge": "649.0000",
@@ -256,3 +265,38 @@ def test_every_store_route_is_503_without_carrier_keys(api: TestClient, migrated
         assert response.status_code == 503 and response.json()["error"] == "provider_not_configured"
         assert response.json()["missing_keys"] == ["VOBIZ_AUTH_ID", "VOBIZ_AUTH_TOKEN"]
     assert balance(api, owner) == 1050 and sql(migrated_url, "SELECT count(*) FROM numbers") == 1
+
+
+def test_each_number_is_priced_from_its_carrier_fee_with_the_floor_and_markup(
+    api: TestClient, vobiz: VobizAccount, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = signup(api)
+    vobiz.inventory[0]["monthly_fee"] = 59  # a landline the carrier rents cheaply
+    vobiz.inventory[2]["monthly_fee"] = 1000  # a 140-series number above our floor
+
+    def prices() -> dict[str, str]:
+        got = api.get("/numbers/inventory?search=00000&per_page=50", headers=owner).json()
+        return {n["e164"]: n["monthly_fee"] for n in got}
+
+    # Defaults: 649, but never below what the carrier charges.
+    assert prices()[REGULAR] == "649" and prices()[SERIES_140] == "1000"
+    monkeypatch.setenv("AXON_NUMBER_MONTHLY_FEE", "99")
+    monkeypatch.setenv("AXON_NUMBER_MARKUP_PERCENT", "30")
+    assert prices()[REGULAR] == "99"  # 59 + 30% = 76.70, under the floor
+    assert prices()[SERIES_140] == "1300.00"
+    assert prices()["+919100000002"] == "390.00"  # 300 + 30%
+    quote = api.get("/numbers/quote", params={"e164": SERIES_140}, headers=owner).json()
+    assert quote["monthly_fee"] == "1300.00" and quote["first_charge"] == "1300.0000"
+
+
+def test_a_bought_number_renews_at_the_price_it_was_bought_at(
+    api: TestClient, migrated_url: str, vobiz: VobizAccount, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner, _ = ready(api, migrated_url, credits="2000")
+    vobiz.inventory[2]["monthly_fee"] = 1000
+    bought = api.post("/numbers/purchase", json={"e164": SERIES_140}, headers=owner)
+    assert bought.status_code == 201, bought.text
+    assert bought.json()["monthly_fee"] == "1000.0000"
+    assert balance(api, owner) == Decimal(2050 - 1000)
+    stored = "SELECT monthly_fee FROM numbers WHERE e164 = :e"
+    assert sql(migrated_url, stored, {"e": SERIES_140}) == Decimal(1000)

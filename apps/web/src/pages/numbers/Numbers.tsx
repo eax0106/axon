@@ -11,7 +11,7 @@ import { Confirm } from "../../ui/Confirm";
 import { ErrorState, Skeleton } from "../../ui/states";
 import { Kyc } from "./Kyc";
 
-const TYPE: Record<PhoneNumber["number_type"], string> = { regular: "10-digit", "140": "140 series", "1600": "1600 series" };
+const TYPE: Record<PhoneNumber["number_type"], string> = { regular: "Landline", "140": "140 series", "1600": "1600 series" };
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "");
 
 export default function Numbers() {
@@ -66,6 +66,7 @@ function Mine() {
               <div>
                 <p className="num text-lg text-ink-strong">{n.e164}</p>
                 <p className="text-sm text-ink-muted">{TYPE[n.number_type]}</p>
+                <p className="text-xs text-ink-muted">{n.allowed_use}</p>
               </div>
               <span className={`eyebrow ${n.status === "active" ? "" : "text-warn"}`}>
                 ● {n.status === "active" ? `Renews ${day(n.renews_on)}` : n.status === "grace" ? `Grace until ${day(n.grace_until)}` : "Being checked"}
@@ -161,6 +162,7 @@ function Store() {
               <button type="button" onClick={() => void pick(o)} className="w-full rounded-card border border-line bg-surface p-4 text-left transition-colors duration-150 hover:border-line-accent">
                 <span className="num block text-ink-strong">{o.e164}</span>
                 <span className="text-sm text-ink-muted">{TYPE[o.number_type]} · {credits(o.monthly_fee)}/month</span>
+                <span className="mt-1 block text-xs text-ink-muted">{o.allowed_use}</span>
               </button>
             </li>
           ))}
@@ -170,6 +172,7 @@ function Store() {
       {quote && (
         <div className="mt-4 max-w-xl rounded-card border border-line-accent bg-surface p-6">
           <p className="num text-2xl text-ink-strong">{quote.e164}</p>
+          <p className="mt-1 text-sm text-ink-muted">{TYPE[quote.number_type]}: {quote.allowed_use}.</p>
           <dl className="mt-4 divide-y divide-line text-sm">
             <div className="flex justify-between py-2"><dt className="text-ink-muted">First charge (setup and month one)</dt><dd className="num">{credits(quote.first_charge)}</dd></div>
             <div className="flex justify-between py-2"><dt className="text-ink-muted">Then each month</dt><dd className="num">{credits(quote.monthly_fee)}</dd></div>
